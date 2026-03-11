@@ -27,6 +27,9 @@ dependencies = [
     "seaborn>=0.12.0",
 ]
 
+[project.optional-dependencies]
+vcf = ["cyvcf2", "pysam"]
+
 [project.scripts]
 mkado = "mkado.cli:app"
 
