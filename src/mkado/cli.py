@@ -1294,7 +1294,9 @@ def vcf(
     ],
     ref: Annotated[
         Path,
-        typer.Option("--ref", help="Reference FASTA file, plain or bgzipped (must be faidx-indexed)"),
+        typer.Option(
+            "--ref", help="Reference FASTA file, plain or bgzipped (must be faidx-indexed)"
+        ),
     ],
     gff: Annotated[
         Path,
@@ -1391,23 +1393,12 @@ def vcf(
     - GFF3 annotation: gene models with CDS features (plain or gzipped)
     - Outgroup VCF: single-sample VCF of outgroup (for divergence)
 
-    Install VCF dependencies: pip install mkado[vcf]
-
     EXAMPLES:
 
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf outgroup.vcf.gz
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf out.vcf.gz -a
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf out.vcf.gz --gene BRCA1
     """
-    # Check for VCF dependencies
-    try:
-        from mkado.io.vcf import _check_vcf_deps
-
-        _check_vcf_deps()
-    except ImportError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-
     if output_format not in ("pretty", "tsv", "json"):
         typer.echo(f"Error: Invalid format '{output_format}'.", err=True)
         raise typer.Exit(1)

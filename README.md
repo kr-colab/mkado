@@ -26,9 +26,6 @@ uv pip install mkado
 
 # Or install with pip
 pip install mkado
-
-# With VCF support (adds cyvcf2 and pysam)
-pip install mkado[vcf]
 ```
 
 ### Development Installation

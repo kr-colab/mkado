@@ -437,18 +437,14 @@ name = "mkado"
 version = "0.3.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cyvcf2" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "pysam" },
     { name = "rich" },
     { name = "scipy" },
     { name = "seaborn" },
     { name = "typer" },
-]
-
-[package.optional-dependencies]
-vcf = [
-    { name = "cyvcf2" },
-    { name = "pysam" },
 ]
 
 [package.dev-dependencies]
@@ -460,16 +456,15 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cyvcf2", marker = "extra == 'vcf'" },
+    { name = "cyvcf2" },
     { name = "matplotlib", specifier = ">=3.5.0" },
     { name = "numpy", specifier = ">=2.4.1" },
-    { name = "pysam", marker = "extra == 'vcf'" },
+    { name = "pysam" },
     { name = "rich", specifier = ">=14.2.0" },
     { name = "scipy", specifier = ">=1.17.0" },
     { name = "seaborn", specifier = ">=0.12.0" },
     { name = "typer", specifier = ">=0.15.0" },
 ]
-provides-extras = ["vcf"]
 
 [package.metadata.requires-dev]
 dev = [

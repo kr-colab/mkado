@@ -18,18 +18,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _check_vcf_deps() -> None:
-    """Check that cyvcf2 and pysam are available."""
-    try:
-        import cyvcf2  # noqa: F401
-    except ImportError:
-        raise ImportError("cyvcf2 is required for VCF input. Install with: pip install mkado[vcf]")
-    try:
-        import pysam  # noqa: F401
-    except ImportError:
-        raise ImportError("pysam is required for VCF input. Install with: pip install mkado[vcf]")
-
-
 @dataclass
 class _SnpInfo:
     """A biallelic SNP in a CDS region."""

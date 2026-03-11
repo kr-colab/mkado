@@ -1,25 +1,14 @@
-"""Tests for VCF input functionality.
-
-These tests require cyvcf2 and pysam. They are skipped if not installed.
-"""
+"""Tests for VCF input functionality."""
 
 from __future__ import annotations
 
-import textwrap
 from pathlib import Path
 
+import pysam
 import pytest
 
-pytest.importorskip("cyvcf2", reason="cyvcf2 not installed")
-pytest.importorskip("pysam", reason="pysam not installed")
-
-import cyvcf2  # noqa: E402
-import pysam  # noqa: E402
-
-from mkado.core.cds import CdsRegion  # noqa: E402
-from mkado.io.gff import parse_gff3  # noqa: E402
-from mkado.io.vcf import (  # noqa: E402
-    _check_vcf_deps,
+from mkado.core.cds import CdsRegion
+from mkado.io.vcf import (
     _reconstruct_codon_with_sub,
     extract_gene_data,
 )
@@ -66,9 +55,7 @@ def _write_vcf(path: Path, header_lines: list[str], records: list[str]) -> Path:
     lines = []
     lines.append("##fileformat=VCFv4.2")
     lines.append('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">')
-    lines.append(
-        "##contig=<ID=chr1,length=30>"
-    )
+    lines.append("##contig=<ID=chr1,length=30>")
     for h in header_lines:
         lines.append(h)
     lines.extend(records)
@@ -91,12 +78,8 @@ def ingroup_vcf_synonymous(tmp_path: Path) -> Path:
     4 diploid samples: 3 hom-ref, 1 het => alt_freq = 1/8 = 0.125
     VCF is 1-based, so pos=6.
     """
-    header = [
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsamp1\tsamp2\tsamp3\tsamp4"
-    ]
-    records = [
-        "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/1"
-    ]
+    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsamp1\tsamp2\tsamp3\tsamp4"]
+    records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/1"]
     return _write_vcf(tmp_path / "ingroup_syn", header, records)
 
 
@@ -108,12 +91,8 @@ def ingroup_vcf_nonsyn(tmp_path: Path) -> Path:
     4 diploid samples: 2 hom-ref, 2 het => alt_freq = 2/8 = 0.25
     VCF is 1-based, so pos=4.
     """
-    header = [
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsamp1\tsamp2\tsamp3\tsamp4"
-    ]
-    records = [
-        "chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"
-    ]
+    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsamp1\tsamp2\tsamp3\tsamp4"]
+    records = ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"]
     return _write_vcf(tmp_path / "ingroup_nonsyn", header, records)
 
 
@@ -124,54 +103,42 @@ def outgroup_vcf_divergent(tmp_path: Path) -> Path:
     Site at position 7 (0-based): A->G. VCF pos=8.
     Single sample, hom-alt.
     """
-    header = [
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"
-    ]
-    records = [
-        "chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"
-    ]
+    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"]
+    records = ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"]
     return _write_vcf(tmp_path / "outgroup", header, records)
 
 
 @pytest.fixture
 def outgroup_vcf_empty(tmp_path: Path) -> Path:
     """Outgroup VCF with no variants (all same as reference)."""
-    header = [
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"
-    ]
+    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"]
     return _write_vcf(tmp_path / "outgroup_empty", header, [])
 
 
 # ---- Tests ----
 
 
-class TestCheckDeps:
-    def test_deps_available(self):
-        """cyvcf2 and pysam should be available in test environment."""
-        _check_vcf_deps()  # Should not raise
-
-
 class TestCodonReconstruction:
     def test_plus_strand_substitution(self, synthetic_ref, simple_cds):
         fasta = pysam.FastaFile(str(synthetic_ref))
-        ref_fetch = lambda chrom, pos: fasta.fetch(chrom, pos, pos + 1).upper()
+
+        def ref_fetch(chrom, pos):
+            return fasta.fetch(chrom, pos, pos + 1).upper()
 
         # Substitute position 5 (C->T) in codon GCC (index 1)
-        ref_codon, alt_codon = _reconstruct_codon_with_sub(
-            simple_cds, 1, ref_fetch, 5, "T"
-        )
+        ref_codon, alt_codon = _reconstruct_codon_with_sub(simple_cds, 1, ref_fetch, 5, "T")
         assert ref_codon == "GCC"
         assert alt_codon == "GCT"
         fasta.close()
 
     def test_nonsynonymous_substitution(self, synthetic_ref, simple_cds):
         fasta = pysam.FastaFile(str(synthetic_ref))
-        ref_fetch = lambda chrom, pos: fasta.fetch(chrom, pos, pos + 1).upper()
+
+        def ref_fetch(chrom, pos):
+            return fasta.fetch(chrom, pos, pos + 1).upper()
 
         # Substitute position 3 (G->A) in codon GCC (index 1)
-        ref_codon, alt_codon = _reconstruct_codon_with_sub(
-            simple_cds, 1, ref_fetch, 3, "A"
-        )
+        ref_codon, alt_codon = _reconstruct_codon_with_sub(simple_cds, 1, ref_fetch, 3, "A")
         assert ref_codon == "GCC"
         assert alt_codon == "ACC"
         fasta.close()
@@ -254,7 +221,9 @@ class TestExtractGeneData:
         )
         assert len(poly_data.polymorphisms) == 0
 
-    def test_gene_id_propagated(self, synthetic_ref, simple_cds, ingroup_vcf_synonymous, outgroup_vcf_empty):
+    def test_gene_id_propagated(
+        self, synthetic_ref, simple_cds, ingroup_vcf_synonymous, outgroup_vcf_empty
+    ):
         poly_data, _ = extract_gene_data(
             vcf_path=ingroup_vcf_synonymous,
             outgroup_vcf_path=outgroup_vcf_empty,
@@ -265,26 +234,16 @@ class TestExtractGeneData:
 
 
 class TestPolarization:
-    def test_polarization_flips_frequency(
-        self, synthetic_ref, simple_cds, tmp_path
-    ):
+    def test_polarization_flips_frequency(self, synthetic_ref, simple_cds, tmp_path):
         """If outgroup carries ALT, derived freq should be 1 - alt_freq."""
         # Create ingroup with a SNP at pos 5 (C->T, synonymous)
-        header = [
-            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\ts4"
-        ]
-        ingroup_records = [
-            "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/1"
-        ]
+        header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\ts4"]
+        ingroup_records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/1"]
         ingroup_vcf = _write_vcf(tmp_path / "ig_polar", header, ingroup_records)
 
         # Outgroup also carries T at this position
-        out_header = [
-            "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"
-        ]
-        out_records = [
-            "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"
-        ]
+        out_header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"]
+        out_records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"]
         outgroup_vcf = _write_vcf(tmp_path / "og_polar", out_header, out_records)
 
         poly_data, _ = extract_gene_data(

@@ -25,10 +25,9 @@ dependencies = [
     "scipy>=1.17.0",
     "matplotlib>=3.5.0",
     "seaborn>=0.12.0",
+    "cyvcf2",
+    "pysam",
 ]
-
-[project.optional-dependencies]
-vcf = ["cyvcf2", "pysam"]
 
 [project.scripts]
 mkado = "mkado.cli:app"

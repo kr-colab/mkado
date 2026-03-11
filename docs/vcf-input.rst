@@ -5,16 +5,7 @@ MKado can run MK tests directly from VCF files, skipping the need to reconstruct
 
 This is useful when your starting point is a variant calling pipeline (e.g., GATK, bcftools) rather than pre-aligned coding sequences.
 
-Installation
-------------
-
-VCF support requires two additional dependencies that are not installed by default:
-
-.. code-block:: bash
-
-   pip install mkado[vcf]
-
-This installs `cyvcf2 <https://github.com/brentp/cyvcf2>`_ (VCF parsing) and `pysam <https://github.com/pysam-developers/pysam>`_ (indexed FASTA access). The base ``mkado`` package remains lightweight without these.
+VCF support is included in the standard ``mkado`` install via `cyvcf2 <https://github.com/brentp/cyvcf2>`_ (VCF parsing) and `pysam <https://github.com/pysam-developers/pysam>`_ (indexed FASTA access).
 
 Required Input Files
 --------------------
@@ -268,4 +259,4 @@ Comparison with FASTA Mode
      - Automatic from GFF3 exon structure
    * - Dependencies
      - None beyond base mkado
-     - cyvcf2, pysam (``pip install mkado[vcf]``)
+     - cyvcf2, pysam (included in standard install)
