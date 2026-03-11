@@ -13,6 +13,7 @@ A modern Python implementation of the McDonald-Kreitman test toolkit for detecti
 - **Asymptotic MK test**: Frequency-bin α estimates with exponential extrapolation (Messer & Petrov 2013)
 - **Tarone-Greenland α_TG**: Weighted multi-gene estimator that corrects for sample size heterogeneity (Stoletzki & Eyre-Walker 2011)
 - **Alternate genetic codes**: 24 NCBI genetic code tables (mitochondrial, plastid, etc.) selectable by name
+- **VCF input**: Go directly from VCF + reference + GFF3 annotation to MK test results (no FASTA alignment needed)
 - **Batch processing**: Process multiple genes with parallel execution and Benjamini-Hochberg correction for multiple testing
 - **Volcano plots**: Visualize batch results with publication-ready volcano plots
 - **Multiple output formats**: Pretty-print, TSV, and JSON
@@ -25,6 +26,9 @@ uv pip install mkado
 
 # Or install with pip
 pip install mkado
+
+# With VCF support (adds cyvcf2 and pysam)
+pip install mkado[vcf]
 ```
 
 ### Development Installation
@@ -55,6 +59,9 @@ mkado batch alignments/ -i "dmel" -o "dsim"
 
 # Batch with asymptotic test and 8 parallel workers
 mkado batch alignments/ -i "dmel" -o "dsim" -a -w 8
+
+# Run MK test directly from VCF files
+mkado vcf --vcf pop.vcf.gz --outgroup-vcf out.vcf.gz --ref genome.fa --gff genes.gff3
 
 # Get file info
 mkado info sequences.fa
@@ -163,6 +170,46 @@ mkado batch alignments/ -i "dmel" -o "dsim" -a --plot-asymptotic alpha_fit.png
 
 # Separate files mode
 mkado batch genes/ --ingroup-pattern "*_in.fa" --outgroup-pattern "*_out.fa"
+```
+
+### `mkado vcf`
+
+Run MK test from VCF + reference genome + GFF3 annotation. No pre-aligned FASTA files needed.
+
+```bash
+mkado vcf --vcf VCF --outgroup-vcf VCF --ref FASTA --gff GFF3 [OPTIONS]
+```
+
+**Key Options:**
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--vcf` | | Ingroup VCF (multi-sample, bgzipped+tabix recommended) |
+| `--outgroup-vcf` | | Single-sample outgroup VCF |
+| `--ref` | | Reference FASTA (plain or bgzipped, faidx-indexed) |
+| `--gff` | | GFF3 annotation (plain or gzipped) |
+| `--gene` | | Analyze a single gene by ID |
+| `--gene-list` | | File with gene IDs to analyze |
+| `--asymptotic` | `-a` | Use asymptotic MK test |
+| `--alpha-tg` | | Compute weighted α_TG |
+| `--imputed` | | Use imputed MK test |
+| `--aggregate/--per-gene` | | Aggregate or per-gene results |
+| `--workers` | `-w` | Parallel workers (0=auto) |
+| `--format` | `-f` | Output format: pretty, tsv, json |
+
+**Examples:**
+
+```bash
+# Standard MK test across all genes
+mkado vcf --vcf pop.vcf.gz --outgroup-vcf out.vcf.gz --ref genome.fa --gff genes.gff3
+
+# Asymptotic MK test
+mkado vcf --vcf pop.vcf.gz --outgroup-vcf out.vcf.gz --ref genome.fa --gff genes.gff3 -a
+
+# Single gene analysis
+mkado vcf --vcf pop.vcf.gz --outgroup-vcf out.vcf.gz --ref genome.fa --gff genes.gff3 --gene BRCA1
+
+# With parallel workers and TSV output
+mkado vcf --vcf pop.vcf.gz --outgroup-vcf out.vcf.gz --ref genome.fa --gff genes.gff3 -w 8 -f tsv
 ```
 
 ### `mkado codes`
