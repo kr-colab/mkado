@@ -69,6 +69,9 @@ class BatchTask:
     extract_only: bool = False
     """Only extract polymorphism data (for aggregated asymptotic mode)."""
 
+    code_table: int = 1
+    """NCBI genetic code table ID."""
+
 
 @dataclass
 class WorkerResult:
@@ -110,9 +113,11 @@ def process_gene(task: BatchTask) -> WorkerResult:
     from mkado.analysis.imputed import imputed_mk_test
     from mkado.analysis.mk_test import mk_test
     from mkado.analysis.polarized import polarized_mk_test
+    from mkado.core.codons import GeneticCode
     from mkado.core.sequences import SequenceSet
 
     gene_id = task.file_path.stem
+    genetic_code = GeneticCode(table_id=task.code_table) if task.code_table != 1 else None
 
     try:
         # Determine mode: combined file or separate files
@@ -152,6 +157,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     pool_polymorphisms=task.pool_polymorphisms,
                     gene_id=gene_id,
                     min_frequency=min_freq,
+                    genetic_code=genetic_code,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -164,6 +170,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     num_bins=task.bins,
                     bootstrap_replicates=task.bootstrap,
                     pool_polymorphisms=task.pool_polymorphisms,
+                    genetic_code=genetic_code,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -175,6 +182,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     reading_frame=task.reading_frame,
                     pool_polymorphisms=task.pool_polymorphisms,
                     gene_id=gene_id,
+                    genetic_code=genetic_code,
                 )
                 result = imputed_mk_test(poly_data, cutoff=task.imputed_cutoff)
                 return WorkerResult(gene_id=gene_id, result=result)
@@ -194,6 +202,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     reading_frame=task.reading_frame,
                     pool_polymorphisms=task.pool_polymorphisms,
                     min_frequency=min_freq,
+                    genetic_code=genetic_code,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -204,6 +213,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                 reading_frame=task.reading_frame,
                 pool_polymorphisms=task.pool_polymorphisms,
                 min_frequency=min_freq,
+                genetic_code=genetic_code,
             )
             return WorkerResult(gene_id=gene_id, result=result)
 
@@ -238,6 +248,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     pool_polymorphisms=task.pool_polymorphisms,
                     gene_id=gene_id,
                     min_frequency=min_freq,
+                    genetic_code=genetic_code,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -250,6 +261,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     num_bins=task.bins,
                     bootstrap_replicates=task.bootstrap,
                     pool_polymorphisms=task.pool_polymorphisms,
+                    genetic_code=genetic_code,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -261,6 +273,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     reading_frame=task.reading_frame,
                     pool_polymorphisms=task.pool_polymorphisms,
                     gene_id=gene_id,
+                    genetic_code=genetic_code,
                 )
                 result = imputed_mk_test(poly_data, cutoff=task.imputed_cutoff)
                 return WorkerResult(gene_id=gene_id, result=result)
@@ -274,6 +287,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     reading_frame=task.reading_frame,
                     pool_polymorphisms=task.pool_polymorphisms,
                     min_frequency=min_freq,
+                    genetic_code=genetic_code,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -284,6 +298,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                 reading_frame=task.reading_frame,
                 pool_polymorphisms=task.pool_polymorphisms,
                 min_frequency=min_freq,
+                genetic_code=genetic_code,
             )
             return WorkerResult(gene_id=gene_id, result=result)
 

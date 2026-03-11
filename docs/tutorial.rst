@@ -394,6 +394,110 @@ Key Differences
      - Standard MK, Polarized MK, α_TG
      - Asymptotic MK (aggregated batch mode)
 
+Genetic Code Tables
+-------------------
+
+By default, MKado uses the standard genetic code. For analyses involving mitochondrial or non-standard nuclear genomes, use ``--code-table`` to specify an alternate code by name or `NCBI table ID <https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi>`_:
+
+.. code-block:: bash
+
+   # By name
+   mkado test alignment.fa -i species1 -o species2 --code-table vertebrate-mito
+   mkado batch alignments/ -i species1 -o species2 --code-table invertebrate-mito
+
+   # By NCBI table ID
+   mkado test alignment.fa -i species1 -o species2 --code-table 2
+
+   # List all available codes
+   mkado codes
+
+The genetic code affects codon translation, synonymous site counting, and the classification of changes as synonymous or non-synonymous.
+
+Available Codes
+^^^^^^^^^^^^^^^
+
+.. list-table::
+   :header-rows: 1
+   :widths: 10 40 30
+
+   * - ID
+     - Name
+     - ``--code-table`` alias
+   * - 1
+     - Standard
+     - ``standard``
+   * - 2
+     - Vertebrate Mitochondrial
+     - ``vertebrate-mito``
+   * - 3
+     - Yeast Mitochondrial
+     - ``yeast-mito``
+   * - 4
+     - Mold / Protozoan / Coelenterate Mitochondrial; Mycoplasma; Spiroplasma
+     - ``mold-mito``, ``protozoan-mito``, ``mycoplasma``
+   * - 5
+     - Invertebrate Mitochondrial
+     - ``invertebrate-mito``
+   * - 6
+     - Ciliate, Dasycladacean and Hexamita Nuclear
+     - ``ciliate``
+   * - 9
+     - Echinoderm and Flatworm Mitochondrial
+     - ``echinoderm-mito``, ``flatworm-mito``
+   * - 10
+     - Euplotid Nuclear
+     - ``euplotid``
+   * - 11
+     - Bacterial, Archaeal and Plant Plastid
+     - ``bacterial``, ``archaeal``, ``plant-plastid``
+   * - 12
+     - Alternative Yeast Nuclear
+     - ``alt-yeast``
+   * - 13
+     - Ascidian Mitochondrial
+     - ``ascidian-mito``
+   * - 14
+     - Alternative Flatworm Mitochondrial
+     - ``alt-flatworm-mito``
+   * - 16
+     - Chlorophycean Mitochondrial
+     - ``chlorophycean-mito``
+   * - 21
+     - Trematode Mitochondrial
+     - ``trematode-mito``
+   * - 22
+     - Scenedesmus obliquus Mitochondrial
+     - ``scenedesmus-mito``
+   * - 23
+     - Thraustochytrium Mitochondrial
+     - ``thraustochytrium-mito``
+   * - 24
+     - Rhabdopleuridae Mitochondrial
+     - ``rhabdopleuridae-mito``
+   * - 25
+     - Candidate Division SR1 and Gracilibacteria
+     - ``sr1``, ``gracilibacteria``
+   * - 26
+     - Pachysolen tannophilus Nuclear
+     - ``pachysolen``
+   * - 27
+     - Karyorelictea Nuclear
+     - ``karyorelictea``
+   * - 29
+     - Mesodinium Nuclear
+     - ``mesodinium``
+   * - 30
+     - Peritrich Nuclear
+     - ``peritrich``
+   * - 31
+     - Blastocrithidia Nuclear
+     - ``blastocrithidia``
+   * - 33
+     - Cephalodiscidae Mitochondrial UAA-Tyr
+     - ``cephalodiscidae-mito``
+
+See the full `NCBI genetic code reference <https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi>`_ for codon assignment details.
+
 Output Formats
 --------------
 

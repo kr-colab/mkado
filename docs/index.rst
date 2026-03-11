@@ -15,6 +15,7 @@ Features
 - **Asymptotic MK test**: Frequency-bin alpha estimates with exponential extrapolation (`Messer & Petrov 2013`_)
 - **Imputed MK test**: Corrects for slightly deleterious mutations by imputation (`Murga-Moreno et al. 2022`_)
 - **Tarone-Greenland α_TG**: Weighted multi-gene estimator (`Stoletzki & Eyre-Walker 2011`_)
+- **Alternate genetic codes**: Support for all NCBI genetic code tables (mitochondrial, plastid, etc.)
 - **Batch processing**: Process multiple genes with parallel execution
 - **Volcano plots**: Visualize batch results with publication-ready volcano plots
 - **Multiple output formats**: Pretty-print, TSV, and JSON
