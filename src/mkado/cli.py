@@ -1301,13 +1301,12 @@ def vcf(
         typer.Option("--gff", help="GFF3 annotation file"),
     ],
     outgroup_vcf: Annotated[
-        Optional[Path],
+        Path,
         typer.Option(
             "--outgroup-vcf",
             help="Single-sample outgroup VCF (called against same reference)",
-            callback=validate_path_not_flag,
         ),
-    ] = None,
+    ],
     # === Gene selection ===
     gene: Annotated[
         Optional[str],
@@ -1413,20 +1412,13 @@ def vcf(
         typer.echo(f"Error: Invalid format '{output_format}'.", err=True)
         raise typer.Exit(1)
 
-    if outgroup_vcf is None:
-        typer.echo(
-            "Error: --outgroup-vcf is required for divergence estimation.",
-            err=True,
-        )
-        raise typer.Exit(1)
-
     # Validate file existence
     for path, name in [(vcf_file, "--vcf"), (ref, "--ref"), (gff, "--gff")]:
         if not path.exists():
             typer.echo(f"Error: {name} file not found: {path}", err=True)
             raise typer.Exit(1)
 
-    if outgroup_vcf and not outgroup_vcf.exists():
+    if not outgroup_vcf.exists():
         typer.echo(f"Error: --outgroup-vcf file not found: {outgroup_vcf}", err=True)
         raise typer.Exit(1)
 
