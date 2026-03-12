@@ -161,7 +161,7 @@ For downstream analysis:
 
    mkado batch alignments/ -i species1 -o species2 -f tsv > results.tsv
 
-Columns: ``gene``, ``Dn``, ``Ds``, ``Pn``, ``Ps``, ``p_value``, ``p_value_adjusted``, ``NI``, ``alpha``
+Columns: ``gene``, ``Dn``, ``Ds``, ``Pn``, ``Ps``, ``p_value``, ``p_value_adjusted``, ``NI``, ``alpha``, ``DoS``
 
 JSON
 ^^^^
@@ -186,10 +186,10 @@ Example output (TSV format):
 
 .. code-block:: text
 
-   gene        Dn   Ds   Pn  Ps  p_value   p_value_adjusted  NI        alpha
-   AGAP000010  79   176  3   6   1         1                 1.113924  -0.113924
-   AGAP000021  16   45   0   1   1         1                 0.000000  1.000000
-   AGAP000041  60   161  2   10  0.523748  1                 0.536667  0.463333
+   gene        Dn  Ds  Pn  Ps  p_value     p_value_adjusted  NI        alpha
+   AGAP000150  12  28  17  15  0.056485    0.143119          2.644444  -1.644444
+   AGAP000432  12  59  14  13  0.000853    0.005128          5.294872  -4.294872
+   AGAP001364  2   19  3   18  1           1                 1.583333  -0.583333
 
 Use ``p_value_adjusted`` when interpreting significance across multiple genes to control for false discoveries.
 
@@ -233,7 +233,7 @@ Example:
 .. code-block:: bash
 
    # Generate volcano plot with example data
-   mkado batch examples/anopheles_batch/ -i afun -o gamb --volcano volcano.png
+   mkado batch examples/anopheles_batch/ -i gamb -o afun --volcano volcano.png
 
 .. figure:: _static/volcano.png
    :width: 500px
@@ -284,22 +284,22 @@ Here's a complete workflow using the example data:
 .. code-block:: bash
 
    # 1. Check file info
-   mkado info examples/anopheles_batch/AGAP000074.fa
+   mkado info examples/anopheles_batch/AGAP000078.fa
 
    # 2. Run standard batch analysis
-   mkado batch examples/anopheles_batch/ -i afun -o gamb
+   mkado batch examples/anopheles_batch/ -i gamb -o afun
 
    # 3. Run asymptotic analysis with 20 frequency bins
-   mkado batch examples/anopheles_batch/ -i afun -o gamb -a -b 20
+   mkado batch examples/anopheles_batch/ -i gamb -o afun -a -b 20
 
    # 4. Export results for downstream analysis
-   mkado batch examples/anopheles_batch/ -i afun -o gamb -f tsv > results.tsv
+   mkado batch examples/anopheles_batch/ -i gamb -o afun -f tsv > results.tsv
 
    # 5. Generate a volcano plot for visualization
-   mkado batch examples/anopheles_batch/ -i afun -o gamb --volcano results.png
+   mkado batch examples/anopheles_batch/ -i gamb -o afun --volcano results.png
 
    # 6. Generate asymptotic alpha plot
-   mkado batch examples/anopheles_batch/ -i afun -o gamb -a -b 20 --plot-asymptotic asymptotic.png
+   mkado batch examples/anopheles_batch/ -i gamb -o afun -a -b 20 --plot-asymptotic asymptotic.png
 
 References
 ----------

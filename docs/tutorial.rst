@@ -33,7 +33,7 @@ Let's run a basic MK test using the example data.
 .. code-block:: bash
 
    # Get information about an alignment file
-   mkado info examples/anopheles_batch/AGAP000010.fa
+   mkado info examples/anopheles_batch/AGAP000078.fa
 
 This shows the number of sequences, sequence lengths, and sequence names.
 
@@ -42,7 +42,7 @@ This shows the number of sequences, sequence lengths, and sequence names.
 .. code-block:: bash
 
    # Standard MK test: gamb (ingroup) vs afun (outgroup)
-   mkado test examples/anopheles_batch/AGAP000010.fa -i gamb -o afun
+   mkado test examples/anopheles_batch/AGAP000078.fa -i gamb -o afun
 
 **Step 3: Interpret the output**
 
@@ -130,10 +130,10 @@ The output reports which model was selected (exponential or linear) along with t
 .. code-block:: bash
 
    # Run asymptotic MK test
-   mkado test examples/anopheles_batch/AGAP000010.fa -i gamb -o afun -a
+   mkado test examples/anopheles_batch/AGAP000078.fa -i gamb -o afun -a
 
    # Customize number of frequency bins
-   mkado test examples/anopheles_batch/AGAP000010.fa -i gamb -o afun -a -b 20
+   mkado test examples/anopheles_batch/AGAP000078.fa -i gamb -o afun -a -b 20
 
 The output includes:
 
@@ -194,8 +194,8 @@ The polarized MK test uses a **second outgroup** (typically a more distantly rel
 
 .. code-block:: bash
 
-   # Use amin as second outgroup for polarization
-   mkado test examples/anopheles_batch/AGAP000010.fa -i gamb -o afun --polarize-match amin
+   # Use a second outgroup for polarization
+   mkado test alignment.fa -i ingroup -o outgroup1 --polarize-match outgroup2
 
 Polarizing Fixed Differences
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
