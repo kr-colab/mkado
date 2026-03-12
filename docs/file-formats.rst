@@ -156,7 +156,7 @@ The ``examples/`` directory contains properly formatted example data:
 .. code-block:: bash
 
    # Examine example file
-   mkado info examples/anopheles_batch/AGAP000010.fa
+   mkado info examples/anopheles_batch/AGAP000078.fa
 
    # Run test on example
-   mkado test examples/anopheles_batch/AGAP000010.fa -i gamb -o afun
+   mkado test examples/anopheles_batch/AGAP000078.fa -i gamb -o afun
