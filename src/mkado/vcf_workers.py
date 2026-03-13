@@ -150,14 +150,13 @@ def process_vcf_chunk(chunk: VcfBatchChunk) -> list[WorkerResult]:
     Opens VCF and FASTA handles once, then processes all genes in the chunk.
     This avoids the per-gene overhead of opening file handles.
     """
-    import cyvcf2
     import pysam
 
+    from mkado.io.vcf import _open_vcf
+
     first = chunk.tasks[0]
-    ingroup_vcf = cyvcf2.VCF(str(first.vcf_path))
-    outgroup_vcf = (
-        cyvcf2.VCF(str(first.outgroup_vcf_path)) if first.outgroup_vcf_path else None
-    )
+    ingroup_vcf = _open_vcf(first.vcf_path)
+    outgroup_vcf = _open_vcf(first.outgroup_vcf_path) if first.outgroup_vcf_path else None
     ref_fasta = pysam.FastaFile(str(first.ref_fasta_path))
 
     results = []

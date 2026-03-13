@@ -1396,6 +1396,10 @@ def vcf(
         int,
         typer.Option("--workers", "-w", min=0, help="Parallel workers (0=auto, 1=sequential)"),
     ] = 0,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", help="Show warnings from htslib/VCF parsing"),
+    ] = False,
 ) -> None:
     """Run MK test from VCF + reference + GFF3 annotation.
 
@@ -1416,6 +1420,14 @@ def vcf(
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf out.vcf.gz -a
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf out.vcf.gz --gene BRCA1
     """
+    # Configure logging for htslib warnings
+    if verbose:
+        import logging
+        import sys
+
+        logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
+        logging.getLogger("mkado.io.vcf").setLevel(logging.DEBUG)
+
     if output_format not in ("pretty", "tsv", "json"):
         typer.echo(f"Error: Invalid format '{output_format}'.", err=True)
         raise typer.Exit(1)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import warnings
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,35 @@ if TYPE_CHECKING:
     pass
 
 logger = logging.getLogger(__name__)
+
+
+def _open_vcf(path: str | Path) -> object:
+    """Open a cyvcf2.VCF, capturing htslib stderr warnings via the Python logger.
+
+    htslib writes warnings (e.g., "FORMAT 'GT' not defined in header") directly
+    to file descriptor 2, bypassing Python's warning system. This function
+    redirects fd 2 to a pipe during the open, then routes any captured output
+    through the Python logger at DEBUG level.
+    """
+    import cyvcf2
+
+    r_fd, w_fd = os.pipe()
+    orig_fd = os.dup(2)
+    os.dup2(w_fd, 2)
+    os.close(w_fd)
+    try:
+        vcf = cyvcf2.VCF(str(path))
+    finally:
+        os.dup2(orig_fd, 2)
+        os.close(orig_fd)
+
+    with os.fdopen(r_fd, "r") as f:
+        captured = f.read()
+    if captured.strip():
+        for line in captured.strip().splitlines():
+            logger.debug("htslib: %s", line)
+
+    return vcf
 
 
 @dataclass
@@ -180,9 +210,7 @@ def _query_ingroup_snps(
     stats: GeneStats,
 ) -> list[_SnpInfo]:
     """Query ingroup VCF for biallelic SNPs overlapping a CDS region."""
-    import cyvcf2
-
-    vcf = cyvcf2.VCF(str(vcf_path))
+    vcf = _open_vcf(vcf_path)
     snps = _query_ingroup_snps_with_handle(vcf, cds, stats)
     vcf.close()
     return snps
@@ -244,9 +272,7 @@ def _query_outgroup_genotype(
     cds: CdsRegion,
 ) -> dict[int, str]:
     """Query outgroup VCF for genotypes at CDS positions."""
-    import cyvcf2
-
-    vcf = cyvcf2.VCF(str(vcf_path))
+    vcf = _open_vcf(vcf_path)
     outgroup_alleles = _query_outgroup_genotype_with_handle(vcf, cds)
     vcf.close()
     return outgroup_alleles
