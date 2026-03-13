@@ -1,7 +1,7 @@
 File Formats and Input Requirements
 ====================================
 
-MKado accepts aligned coding sequences in FASTA format. This page describes the input requirements and common pitfalls.
+MKado supports two input modes: **FASTA** (aligned coding sequences for ``mkado test`` and ``mkado batch``) and **VCF** (variant calls for ``mkado vcf``). This page describes the input requirements for both.
 
 FASTA Format
 ------------
@@ -148,10 +148,44 @@ Unequal Sequence Lengths
 
 **Solution**: Re-align sequences or check for truncated sequences
 
+VCF Mode Input Files
+--------------------
+
+The ``mkado vcf`` command requires three file types in addition to a GFF3 annotation. See :doc:`vcf-input` for the full guide.
+
+VCF Files
+^^^^^^^^^
+
+Both the ingroup (``--vcf``) and outgroup (``--outgroup-vcf``) inputs are standard VCF files:
+
+- Bgzipped + tabix-indexed is recommended for performance, but uncompressed VCF also works
+- The ingroup VCF should be a multi-sample population VCF with genotype fields
+- The outgroup VCF should be a single-sample VCF called against the **same reference genome**
+- Multi-allelic sites should be decomposed beforehand with for example ``bcftools norm -m-``
+
+Reference FASTA
+^^^^^^^^^^^^^^^
+
+The genome assembly both VCFs were called against (``--ref``):
+
+- Must be indexed with ``samtools faidx`` (creates a ``.fai`` file)
+- Both plain FASTA and bgzipped FASTA (with ``.gzi`` index) are supported
+- Only **bgzip** compression is supported, not plain gzip (random access requires BGZF block structure)
+
+GFF3 Annotation
+^^^^^^^^^^^^^^^
+
+A GFF3 file defining gene models (``--gff``):
+
+- Must contain ``gene``, ``mRNA``/``transcript``, and ``CDS`` features linked by ``Parent`` attributes
+- Both plain text and gzip-compressed (``.gff3.gz``) files are supported
+- MKado selects the longest transcript per gene automatically
+- Genes where the total CDS length is not divisible by 3 are skipped
+
 Example Data
 ------------
 
-The ``examples/`` directory contains properly formatted example data:
+The ``examples/`` directory contains properly formatted FASTA example data:
 
 .. code-block:: bash
 

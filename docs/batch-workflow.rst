@@ -3,6 +3,10 @@ Batch Processing Workflow
 
 MKado's batch processing mode allows you to analyze multiple genes efficiently, with support for parallel execution and flexible output formats.
 
+.. note::
+
+   If you have a VCF file rather than pre-aligned FASTA, see :doc:`vcf-input` instead. ``mkado vcf`` supports the same analysis modes, plotting, and output formats as ``mkado batch``.
+
 Basic Batch Processing
 ----------------------
 

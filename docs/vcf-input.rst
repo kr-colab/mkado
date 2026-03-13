@@ -105,30 +105,64 @@ Gene IDs are matched against both the ``ID`` and ``Name`` attributes of gene fea
 Analysis Modes
 --------------
 
-All analysis types available in ``mkado batch`` are supported:
+All analysis types available in ``mkado batch`` are supported. By default, multi-gene modes produce **aggregated** results; use ``--per-gene`` for per-gene output.
 
 .. code-block:: bash
 
-   # Standard MK test (default)
+   # Standard MK test (per-gene output with FDR correction)
    mkado vcf ...
 
-   # Asymptotic MK test (aggregated)
+   # Asymptotic MK test — aggregated across genes (default)
    mkado vcf ... --asymptotic
 
-   # Asymptotic MK test (per-gene)
+   # Asymptotic MK test — per-gene
    mkado vcf ... --asymptotic --per-gene
 
-   # Imputed MK test
+   # Imputed MK test — aggregated (default) or per-gene
    mkado vcf ... --imputed
+   mkado vcf ... --imputed --per-gene
 
-   # Tarone-Greenland weighted alpha
+   # Tarone-Greenland weighted alpha (always aggregated)
    mkado vcf ... --alpha-tg
 
-   # With frequency filtering
+See :doc:`asymptotic`, :doc:`imputed`, and :doc:`alpha-tg` for details on each method.
+
+Frequency Filtering
+^^^^^^^^^^^^^^^^^^^
+
+Two options control which polymorphisms enter the analysis:
+
+.. code-block:: bash
+
+   # Exclude polymorphisms below 5% derived allele frequency
    mkado vcf ... --min-freq 0.05
+
+   # Exclude singletons 
    mkado vcf ... --no-singletons
 
-See :doc:`tutorial` for details on each analysis type.
+.. note::
+
+   ``--min-freq`` and ``--no-singletons`` cannot be used with ``--asymptotic`` or ``--imputed``. The asymptotic test uses ``--freq-cutoffs`` instead. See :doc:`tutorial` for the full explanation of frequency filtering options.
+
+Additional Options
+^^^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+   # Frequency bins for asymptotic analysis (default: 10)
+   mkado vcf ... --asymptotic -b 20
+
+   # Bootstrap replicates for confidence intervals (default: 100)
+   mkado vcf ... --asymptotic --bootstrap 500
+
+   # Frequency cutoffs for asymptotic curve fitting (default: 0.1,0.9)
+   mkado vcf ... --asymptotic --freq-cutoffs 0.15,0.85
+
+   # Non-standard genetic code (by name or NCBI table ID)
+   mkado vcf ... --code-table invertebrate-mito
+   mkado vcf ... --code-table 5
+
+See :doc:`tutorial` for the full list of genetic codes.
 
 How It Works
 ------------
@@ -197,6 +231,39 @@ Output Formats
 
    # JSON
    mkado vcf ... -f json > results.json
+
+TSV Output Columns
+^^^^^^^^^^^^^^^^^^
+
+Per-gene standard MK output (the default multi-gene mode) produces the same columns as ``mkado batch``:
+
+``gene``, ``Dn``, ``Ds``, ``Pn``, ``Ps``, ``p_value``, ``p_value_adjusted``, ``NI``, ``alpha``, ``DoS``
+
+- **p_value**: Raw Fisher's exact test p-value
+- **p_value_adjusted**: Benjamini-Hochberg corrected p-value (controls false discovery rate across genes)
+
+Single-gene mode (``--gene``) outputs a single result in the chosen format rather than the batch table.
+
+Multiple Testing Correction
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+When multiple genes are tested, MKado automatically applies **Benjamini-Hochberg (BH) correction** for false discovery rate control, identical to ``mkado batch``. Use the ``p_value_adjusted`` column when assessing significance across genes.
+
+Plotting
+^^^^^^^^
+
+.. code-block:: bash
+
+   # Volcano plot (per-gene standard MK mode)
+   mkado vcf ... --volcano results.png
+   mkado vcf ... --volcano figure.pdf
+
+   # Asymptotic alpha(x) plot (aggregated asymptotic mode)
+   mkado vcf ... --asymptotic --plot-asymptotic alpha_fit.png
+
+The volcano plot shows -log\ :sub:`10`\ (NI) vs. -log\ :sub:`10`\ (p-value) with significant genes highlighted. See :doc:`batch-workflow` for interpretation details.
+
+The asymptotic alpha plot shows observed per-bin alpha values with the fitted curve and asymptotic estimate. See :doc:`batch-workflow` for details.
 
 Preparing Your Data
 -------------------

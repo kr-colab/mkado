@@ -514,10 +514,26 @@ MKado supports multiple output formats:
    # JSON format
    mkado test alignment.fa -i species1 -o species2 -f json
 
+Working with VCF Data
+---------------------
+
+If your starting point is a variant calling pipeline (e.g., GATK, bcftools) rather than pre-aligned coding sequences, you can skip FASTA alignment entirely and use ``mkado vcf``. This mode takes an ingroup VCF, an outgroup VCF, a reference genome, and a GFF3 annotation, and supports all the same analyses described above: standard MK, asymptotic, imputed, and alpha-TG.
+
+.. code-block:: bash
+
+   mkado vcf \
+       --vcf population.vcf.gz \
+       --outgroup-vcf outgroup.vcf.gz \
+       --ref reference.fa \
+       --gff annotation.gff3
+
+See :doc:`vcf-input` for the full guide, including data preparation, gene filtering, plotting, and all available options.
+
 Next Steps
 ----------
 
-- Learn about :doc:`batch-workflow` for processing multiple genes
+- Learn about :doc:`batch-workflow` for processing multiple genes from FASTA
+- Use :doc:`vcf-input` for VCF-based MK analysis
 - Explore :doc:`asymptotic` for the full asymptotic MK methodology
 - Understand :doc:`alpha-tg` for weighted multi-gene estimates
 - Review :doc:`file-formats` for input requirements
