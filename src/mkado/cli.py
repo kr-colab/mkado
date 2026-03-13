@@ -1375,6 +1375,23 @@ def vcf(
             help="Genetic code: name or NCBI table ID",
         ),
     ] = "standard",
+    # === Plot options ===
+    plot_asymptotic: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--plot-asymptotic",
+            help="Generate alpha(x) plot for asymptotic test (PNG, PDF, or SVG)",
+            callback=validate_path_not_flag,
+        ),
+    ] = None,
+    volcano: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--volcano",
+            help="Generate volcano plot and save to specified path (PNG, PDF, or SVG)",
+            callback=validate_path_not_flag,
+        ),
+    ] = None,
     workers: Annotated[
         int,
         typer.Option("--workers", "-w", min=0, help="Parallel workers (0=auto, 1=sequential)"),
@@ -1607,6 +1624,14 @@ def vcf(
                 frequency_cutoffs=frequency_cutoffs,
             )
             typer.echo(format_result(result, fmt))
+            if plot_asymptotic:
+                from mkado.io.plotting import create_asymptotic_plot
+
+                try:
+                    create_asymptotic_plot(result, plot_asymptotic)
+                    typer.echo(f"Asymptotic plot saved to {plot_asymptotic}", err=True)
+                except Exception as e:
+                    typer.echo(f"Could not generate asymptotic plot: {e}", err=True)
         else:
             typer.echo("No valid gene data extracted", err=True)
         return
@@ -1649,6 +1674,23 @@ def vcf(
     if results_list:
         adjusted_pvalues = compute_adjusted_pvalues(results_list)
         typer.echo(format_batch_results(results_list, fmt, adjusted_pvalues))
+
+        # Generate volcano plot if requested
+        if volcano:
+            from mkado.io.plotting import create_volcano_plot
+
+            try:
+                create_volcano_plot(results_list, volcano)
+                typer.echo(f"Volcano plot saved to {volcano}", err=True)
+            except Exception as e:
+                typer.echo(f"Could not generate volcano plot: {e}", err=True)
+
+        # Warn if --plot-asymptotic was used without --asymptotic
+        if plot_asymptotic and not use_asymptotic:
+            typer.echo(
+                "Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)",
+                err=True,
+            )
     else:
         typer.echo("No results to display", err=True)
 

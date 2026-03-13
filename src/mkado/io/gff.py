@@ -156,7 +156,7 @@ def parse_gff3(
             first_cds_phase = sorted_cds[0]["phase"]
 
         region = CdsRegion(
-            gene_id=display_name,
+            gene_id=gene_id,
             transcript_id=best_tid,
             chrom=chrom,
             exons=exons,

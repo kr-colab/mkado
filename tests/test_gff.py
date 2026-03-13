@@ -56,8 +56,8 @@ def test_parse_simple_gff3(simple_gff3: Path):
     regions = parse_gff3(simple_gff3)
     assert len(regions) == 2
 
-    # Find GeneA (plus strand, two exons)
-    gene_a = [r for r in regions if r.gene_id == "GeneA"]
+    # Find gene1 (plus strand, two exons)
+    gene_a = [r for r in regions if r.gene_id == "gene1"]
     assert len(gene_a) == 1
     cds = gene_a[0]
     assert cds.chrom == "chr1"
@@ -69,8 +69,8 @@ def test_parse_simple_gff3(simple_gff3: Path):
     assert cds.cds_length == 18  # 9 + 9
     assert cds.is_valid()
 
-    # GeneB (minus strand, single exon)
-    gene_b = [r for r in regions if r.gene_id == "GeneB"]
+    # gene2 (minus strand, single exon)
+    gene_b = [r for r in regions if r.gene_id == "gene2"]
     assert len(gene_b) == 1
     cds_b = gene_b[0]
     assert cds_b.chrom == "chr2"
@@ -89,13 +89,13 @@ def test_parse_filters_invalid_cds(simple_gff3: Path):
 def test_parse_with_gene_filter(simple_gff3: Path):
     regions = parse_gff3(simple_gff3, gene_ids={"GeneA"})
     gene_ids = {r.gene_id for r in regions}
-    assert "GeneB" not in gene_ids
+    assert "gene2" not in gene_ids
 
 
 def test_selects_longest_transcript(multi_transcript_gff3: Path):
     regions = parse_gff3(multi_transcript_gff3)
     if regions:
-        gene_a = [r for r in regions if r.gene_id == "GeneA"]
+        gene_a = [r for r in regions if r.gene_id == "gene1"]
         if gene_a:
             cds = gene_a[0]
             # tx_long has 99 + 201 = 300 bases (longer than tx_short's 99)
@@ -120,7 +120,7 @@ def test_parse_valid_cds(valid_gff3: Path):
     regions = parse_gff3(valid_gff3)
     assert len(regions) == 1
     cds = regions[0]
-    assert cds.gene_id == "ValidGene"
+    assert cds.gene_id == "gene1"
     assert cds.cds_length == 9
     assert cds.num_codons() == 3
     assert cds.is_valid()
@@ -161,4 +161,4 @@ def test_parse_gzipped_gff3(tmp_path: Path):
         f.write(content)
     regions = parse_gff3(gff_path)
     assert len(regions) == 1
-    assert regions[0].gene_id == "GzGene"
+    assert regions[0].gene_id == "gene1"
