@@ -1420,13 +1420,15 @@ def vcf(
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf out.vcf.gz -a
         mkado vcf --vcf pop.vcf.gz --ref genome.fa --gff genes.gff3 --outgroup-vcf out.vcf.gz --gene BRCA1
     """
-    # Configure logging for htslib warnings
-    if verbose:
-        import logging
-        import sys
+    # Configure logging — always show warnings (e.g., volcano plot exclusions),
+    # --verbose also enables debug messages (e.g., htslib warnings, per-gene details)
+    import logging as _logging
+    import sys as _sys
 
-        logging.basicConfig(level=logging.WARNING, format="%(message)s", stream=sys.stderr)
-        logging.getLogger("mkado.io.vcf").setLevel(logging.DEBUG)
+    _logging.basicConfig(level=_logging.WARNING, format="%(message)s", stream=_sys.stderr)
+    if verbose:
+        _logging.getLogger("mkado.io.vcf").setLevel(_logging.DEBUG)
+        _logging.getLogger("mkado.io.plotting").setLevel(_logging.DEBUG)
 
     if output_format not in ("pretty", "tsv", "json"):
         typer.echo(f"Error: Invalid format '{output_format}'.", err=True)

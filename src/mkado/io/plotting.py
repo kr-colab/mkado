@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,6 +12,8 @@ if TYPE_CHECKING:
     from mkado.analysis.asymptotic import AsymptoticMKResult
     from mkado.analysis.mk_test import MKResult
     from mkado.analysis.polarized import PolarizedMKResult
+
+logger = logging.getLogger(__name__)
 
 
 def create_volcano_plot(
@@ -37,10 +40,13 @@ def create_volcano_plot(
     # Set seaborn dark grid style for modern look
     sns.set_theme(style="darkgrid")
 
-    # Extract NI and p-values
+    # Extract NI and p-values, tracking why genes are excluded
     ni_values = []
     p_values = []
     gene_names = []
+    skipped_ni_none = 0  # NI undefined (Dn=0 or Ds=0 or Ps=0)
+    skipped_ni_zero = 0  # NI=0 (Pn=0)
+    skipped_pval = 0  # p-value invalid
 
     for name, result in results:
         if isinstance(result, MKResult):
@@ -53,12 +59,37 @@ def create_volcano_plot(
             continue
 
         # Skip if NI is None or invalid
-        if ni is None or ni <= 0 or pval <= 0:
+        if ni is None:
+            skipped_ni_none += 1
+            logger.debug("volcano: skipping %s (NI undefined — Dn, Ds, or Ps is zero)", name)
+            continue
+        if ni <= 0:
+            skipped_ni_zero += 1
+            logger.debug("volcano: skipping %s (NI=0 — Pn is zero)", name)
+            continue
+        if pval <= 0:
+            skipped_pval += 1
             continue
 
         ni_values.append(ni)
         p_values.append(pval)
         gene_names.append(name)
+
+    n_skipped = skipped_ni_none + skipped_ni_zero + skipped_pval
+    if n_skipped > 0:
+        parts = []
+        if skipped_ni_none > 0:
+            parts.append(f"{skipped_ni_none} with undefined NI (Dn, Ds, or Ps = 0)")
+        if skipped_ni_zero > 0:
+            parts.append(f"{skipped_ni_zero} with NI = 0 (Pn = 0)")
+        if skipped_pval > 0:
+            parts.append(f"{skipped_pval} with invalid p-value")
+        logger.warning(
+            "Volcano plot: %d/%d genes excluded — %s",
+            n_skipped,
+            len(results),
+            "; ".join(parts),
+        )
 
     if not ni_values:
         raise ValueError("No valid NI/p-value pairs found in results")
