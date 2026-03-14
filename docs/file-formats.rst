@@ -181,6 +181,7 @@ A GFF3 file defining gene models (``--gff``):
 - Both plain text and gzip-compressed (``.gff3.gz``) files are supported
 - MKado selects the longest transcript per gene automatically
 - Genes where the total CDS length is not divisible by 3 are skipped
+- **GTF format is not supported** — MKado requires GFF3 (``key=value`` attributes, not GTF's ``key "value"`` style). Convert with ``gffread annotation.gtf -o annotation.gff3`` if needed.
 
 Example Data
 ------------

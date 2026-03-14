@@ -59,6 +59,14 @@ A GFF3 file defining gene models with CDS features. Both plain text and gzip-com
 
 The parser extracts CDS features, groups them by transcript (via the ``Parent`` attribute), and selects the longest transcript per gene. Genes where the total CDS length is not divisible by 3 are skipped.
 
+.. warning::
+
+   **GTF format is not supported.** MKado requires GFF3 (``key=value`` attributes). If you have a GTF file (``key "value"`` attributes), convert it first — for example with `gffread <https://github.com/gpertea/gffread>`_:
+
+   .. code-block:: bash
+
+      gffread annotation.gtf -o annotation.gff3
+
 Basic Usage
 -----------
 
