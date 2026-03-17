@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0] - 2026-03-17
+
+### Added
+- `mkado vcf` command: run MK tests directly from VCF + reference FASTA + GFF3 annotation
+- Chunked parallel VCF processing for improved performance
+- GFF3 parser with GTF format detection, malformed line handling, and hierarchy validation warnings
+- `--verbose` flag for VCF mode to surface htslib, GFF parsing, and volcano plot diagnostics
+- Example VCF dataset in `examples/example_vcf/`
+- VCF input documentation (`docs/vcf-input.rst`)
+
+### Fixed
+- `cds_length` property called as method in GFF parser logging
+
 ## [0.3.0] - 2026-03-10
 
 ### Added
@@ -41,6 +54,7 @@
 
 - Initial release
 
+[0.4.0]: https://github.com/kr-colab/mkado/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kr-colab/mkado/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kr-colab/mkado/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/kr-colab/mkado/compare/v0.1.1...v0.1.2
