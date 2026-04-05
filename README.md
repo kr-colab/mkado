@@ -1,6 +1,7 @@
 # MKado 御門
 
 [![Documentation Status](https://readthedocs.org/projects/mkado/badge/?version=latest)](https://mkado.readthedocs.io/en/latest/?badge=latest)
+[![bioRxiv](https://img.shields.io/endpoint?url=https%3A%2F%2Fandrewkern.github.io%2Fbiorxiv-badge%2Fbadges%2F10.64898__2026.03.02.709122.json&v=1)](https://doi.org/10.64898/2026.03.02.709122)
 
 A modern Python implementation of the McDonald-Kreitman test toolkit for detecting selection in molecular evolution.
 
