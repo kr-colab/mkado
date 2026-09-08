@@ -33,13 +33,12 @@ def _open_vcf(path: str | Path) -> object:
     orig_fd = os.dup(2)
     os.dup2(w_fd, 2)
     os.close(w_fd)
-    try:
-        vcf = cyvcf2.VCF(str(path))
-    finally:
-        os.dup2(orig_fd, 2)
-        os.close(orig_fd)
-
     with os.fdopen(r_fd, "r") as f:
+        try:
+            vcf = cyvcf2.VCF(str(path))
+        finally:
+            os.dup2(orig_fd, 2)
+            os.close(orig_fd)
         captured = f.read()
     if captured.strip():
         for line in captured.strip().splitlines():
