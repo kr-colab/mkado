@@ -720,3 +720,13 @@ class TestCliError:
         assert isinstance(exit_exception, typer.Exit)
         assert exit_exception.exit_code == 1
         assert capsys.readouterr().err == "Error: the thing went wrong\n"
+
+
+def test_batch_with_no_results_succeeds(tmp_path: Path) -> None:
+    """Unanalysable input warns rather than errors, so an empty result set is not a failure."""
+    alignments = tmp_path / "alignments"
+    alignments.mkdir()
+    (alignments / "gene1.fa").write_text(">speciesA_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+    result = runner.invoke(app, ["batch", str(alignments), "-i", "nomatch", "-o", "alsonomatch"])
+    assert result.exit_code == 0
+    assert "No results to display" in result.output

@@ -343,6 +343,18 @@ Here's a complete workflow using the example data:
    # 6. Generate asymptotic alpha plot
    mkado batch examples/anopheles_batch/ -i gamb -o afun -a -b 20 --plot-asymptotic asymptotic.png
 
+Exit Status
+-----------
+
+``mkado batch`` exits 0 on success, including when no gene produced a result. An
+empty result set is a normal outcome: input that cannot be analysed is reported as a
+warning and the run still succeeds.
+
+It exits 1 when the run could not proceed, which covers invalid options, missing or
+unreadable input files, an input selection that matched nothing, and a result set that
+is empty because every gene errored. In that last case the per-gene errors are printed
+first and the summary line says every gene failed.
+
 References
 ----------
 
