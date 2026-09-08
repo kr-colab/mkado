@@ -43,6 +43,25 @@ class AlignedPair:
         """
         return self.ingroup.codon_set(codon_index) | self.outgroup.codon_set(codon_index)
 
+    def combined_codon_counts(self, codon_index: int) -> dict[str, int]:
+        """Count each clean codon at a position over both groups together.
+
+        Adding the two frequency spectra instead would weight the groups equally
+        regardless of how many sequences each holds.
+
+        Args:
+            codon_index: Zero-based codon index
+
+        Returns:
+            Dict mapping codon strings to the number of sequences carrying them
+        """
+        ingroup_counts, _ = self.ingroup.site_codon_counts(codon_index)
+        outgroup_counts, _ = self.outgroup.site_codon_counts(codon_index)
+        combined = dict(ingroup_counts)
+        for codon, count in outgroup_counts.items():
+            combined[codon] = combined.get(codon, 0) + count
+        return combined
+
     def combined_codon_set_clean(self, codon_index: int) -> set[str]:
         """Get all clean unique codons at a position from both groups.
 
@@ -193,18 +212,20 @@ class AlignedPair:
 
         return (nonsyn, syn)
 
-    def classify_polymorphism(self, codon_index: int) -> tuple[int, int] | None:
-        """Classify a polymorphism as synonymous/non-synonymous.
+    def _classify_against_major(self, counts: dict[str, int]) -> tuple[int, int] | None:
+        """Classify a codon's alleles against the most common one.
+
+        Every allele is compared with the majority codon, and each nucleotide position
+        contributes at most once, so one mutation is not counted down two paths.
 
         Args:
-            codon_index: Zero-based codon index
+            counts: Codon counts at this position over the sample being classified.
 
         Returns:
-            Tuple of (non_synonymous_count, synonymous_count), or None if
-            not a valid polymorphism
+            Tuple of (non_synonymous_count, synonymous_count), or None if not a valid
+            polymorphism.
         """
-        codons = list(self.ingroup.codon_set_clean(codon_index))
-
+        codons = list(counts)
         if len(codons) < 2:
             return None
 
@@ -216,31 +237,35 @@ class AlignedPair:
             syn = sum(1 for change_type, _ in path if change_type == "S")
             return (nonsyn, syn)
 
-        # For >2 codons, find shortest paths between all pairs
         total_nonsyn = 0
         total_syn = 0
         counted_positions: set[int] = set()
-
-        # Use a simple approach: compare each codon to the most common one
-        freqs = self.ingroup.site_frequency_spectrum(codon_index)
-        if not freqs:
-            return None
-
-        major_codon = max(freqs.keys(), key=lambda c: freqs[c])
+        major_codon = max(counts, key=lambda c: counts[c])
         for codon in codons:
             if codon == major_codon:
                 continue
-            path = self.genetic_code.get_path(major_codon, codon)
-            if path:
-                for change_type, pos in path:
-                    if pos not in counted_positions:
-                        if change_type == "R":
-                            total_nonsyn += 1
-                        else:
-                            total_syn += 1
-                        counted_positions.add(pos)
+            for change_type, pos in self.genetic_code.get_path(major_codon, codon):
+                if pos not in counted_positions:
+                    if change_type == "R":
+                        total_nonsyn += 1
+                    else:
+                        total_syn += 1
+                    counted_positions.add(pos)
 
         return (total_nonsyn, total_syn)
+
+    def classify_polymorphism(self, codon_index: int) -> tuple[int, int] | None:
+        """Classify a polymorphism as synonymous/non-synonymous.
+
+        Args:
+            codon_index: Zero-based codon index
+
+        Returns:
+            Tuple of (non_synonymous_count, synonymous_count), or None if
+            not a valid polymorphism
+        """
+        counts, _ = self.ingroup.site_codon_counts(codon_index)
+        return self._classify_against_major(counts)
 
     def classify_polymorphism_pooled(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a polymorphism using codons from both populations.
@@ -255,55 +280,7 @@ class AlignedPair:
             Tuple of (non_synonymous_count, synonymous_count), or None if
             not a valid polymorphism
         """
-        # Get unique codons from both populations
-        codons = list(self.combined_codon_set_clean(codon_index))
-
-        if len(codons) < 2:
-            return None
-
-        if len(codons) == 2:
-            path = self.genetic_code.get_path(codons[0], codons[1])
-            if not path:
-                return None
-            nonsyn = sum(1 for change_type, _ in path if change_type == "R")
-            syn = sum(1 for change_type, _ in path if change_type == "S")
-            return (nonsyn, syn)
-
-        # For >2 codons, find shortest paths from most common to others
-        # Use combined frequency spectrum
-        total_nonsyn = 0
-        total_syn = 0
-        counted_positions: set[int] = set()
-
-        # Get frequencies from both populations
-        in_freqs = self.ingroup.site_frequency_spectrum(codon_index)
-        out_freqs = self.outgroup.site_frequency_spectrum(codon_index)
-
-        # Merge frequencies
-        combined_freqs: dict[str, int] = {}
-        for codon, count in (in_freqs or {}).items():
-            combined_freqs[codon] = combined_freqs.get(codon, 0) + count
-        for codon, count in (out_freqs or {}).items():
-            combined_freqs[codon] = combined_freqs.get(codon, 0) + count
-
-        if not combined_freqs:
-            return None
-
-        major_codon = max(combined_freqs.keys(), key=lambda c: combined_freqs[c])
-        for codon in codons:
-            if codon == major_codon:
-                continue
-            path = self.genetic_code.get_path(major_codon, codon)
-            if path:
-                for change_type, pos in path:
-                    if pos not in counted_positions:
-                        if change_type == "R":
-                            total_nonsyn += 1
-                        else:
-                            total_syn += 1
-                        counted_positions.add(pos)
-
-        return (total_nonsyn, total_syn)
+        return self._classify_against_major(self.combined_codon_counts(codon_index))
 
 
 @dataclass
