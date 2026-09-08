@@ -46,14 +46,25 @@ def _open_vcf(path: str | Path) -> object:
 
 @dataclass
 class _SnpInfo:
-    """A biallelic SNP in a CDS region."""
+    """A biallelic ingroup SNP with its diploid allele counts."""
 
     pos: int  # 0-based genomic position
     ref: str
     alt: str
-    alt_freq: float  # ALT allele frequency in ingroup
-    n_samples: int  # number of non-missing samples
-    is_fixed_alt: bool  # all ingroup samples are ALT
+    n_ref: int
+    n_alt: int
+
+    @property
+    def total(self) -> int:
+        return self.n_ref + self.n_alt
+
+    @property
+    def alt_freq(self) -> float:
+        return self.n_alt / self.total
+
+    @property
+    def is_fixed_alt(self) -> bool:
+        return self.n_ref == 0
 
 
 @dataclass
@@ -183,20 +194,7 @@ def _query_ingroup_snps_with_handle(
                 stats.skipped_missing += 1
                 continue
 
-            alt_freq = n_alt / total
-            n_samples = sum(1 for gt in gt_types if gt != 2)
-            is_fixed_alt = n_ref == 0
-
-            snps.append(
-                _SnpInfo(
-                    pos=pos_0,
-                    ref=ref,
-                    alt=alt,
-                    alt_freq=alt_freq,
-                    n_samples=n_samples,
-                    is_fixed_alt=is_fixed_alt,
-                )
-            )
+            snps.append(_SnpInfo(pos=pos_0, ref=ref, alt=alt, n_ref=n_ref, n_alt=n_alt))
 
     return snps
 
@@ -298,7 +296,7 @@ def extract_gene_data(
         ref_fasta_path: Path to indexed reference FASTA.
         genetic_code: Genetic code for classification (standard if None).
         min_frequency: Minimum derived allele frequency threshold.
-        no_singletons: If True, exclude singletons.
+        no_singletons: If True, exclude sites where the derived allele is seen once.
         ingroup_vcf: Pre-opened cyvcf2.VCF handle for ingroup (optional).
         outgroup_vcf: Pre-opened cyvcf2.VCF handle for outgroup (optional).
         ref_fasta: Pre-opened pysam.FastaFile handle (optional).
@@ -322,13 +320,6 @@ def extract_gene_data(
         ingroup_snps = _query_ingroup_snps_with_handle(ingroup_vcf, cds, stats)
     else:
         ingroup_snps = _query_ingroup_snps(vcf_path, cds, stats)
-
-    # Calculate singleton threshold
-    if no_singletons and ingroup_snps:
-        max_n = max(s.n_samples for s in ingroup_snps)
-        singleton_freq = 1.0 / (2 * max_n)  # diploid
-        if singleton_freq > min_frequency:
-            min_frequency = singleton_freq
 
     # Get outgroup genotypes
     outgroup_alleles: dict[int, str] = {}
@@ -373,13 +364,16 @@ def extract_gene_data(
         if is_syn is None:
             continue
 
-        # Determine derived allele frequency
-        # If outgroup carries ALT, then REF is derived
-        derived_freq = snp.alt_freq
+        # If the outgroup carries ALT, REF is the derived allele.
+        derived_count = snp.n_alt
         if snp.pos in outgroup_alleles and outgroup_alleles[snp.pos] == snp.alt:
-            derived_freq = 1.0 - snp.alt_freq
+            derived_count = snp.n_ref
+        derived_freq = derived_count / snp.total
 
-        # Apply frequency filter
+        # A singleton is one copy of the derived allele, whatever the number of
+        # called samples, so it is filtered by count rather than by frequency.
+        if no_singletons and derived_count <= 1:
+            continue
         if derived_freq < min_frequency:
             continue
         if derived_freq <= 0.0 or derived_freq >= 1.0:
