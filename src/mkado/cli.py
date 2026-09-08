@@ -44,6 +44,26 @@ stderr_console = Console(stderr=True)
 STDOUT_PATH = Path("-")
 
 
+def cli_error(message: str) -> typer.Exit:
+    """Report a user-facing error on stderr and return the exception to raise.
+
+    Returning rather than raising keeps the ``raise`` at the call site, which is
+    what typer.BadParameter already does in this module.
+    """
+    typer.echo(f"Error: {message}", err=True)
+    return typer.Exit(1)
+
+
+def resolve_code_table_or_exit(code_table: str) -> int:
+    """Resolve a genetic code name or id, reporting an unknown one as a CLI error."""
+    from mkado.data.genetic_codes import resolve_code_table
+
+    try:
+        return resolve_code_table(code_table)
+    except ValueError as e:
+        raise cli_error(str(e)) from e
+
+
 def validate_path_not_flag(value: Path | None) -> Path | None:
     """Validate that a Path argument doesn't look like a flag.
 
@@ -90,24 +110,24 @@ SfsModeOption = Annotated[
 ]
 
 
+def resolve_output_format(output_format: str) -> OutputFormat:
+    """Convert the --format string to its enum member, reporting an unknown one."""
+    try:
+        return OutputFormat(output_format)
+    except ValueError as e:
+        raise cli_error(f"Invalid format '{output_format}'.") from e
+
+
 def validate_ci_method(ci_method: str) -> None:
     """Reject any ``--ci-method`` value other than the two supported strings."""
     if ci_method not in ("monte-carlo", "bootstrap"):
-        typer.echo(
-            f"Error: Invalid --ci-method '{ci_method}'. Use 'monte-carlo' or 'bootstrap'.",
-            err=True,
-        )
-        raise typer.Exit(1)
+        raise cli_error(f"Invalid --ci-method '{ci_method}'. Use 'monte-carlo' or 'bootstrap'.")
 
 
 def validate_sfs_mode(sfs_mode: str) -> None:
     """Reject any ``--sfs-mode`` value other than 'at' or 'above'."""
     if sfs_mode not in ("at", "above"):
-        typer.echo(
-            f"Error: Invalid --sfs-mode '{sfs_mode}'. Use 'at' or 'above'.",
-            err=True,
-        )
-        raise typer.Exit(1)
+        raise cli_error(f"Invalid --sfs-mode '{sfs_mode}'. Use 'at' or 'above'.")
 
 
 def resolve_ci_replicates(bootstrap: int, ci_method: str) -> int:
@@ -182,8 +202,7 @@ def write_batch_output(
     try:
         content = format_batch_results(results, fmt, adjusted_pvalues)
     except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1) from e
+        raise cli_error(str(e)) from e
     write_output(content, output)
 
 
@@ -508,69 +527,48 @@ def test(
     """
     from mkado.core.sequences import SequenceSet
 
-    if output_format not in ("pretty", "tsv", "json"):
-        typer.echo(f"Error: Invalid format '{output_format}'.", err=True)
-        raise typer.Exit(1)
+    fmt = resolve_output_format(output_format)
 
     validate_ci_method(ci_method)
     validate_sfs_mode(sfs_mode)
 
     # Validate option compatibility
     if use_asymptotic and min_freq > 0.0:
-        typer.echo(
-            "Error: --min-freq cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering.",
-            err=True,
+        raise cli_error(
+            "--min-freq cannot be used with --asymptotic. "
+            "The asymptotic test uses --freq-cutoffs for frequency filtering."
         )
-        raise typer.Exit(1)
 
     if use_asymptotic and no_singletons:
-        typer.echo(
-            "Error: --no-singletons cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering.",
-            err=True,
+        raise cli_error(
+            "--no-singletons cannot be used with --asymptotic. "
+            "The asymptotic test uses --freq-cutoffs for frequency filtering."
         )
-        raise typer.Exit(1)
 
     if use_imputed and use_asymptotic:
-        typer.echo(
-            "Error: --imputed and --asymptotic are mutually exclusive.",
-            err=True,
-        )
-        raise typer.Exit(1)
+        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
 
     if use_imputed and no_singletons:
-        typer.echo(
-            "Error: --no-singletons cannot be used with --imputed. "
-            "The imputed test needs low-frequency variants.",
-            err=True,
+        raise cli_error(
+            "--no-singletons cannot be used with --imputed. "
+            "The imputed test needs low-frequency variants."
         )
-        raise typer.Exit(1)
 
     if no_singletons and min_freq > 0.0:
-        typer.echo(
-            "Error: --no-singletons and --min-freq cannot be used together. "
-            "--no-singletons automatically sets the frequency threshold.",
-            err=True,
+        raise cli_error(
+            "--no-singletons and --min-freq cannot be used together. "
+            "--no-singletons automatically sets the frequency threshold."
         )
-        raise typer.Exit(1)
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
 
     # Build genetic code
     from mkado.core.codons import GeneticCode
-    from mkado.data.genetic_codes import resolve_code_table
 
-    try:
-        code_table_id = resolve_code_table(code_table)
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    code_table_id = resolve_code_table_or_exit(code_table)
 
     genetic_code = GeneticCode(table_id=code_table_id) if code_table_id != 1 else None
-
-    fmt = OutputFormat(output_format)
 
     # Determine mode
     combined_mode = ingroup_match is not None or outgroup_match is not None
@@ -578,25 +576,15 @@ def test(
     if combined_mode:
         # Combined file mode
         if not ingroup_match or not outgroup_match:
-            typer.echo(
-                "Error: Combined mode requires both -i/--ingroup-match and -o/--outgroup-match",
-                err=True,
+            raise cli_error(
+                "Combined mode requires both -i/--ingroup-match and -o/--outgroup-match"
             )
-            raise typer.Exit(1)
 
         if outgroup_file is not None:
-            typer.echo(
-                "Error: Don't provide outgroup file when using -i/-o (combined mode)",
-                err=True,
-            )
-            raise typer.Exit(1)
+            raise cli_error("Don't provide outgroup file when using -i/-o (combined mode)")
 
         if polarize_file is not None:
-            typer.echo(
-                "Error: Use --polarize-match instead of -p in combined mode",
-                err=True,
-            )
-            raise typer.Exit(1)
+            raise cli_error("Use --polarize-match instead of -p in combined mode")
 
         # Load and filter sequences
         all_seqs = SequenceSet.from_fasta(fasta, reading_frame=reading_frame)
@@ -604,11 +592,9 @@ def test(
         outgroup_seqs = all_seqs.filter_by_name(outgroup_match)
 
         if len(ingroup_seqs) == 0:
-            typer.echo(f"Error: No sequences match ingroup pattern '{ingroup_match}'", err=True)
-            raise typer.Exit(1)
+            raise cli_error(f"No sequences match ingroup pattern '{ingroup_match}'")
         if len(outgroup_seqs) == 0:
-            typer.echo(f"Error: No sequences match outgroup pattern '{outgroup_match}'", err=True)
-            raise typer.Exit(1)
+            raise cli_error(f"No sequences match outgroup pattern '{outgroup_match}'")
 
         typer.echo(
             f"Found {len(ingroup_seqs)} ingroup, {len(outgroup_seqs)} outgroup sequences",
@@ -629,8 +615,7 @@ def test(
         # Run appropriate test
         if use_asymptotic:
             if polarize_match:
-                typer.echo("Error: Polarized asymptotic test not supported", err=True)
-                raise typer.Exit(1)
+                raise cli_error("Polarized asymptotic test not supported")
             result = asymptotic_mk_test(
                 ingroup=ingroup_seqs,
                 outgroup=outgroup_seqs,
@@ -657,10 +642,7 @@ def test(
         elif polarize_match:
             outgroup2_seqs = all_seqs.filter_by_name(polarize_match)
             if len(outgroup2_seqs) == 0:
-                typer.echo(
-                    f"Error: No sequences match polarize pattern '{polarize_match}'", err=True
-                )
-                raise typer.Exit(1)
+                raise cli_error(f"No sequences match polarize pattern '{polarize_match}'")
             typer.echo(f"Polarizing with {len(outgroup2_seqs)} outgroup2 sequences", err=True)
             result = polarized_mk_test(
                 ingroup=ingroup_seqs,
@@ -684,18 +666,10 @@ def test(
     else:
         # Separate files mode
         if outgroup_file is None:
-            typer.echo(
-                "Error: Provide outgroup file, or use -i/-o for combined file mode",
-                err=True,
-            )
-            raise typer.Exit(1)
+            raise cli_error("Provide outgroup file, or use -i/-o for combined file mode")
 
         if polarize_match is not None:
-            typer.echo(
-                "Error: Use -p/--polarize instead of --polarize-match in separate files mode",
-                err=True,
-            )
-            raise typer.Exit(1)
+            raise cli_error("Use -p/--polarize instead of --polarize-match in separate files mode")
 
         # Calculate singleton frequency threshold if --no-singletons
         if no_singletons:
@@ -713,8 +687,7 @@ def test(
         # Run appropriate test
         if use_asymptotic:
             if polarize_file:
-                typer.echo("Error: Polarized asymptotic test not supported", err=True)
-                raise typer.Exit(1)
+                raise cli_error("Polarized asymptotic test not supported")
             result = asymptotic_mk_test(
                 ingroup=fasta,
                 outgroup=outgroup_file,
@@ -968,86 +941,57 @@ def batch(
     validate_ci_method(ci_method)
     validate_sfs_mode(sfs_mode)
 
-    if output_format not in ("pretty", "tsv", "json"):
-        typer.echo(f"Error: Invalid format '{output_format}'.", err=True)
-        raise typer.Exit(1)
+    fmt = resolve_output_format(output_format)
 
     # Resolve genetic code table
-    from mkado.data.genetic_codes import resolve_code_table
-
-    try:
-        code_table_id = resolve_code_table(code_table)
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
+    code_table_id = resolve_code_table_or_exit(code_table)
 
     # Validate option compatibility
     if use_asymptotic and min_freq > 0.0:
-        typer.echo(
-            "Error: --min-freq cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering.",
-            err=True,
+        raise cli_error(
+            "--min-freq cannot be used with --asymptotic. "
+            "The asymptotic test uses --freq-cutoffs for frequency filtering."
         )
-        raise typer.Exit(1)
 
     if alpha_tg and use_asymptotic:
-        typer.echo(
-            "Error: --alpha-tg and --asymptotic are mutually exclusive. "
-            "Choose one method for estimating alpha.",
-            err=True,
+        raise cli_error(
+            "--alpha-tg and --asymptotic are mutually exclusive. "
+            "Choose one method for estimating alpha."
         )
-        raise typer.Exit(1)
 
     if use_asymptotic and no_singletons:
-        typer.echo(
-            "Error: --no-singletons cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering.",
-            err=True,
+        raise cli_error(
+            "--no-singletons cannot be used with --asymptotic. "
+            "The asymptotic test uses --freq-cutoffs for frequency filtering."
         )
-        raise typer.Exit(1)
 
     if use_imputed and use_asymptotic:
-        typer.echo(
-            "Error: --imputed and --asymptotic are mutually exclusive.",
-            err=True,
-        )
-        raise typer.Exit(1)
+        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
 
     if use_imputed and alpha_tg:
-        typer.echo(
-            "Error: --imputed and --alpha-tg are mutually exclusive.",
-            err=True,
-        )
-        raise typer.Exit(1)
+        raise cli_error("--imputed and --alpha-tg are mutually exclusive.")
 
     if use_imputed and no_singletons:
-        typer.echo(
-            "Error: --no-singletons cannot be used with --imputed. "
-            "The imputed test needs low-frequency variants.",
-            err=True,
+        raise cli_error(
+            "--no-singletons cannot be used with --imputed. "
+            "The imputed test needs low-frequency variants."
         )
-        raise typer.Exit(1)
 
     if no_singletons and min_freq > 0.0:
-        typer.echo(
-            "Error: --no-singletons and --min-freq cannot be used together. "
-            "--no-singletons automatically sets the frequency threshold.",
-            err=True,
+        raise cli_error(
+            "--no-singletons and --min-freq cannot be used together. "
+            "--no-singletons automatically sets the frequency threshold."
         )
-        raise typer.Exit(1)
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
-
-    fmt = OutputFormat(output_format)
 
     # Parse frequency cutoffs
     try:
         cutoff_parts = freq_cutoffs.split(",")
         frequency_cutoffs = (float(cutoff_parts[0]), float(cutoff_parts[1]))
     except (ValueError, IndexError):
-        typer.echo(f"Error: Invalid frequency cutoffs '{freq_cutoffs}'. Use 'low,high'", err=True)
-        raise typer.Exit(1)
+        raise cli_error(f"Invalid frequency cutoffs '{freq_cutoffs}'. Use 'low,high'")
 
     # Auto-detect mode based on -i flag
     combined_mode = ingroup_match is not None
@@ -1055,12 +999,10 @@ def batch(
     if combined_mode:
         # === COMBINED FILE MODE ===
         if not outgroup_match:
-            typer.echo("Error: -o/--outgroup-match required with -i/--ingroup-match", err=True)
-            raise typer.Exit(1)
+            raise cli_error("-o/--outgroup-match required with -i/--ingroup-match")
 
         if use_asymptotic and polarize_match:
-            typer.echo("Error: --asymptotic and --polarize-match are mutually exclusive", err=True)
-            raise typer.Exit(1)
+            raise cli_error("--asymptotic and --polarize-match are mutually exclusive")
 
         # Find alignment files
         if file_pattern:
@@ -1070,8 +1012,7 @@ def batch(
 
         if not alignment_files:
             pattern_msg = file_pattern or "*.fa, *.fasta, *.fna"
-            typer.echo(f"No files found in {input_dir} (tried: {pattern_msg})", err=True)
-            raise typer.Exit(1)
+            raise cli_error(f"No files found in {input_dir} (tried: {pattern_msg})")
 
         typer.echo(f"Found {len(alignment_files)} alignment files", err=True)
         warn_duplicate_stems(alignment_files)
@@ -1208,16 +1149,12 @@ def batch(
     else:
         # === SEPARATE FILES MODE ===
         if use_asymptotic and polarize_pattern:
-            typer.echo(
-                "Error: --asymptotic and --polarize-pattern are mutually exclusive", err=True
-            )
-            raise typer.Exit(1)
+            raise cli_error("--asymptotic and --polarize-pattern are mutually exclusive")
 
         ingroup_files = sorted(input_dir.glob(ingroup_pattern))
 
         if not ingroup_files:
-            typer.echo(f"No files matching '{ingroup_pattern}' in {input_dir}", err=True)
-            raise typer.Exit(1)
+            raise cli_error(f"No files matching '{ingroup_pattern}' in {input_dir}")
 
         typer.echo(f"Found {len(ingroup_files)} ingroup files", err=True)
         warn_duplicate_stems(ingroup_files)
@@ -1293,8 +1230,7 @@ def batch(
             typer.echo(warning, err=True)
 
         if not tasks:
-            typer.echo("No valid file pairs found", err=True)
-            raise typer.Exit(1)
+            raise cli_error("No valid file pairs found")
 
         # Alpha TG mode
         if alpha_tg:
@@ -1612,9 +1548,7 @@ def vcf(
         _logging.getLogger("mkado.io.vcf").setLevel(_logging.DEBUG)
         _logging.getLogger("mkado.io.plotting").setLevel(_logging.DEBUG)
 
-    if output_format not in ("pretty", "tsv", "json"):
-        typer.echo(f"Error: Invalid format '{output_format}'.", err=True)
-        raise typer.Exit(1)
+    fmt = resolve_output_format(output_format)
 
     validate_ci_method(ci_method)
     validate_sfs_mode(sfs_mode)
@@ -1622,62 +1556,44 @@ def vcf(
     # Validate file existence
     for path, name in [(vcf_file, "--vcf"), (ref, "--ref"), (gff, "--gff")]:
         if not path.exists():
-            typer.echo(f"Error: {name} file not found: {path}", err=True)
-            raise typer.Exit(1)
+            raise cli_error(f"{name} file not found: {path}")
 
     if not outgroup_vcf.exists():
-        typer.echo(f"Error: --outgroup-vcf file not found: {outgroup_vcf}", err=True)
-        raise typer.Exit(1)
+        raise cli_error(f"--outgroup-vcf file not found: {outgroup_vcf}")
 
     # Validate option compatibility (same as batch command)
     if use_asymptotic and min_freq > 0.0:
-        typer.echo("Error: --min-freq cannot be used with --asymptotic.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--min-freq cannot be used with --asymptotic.")
 
     if use_asymptotic and no_singletons:
-        typer.echo("Error: --no-singletons cannot be used with --asymptotic.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--no-singletons cannot be used with --asymptotic.")
 
     if use_imputed and use_asymptotic:
-        typer.echo("Error: --imputed and --asymptotic are mutually exclusive.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
 
     if alpha_tg and use_asymptotic:
-        typer.echo("Error: --alpha-tg and --asymptotic are mutually exclusive.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--alpha-tg and --asymptotic are mutually exclusive.")
 
     if use_imputed and alpha_tg:
-        typer.echo("Error: --imputed and --alpha-tg are mutually exclusive.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--imputed and --alpha-tg are mutually exclusive.")
 
     if use_imputed and no_singletons:
-        typer.echo("Error: --no-singletons cannot be used with --imputed.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--no-singletons cannot be used with --imputed.")
 
     if no_singletons and min_freq > 0.0:
-        typer.echo("Error: --no-singletons and --min-freq cannot be used together.", err=True)
-        raise typer.Exit(1)
+        raise cli_error("--no-singletons and --min-freq cannot be used together.")
 
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
 
     # Resolve genetic code
-    from mkado.data.genetic_codes import resolve_code_table
-
-    try:
-        code_table_id = resolve_code_table(code_table)
-    except ValueError as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1)
-
-    fmt = OutputFormat(output_format)
+    code_table_id = resolve_code_table_or_exit(code_table)
 
     # Parse frequency cutoffs
     try:
         cutoff_parts = freq_cutoffs.split(",")
         frequency_cutoffs = (float(cutoff_parts[0]), float(cutoff_parts[1]))
     except (ValueError, IndexError):
-        typer.echo(f"Error: Invalid frequency cutoffs '{freq_cutoffs}'.", err=True)
-        raise typer.Exit(1)
+        raise cli_error(f"Invalid frequency cutoffs '{freq_cutoffs}'.")
 
     # Parse GFF3
     from mkado.io.gff import parse_gff3
@@ -1687,8 +1603,7 @@ def vcf(
         gene_ids = {gene}
     elif gene_list:
         if not gene_list.exists():
-            typer.echo(f"Error: Gene list file not found: {gene_list}", err=True)
-            raise typer.Exit(1)
+            raise cli_error(f"Gene list file not found: {gene_list}")
         gene_ids = set()
         with open(gene_list) as f:
             for line in f:
@@ -1700,8 +1615,7 @@ def vcf(
     cds_regions = parse_gff3(gff, gene_ids=gene_ids)
 
     if not cds_regions:
-        typer.echo("Error: No valid CDS regions found in GFF3", err=True)
-        raise typer.Exit(1)
+        raise cli_error("No valid CDS regions found in GFF3")
 
     typer.echo(f"Found {len(cds_regions)} genes in annotation", err=True)
 
@@ -1797,8 +1711,7 @@ def vcf(
         typer.echo(w, err=True)
 
     if not worker_results:
-        typer.echo("No results to display", err=True)
-        raise typer.Exit(1)
+        raise cli_error("No results to display")
 
     # Single gene mode: output single result
     if gene and len(worker_results) == 1:

@@ -2,9 +2,11 @@
 
 from pathlib import Path
 
+import pytest
+import typer
 from typer.testing import CliRunner
 
-from mkado.cli import app
+from mkado.cli import app, cli_error
 
 runner = CliRunner()
 
@@ -710,3 +712,11 @@ class TestBatchDuplicateGeneNames:
         result = _run_duplicate_name_batch(tmp_path, "tsv")
         assert "gene1.fa" in result.output
         assert "gene1.fasta" in result.output
+
+
+class TestCliError:
+    def test_prefixes_the_message_and_returns_the_exit(self, capsys: pytest.CaptureFixture) -> None:
+        exit_exception = cli_error("the thing went wrong")
+        assert isinstance(exit_exception, typer.Exit)
+        assert exit_exception.exit_code == 1
+        assert capsys.readouterr().err == "Error: the thing went wrong\n"
