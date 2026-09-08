@@ -37,19 +37,22 @@ from mkado.analysis.polarized import PolarizedMKResult
 stderr_console = Console(stderr=True)
 
 
+STDOUT_PATH = Path("-")
+
+
 def validate_path_not_flag(value: Path | None) -> Path | None:
     """Validate that a Path argument doesn't look like a flag.
 
-    This catches common mistakes like: --option -a (where -a gets consumed as the path)
+    This catches common mistakes like: --option -a (where -a gets consumed as the path).
+    A bare dash is a value, not an option, by POSIX and click convention, so it passes;
+    the caller decides what it means.
     """
-    if value is not None and str(value).startswith("-"):
+    if value is not None and value != STDOUT_PATH and str(value).startswith("-"):
         raise typer.BadParameter(
             f"'{value}' looks like a flag, not a file path. Check the order of your arguments."
         )
     return value
 
-
-STDOUT_PATH = Path("-")
 
 OutputOption = Annotated[
     Optional[Path],
@@ -1448,7 +1451,7 @@ def vcf(
         Path,
         typer.Option(
             "--outgroup-vcf",
-            help="Single-sample outgroup VCF (called against same reference)",
+            help="Single-sample outgroup VCF (same reference; absent positions count as reference)",
         ),
     ],
     # === Gene selection ===

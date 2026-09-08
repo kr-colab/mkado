@@ -26,6 +26,8 @@ A multi-sample population VCF file. Bgzipped and tabix-indexed is recommended fo
 
 A single-sample VCF of the outgroup species, called against the **same reference genome** as the ingroup VCF. This is used to determine divergence (Dn/Ds) and to polarize polymorphisms.
 
+Positions with no record in the outgroup VCF, or with a missing genotype, are taken as the reference base. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence.
+
 ``--ref`` : Reference FASTA
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -203,10 +205,11 @@ Polymorphism Extraction
 Divergence Extraction
 ^^^^^^^^^^^^^^^^^^^^^
 
-1. For each codon, check if the outgroup VCF has variant(s) at those positions
-2. Only count as divergence if the ingroup is monomorphic for the reference allele
-3. Reconstruct the outgroup codon and compare to the reference codon
-4. Classify using the shortest mutational path (via ``GeneticCode.get_path()``)
+1. Build the ingroup codon: the reference codon with the ALT base at each position where every ingroup sample carries ALT
+2. Build the outgroup codon: the reference codon with the outgroup allele at each position the outgroup VCF reports
+3. Positions where the ingroup is polymorphic keep the reference base in both codons; they cannot be fixed differences
+4. Skip codons that are identical, or that are stop codons in either group
+5. Classify using the shortest mutational path (via ``GeneticCode.get_path()``)
 
 The output is ``PolymorphismData`` (the same intermediate format used by the FASTA-based pipeline), which feeds directly into all existing analysis functions.
 
@@ -217,6 +220,8 @@ Edge Cases
 - **Multi-allelic sites**: Skipped. Pre-decompose with ``bcftools norm -m-`` if needed
 - **Missing genotypes**: Excluded from frequency calculation; only non-missing samples counted
 - **Two SNPs in the same codon**: Each SNP classified independently (standard MK convention, avoids phasing issues)
+- **Sites fixed for ALT in the ingroup**: A fixed difference when the outgroup carries the reference base; no difference when the outgroup carries the same ALT
+- **Outgroup third allele at a polymorphic site**: Ignored for divergence, and the polymorphism is not polarized
 - **Overlapping genes**: Each gene processed independently; the same variant can contribute to multiple genes
 - **Stop codons**: Reference stop codons skipped; premature stop-creating variants treated as nonsynonymous
 - **Incomplete CDS**: Genes where CDS length % 3 != 0 are skipped

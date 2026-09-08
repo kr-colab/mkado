@@ -34,30 +34,37 @@ def _open_vcf(path: str | Path) -> object:
     os.dup2(w_fd, 2)
     os.close(w_fd)
     try:
-        vcf = cyvcf2.VCF(str(path))
+        return cyvcf2.VCF(str(path))
     finally:
+        # Restore fd 2 before draining: read() only returns once the pipe's last writer is gone.
         os.dup2(orig_fd, 2)
         os.close(orig_fd)
-
-    with os.fdopen(r_fd, "r") as f:
-        captured = f.read()
-    if captured.strip():
-        for line in captured.strip().splitlines():
-            logger.debug("htslib: %s", line)
-
-    return vcf
+        with os.fdopen(r_fd) as f:
+            for line in f.read().strip().splitlines():
+                logger.debug("htslib: %s", line)
 
 
 @dataclass
 class _SnpInfo:
-    """A biallelic SNP in a CDS region."""
+    """A biallelic ingroup SNP with its diploid allele counts."""
 
     pos: int  # 0-based genomic position
     ref: str
     alt: str
-    alt_freq: float  # ALT allele frequency in ingroup
-    n_samples: int  # number of non-missing samples
-    is_fixed_alt: bool  # all ingroup samples are ALT
+    n_ref: int
+    n_alt: int
+
+    @property
+    def total(self) -> int:
+        return self.n_ref + self.n_alt
+
+    @property
+    def alt_freq(self) -> float:
+        return self.n_alt / self.total
+
+    @property
+    def is_fixed_alt(self) -> bool:
+        return self.n_ref == 0
 
 
 @dataclass
@@ -187,20 +194,7 @@ def _query_ingroup_snps_with_handle(
                 stats.skipped_missing += 1
                 continue
 
-            alt_freq = n_alt / total
-            n_samples = sum(1 for gt in gt_types if gt != 2)
-            is_fixed_alt = n_ref == 0
-
-            snps.append(
-                _SnpInfo(
-                    pos=pos_0,
-                    ref=ref,
-                    alt=alt,
-                    alt_freq=alt_freq,
-                    n_samples=n_samples,
-                    is_fixed_alt=is_fixed_alt,
-                )
-            )
+            snps.append(_SnpInfo(pos=pos_0, ref=ref, alt=alt, n_ref=n_ref, n_alt=n_alt))
 
     return snps
 
@@ -302,7 +296,7 @@ def extract_gene_data(
         ref_fasta_path: Path to indexed reference FASTA.
         genetic_code: Genetic code for classification (standard if None).
         min_frequency: Minimum derived allele frequency threshold.
-        no_singletons: If True, exclude singletons.
+        no_singletons: If True, exclude sites where the derived allele is seen once.
         ingroup_vcf: Pre-opened cyvcf2.VCF handle for ingroup (optional).
         outgroup_vcf: Pre-opened cyvcf2.VCF handle for outgroup (optional).
         ref_fasta: Pre-opened pysam.FastaFile handle (optional).
@@ -327,25 +321,12 @@ def extract_gene_data(
     else:
         ingroup_snps = _query_ingroup_snps(vcf_path, cds, stats)
 
-    # Calculate singleton threshold
-    if no_singletons and ingroup_snps:
-        max_n = max(s.n_samples for s in ingroup_snps)
-        singleton_freq = 1.0 / (2 * max_n)  # diploid
-        if singleton_freq > min_frequency:
-            min_frequency = singleton_freq
-
     # Get outgroup genotypes
     outgroup_alleles: dict[int, str] = {}
     if outgroup_vcf is not None:
         outgroup_alleles = _query_outgroup_genotype_with_handle(outgroup_vcf, cds)
     elif outgroup_vcf_path is not None:
         outgroup_alleles = _query_outgroup_genotype(outgroup_vcf_path, cds)
-
-    # Index ingroup SNPs by position for quick lookup
-    ingroup_by_pos: dict[int, _SnpInfo] = {s.pos: s for s in ingroup_snps}
-
-    # Track which codon positions have ingroup variants (for divergence check)
-    ingroup_variant_positions: set[int] = {s.pos for s in ingroup_snps}
 
     # === Polymorphism extraction ===
     polymorphisms: list[tuple[float, str]] = []
@@ -377,13 +358,16 @@ def extract_gene_data(
         if is_syn is None:
             continue
 
-        # Determine derived allele frequency
-        # If outgroup carries ALT, then REF is derived
-        derived_freq = snp.alt_freq
+        # If the outgroup carries ALT, REF is the derived allele.
+        derived_count = snp.n_alt
         if snp.pos in outgroup_alleles and outgroup_alleles[snp.pos] == snp.alt:
-            derived_freq = 1.0 - snp.alt_freq
+            derived_count = snp.n_ref
+        derived_freq = derived_count / snp.total
 
-        # Apply frequency filter
+        # A singleton is one copy of the derived allele, whatever the number of
+        # called samples, so it is filtered by count rather than by frequency.
+        if no_singletons and derived_count <= 1:
+            continue
         if derived_freq < min_frequency:
             continue
         if derived_freq <= 0.0 or derived_freq >= 1.0:
@@ -397,59 +381,32 @@ def extract_gene_data(
     ds = 0
 
     if outgroup_vcf_path is not None or outgroup_vcf is not None:
-        # Check each codon for fixed differences between reference and outgroup
-        for codon_idx in range(cds.num_codons()):
-            p1, p2, p3 = cds.codon_positions(codon_idx)
+        # The ingroup codon carries ALT where the ingroup is fixed for it. A polymorphic
+        # site cannot be a fixed difference, so any outgroup allele there, including a
+        # third base, is ignored. A position with no outgroup record is the reference.
+        fixed_alt = {s.pos: s.alt for s in ingroup_snps if s.is_fixed_alt}
+        polymorphic = {s.pos for s in ingroup_snps if not s.is_fixed_alt}
+        out_alt = {pos: base for pos, base in outgroup_alleles.items() if pos not in polymorphic}
 
-            # Check if outgroup differs at any position in this codon
-            has_outgroup_diff = False
-            for pos in (p1, p2, p3):
-                if pos in outgroup_alleles:
-                    # Only count as divergence if ingroup is monomorphic for REF at this position
-                    if pos in ingroup_variant_positions:
-                        ingroup_snp = ingroup_by_pos.get(pos)
-                        if ingroup_snp is not None and not ingroup_snp.is_fixed_alt:
-                            # Ingroup is polymorphic — not a fixed divergence
-                            continue
-                    has_outgroup_diff = True
+        def in_fetch(chrom: str, pos: int) -> str:
+            return fixed_alt.get(pos) or ref_fetch(chrom, pos)
 
-            if not has_outgroup_diff:
+        def out_fetch(chrom: str, pos: int) -> str:
+            return out_alt.get(pos) or ref_fetch(chrom, pos)
+
+        # Both allele maps were filtered by cds.contains_position, so every lookup hits.
+        candidates = {
+            cds.genomic_pos_to_codon_index(pos) for pos in fixed_alt.keys() | out_alt.keys()
+        }
+        for codon_idx in sorted(candidates):
+            in_codon = cds.extract_codon(codon_idx, in_fetch)
+            out_codon = cds.extract_codon(codon_idx, out_fetch)
+            if in_codon == out_codon:
                 continue
-
-            # Reconstruct reference and outgroup codons
-            ref_bases = [ref_fetch(cds.chrom, p) for p in (p1, p2, p3)]
-            out_bases = list(ref_bases)
-
-            for i, pos in enumerate((p1, p2, p3)):
-                if pos in outgroup_alleles:
-                    # Check ingroup is monomorphic for REF at this position
-                    if pos in ingroup_variant_positions:
-                        ingroup_snp = ingroup_by_pos.get(pos)
-                        if ingroup_snp is not None and not ingroup_snp.is_fixed_alt:
-                            out_bases[i] = ref_bases[i]  # Don't count this position
-                            continue
-                    out_bases[i] = outgroup_alleles[pos]
-
-            ref_codon = "".join(ref_bases)
-            out_codon = "".join(out_bases)
-
-            if cds.strand == "-":
-                ref_codon = ref_codon.translate(_COMPLEMENT)
-                out_codon = out_codon.translate(_COMPLEMENT)
-
-            ref_codon = ref_codon.upper()
-            out_codon = out_codon.upper()
-
-            if ref_codon == out_codon:
+            if code.translate(in_codon) == "*" or code.translate(out_codon) == "*":
                 continue
-
-            # Skip stop codons
-            if code.translate(ref_codon) == "*" or code.translate(out_codon) == "*":
-                continue
-
-            # Classify using get_path for multi-step changes
-            path = code.get_path(ref_codon, out_codon)
-            for change_type, _position in path:
+            # get_path handles codons that differ at more than one position.
+            for change_type, _position in code.get_path(in_codon, out_codon):
                 if change_type == "R":
                     dn += 1
                 elif change_type == "S":

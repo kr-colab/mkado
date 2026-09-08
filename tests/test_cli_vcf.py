@@ -19,8 +19,8 @@ SINGLE_HEADER = "Dn\tDs\tPn\tPs\tp_value\tNI\talpha\tDoS\tLn\tLs\tomega"
 ASYMPTOTIC_HEADER = "Dn\tDs\tPn\tPs\talpha_asymptotic\tCI_low\tCI_high\tmodel\tnum_genes"
 IMPUTED_HEADER = "Dn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha\tp_value\tcutoff"
 ALPHA_TG_HEADER = "Dn\tDs\tPn\tPs\talpha_TG\tNI_TG\tCI_low\tCI_high\tnum_genes"
-G_PLUS_ROW = "g_plus\t1\t2\t2\t1\t1\t1\t4.000000\t-3.000000\t-0.333333\tNA\tNA\tNA"
-G_PLUS_SINGLE_ROW = "1\t2\t2\t1\t1\t4.000000\t-3.000000\t-0.333333\tNA\tNA\tNA"
+G_PLUS_ROW = "g_plus\t2\t2\t2\t1\t1\t1\t2.000000\t-1.000000\t-0.166667\tNA\tNA\tNA"
+G_PLUS_SINGLE_ROW = "2\t2\t2\t1\t1\t2.000000\t-1.000000\t-0.166667\tNA\tNA\tNA"
 # Keep the bootstrap small: the defaults multiply into thousands of replicates.
 FAST = ["--bootstrap", "5"]
 
@@ -185,16 +185,16 @@ class TestPerGeneOutput:
         data = json.loads(result.stdout)
         assert set(data) == set(genome.expected)
         g_plus = data["g_plus"]
-        assert (g_plus["dn"], g_plus["ds"], g_plus["pn"], g_plus["ps"]) == (1, 2, 2, 1)
-        assert g_plus["ni"] == 4.0
+        assert (g_plus["dn"], g_plus["ds"], g_plus["pn"], g_plus["ps"]) == (2, 2, 2, 1)
+        assert g_plus["ni"] == 2.0
         assert g_plus["p_value_adjusted"] == 1.0
 
     def test_pretty(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "-f", "pretty")
         assert result.exit_code == 0
         assert "=== g_plus ===" in result.stdout
-        assert "  Divergence:    Dn=1, Ds=2" in result.stdout
-        assert "  Neutrality Index (NI):  4.0000" in result.stdout
+        assert "  Divergence:    Dn=2, Ds=2" in result.stdout
+        assert "  Neutrality Index (NI):  2.0000" in result.stdout
         assert "  p-value (BH adj):     1" in result.stdout
 
     def test_output_file(self, genome, gff_chr1, tmp_path):
@@ -205,10 +205,6 @@ class TestPerGeneOutput:
         assert "g_plus" not in result.stdout
         assert out.read_text().splitlines()[1] == G_PLUS_ROW
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the flag-path check rejects '-' before write_output can treat it as stdout (#46)",
-    )
     def test_output_dash_is_stdout(self, genome, gff_chr1):
         """The --output help text documents '-' as stdout."""
         result = invoke(genome, gff_chr1, "--output", "-")
@@ -221,7 +217,7 @@ class TestPerGeneOutput:
         assert result.exit_code == 0
         assert "Error processing g_nochrom:" in result.output
         assert "chrZ" in result.output
-        assert rows(result.stdout) == {"g_plus": (1, 2, 2, 1)}
+        assert rows(result.stdout) == {"g_plus": (2, 2, 2, 1)}
 
     def test_every_gene_failing_exits_nonzero(self, genome, gff_bad_chrom_only):
         result = invoke(genome, gff_bad_chrom_only)
@@ -239,12 +235,12 @@ class TestSingleGeneModes:
     def test_json(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "--gene", "g_plus", "-f", "json")
         assert result.exit_code == 0
-        assert json.loads(result.stdout)["ni"] == 4.0
+        assert json.loads(result.stdout)["ni"] == 2.0
 
     def test_pretty(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "--gene", "g_plus", "-f", "pretty")
         assert result.exit_code == 0
-        assert "  Neutrality Index (NI):  4.0000" in result.stdout
+        assert "  Neutrality Index (NI):  2.0000" in result.stdout
 
     @pytest.mark.parametrize("extra", [["-a"], ["--imputed"], ["--alpha-tg"]])
     def test_aggregate_modes_fall_back_to_standard_mk(self, genome, gff_chr1, extra):
@@ -263,7 +259,7 @@ class TestSingleGeneModes:
         assert result.exit_code == 0
         header, row = header_and_row(result.stdout)
         assert header.startswith(ASYMPTOTIC_HEADER)
-        assert row.startswith("1\t2\t2\t1\t-3.000000\t-3.000000\t-3.000000\texponential\t1\t")
+        assert row.startswith("2\t2\t2\t1\t-1.000000\t-1.000000\t-1.000000\texponential\t1\t")
         assert row.endswith("\tmonte-carlo\tat")
 
     def test_imputed_per_gene(self, genome, gff_chr1):
@@ -271,7 +267,7 @@ class TestSingleGeneModes:
         assert result.exit_code == 0
         header, row = header_and_row(result.stdout)
         assert header.startswith(IMPUTED_HEADER)
-        assert row.startswith("1\t2\t2\t1\t0.00\t2.00\t-3.000000\t1\t0.15\t")
+        assert row.startswith("2\t2\t2\t1\t0.00\t2.00\t-1.000000\t1\t0.15\t")
 
 
 class TestAggregateModes:
@@ -283,7 +279,7 @@ class TestAggregateModes:
         header, row = header_and_row(result.stdout)
         assert header.startswith(ASYMPTOTIC_HEADER)
         fields = row.split("\t")
-        assert fields[:4] == ["16", "4", "10", "16"]
+        assert fields[:4] == ["17", "4", "10", "16"]
         assert fields[8] == "17"
         assert fields[-2:] == ["monte-carlo", "at"]
 
@@ -299,7 +295,7 @@ class TestAggregateModes:
         result = invoke(genome, gff_all, "-a", *FAST, "--freq-cutoffs", "0.2,0.8")
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.split("\t")[:4] == ["16", "4", "10", "16"]
+        assert row.split("\t")[:4] == ["17", "4", "10", "16"]
 
     def test_imputed(self, genome, gff_all):
         result = invoke(genome, gff_all, "--imputed", *FAST)
@@ -307,7 +303,7 @@ class TestAggregateModes:
         assert "Using 17 genes for aggregated imputed" in result.output
         header, row = header_and_row(result.stdout)
         assert header.startswith(IMPUTED_HEADER)
-        assert row.startswith("16\t4\t10\t16\t0.00\t10.00\t0.843750\t")
+        assert row.startswith("17\t4\t10\t16\t0.00\t10.00\t0.852941\t")
         assert row.split("\t")[8] == "0.15"
 
     def test_imputed_min_freq_sets_cutoff(self, genome, gff_all):
@@ -315,7 +311,7 @@ class TestAggregateModes:
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
         fields = row.split("\t")
-        assert fields[:4] == ["16", "4", "2", "1"]
+        assert fields[:4] == ["17", "4", "2", "1"]
         assert fields[8] == "0.3"
 
     def test_alpha_tg(self, genome, gff_all):
@@ -324,7 +320,7 @@ class TestAggregateModes:
         assert "Using 17 genes for alpha-TG" in result.output
         header, row = header_and_row(result.stdout)
         assert header.startswith(ALPHA_TG_HEADER)
-        assert row.startswith("16\t4\t10\t16\t0.795181\t0.204819\t")
+        assert row.startswith("17\t4\t10\t16\t0.800000\t0.200000\t")
         assert row.split("\t")[8] == "17"
 
     def test_asymptotic_per_gene_table(self, genome, gff_chr1):
@@ -332,7 +328,7 @@ class TestAggregateModes:
         assert result.exit_code == 0
         lines = result.stdout.strip().splitlines()
         assert lines[0].startswith("gene\tDn\tDs\talpha_asymptotic\tCI_low\tCI_high\tmodel")
-        assert lines[1].startswith("g_plus\t1\t2\t-3.000000\t-3.000000\t-3.000000\texponential\t")
+        assert lines[1].startswith("g_plus\t2\t2\t-1.000000\t-1.000000\t-1.000000\texponential\t")
         assert len(lines) == 6
 
     @pytest.mark.parametrize("cutoffs", [None, "0.2,0.8"])
@@ -365,7 +361,7 @@ class TestAggregateModes:
         data = json.loads(result.stdout)
         assert set(data) == set(genome.expected)
         assert data["g_plus"]["cutoff"] == 0.15
-        assert data["g_plus"]["alpha"] == -3.0
+        assert data["g_plus"]["alpha"] == -1.0
 
 
 class TestPlots:
@@ -405,12 +401,12 @@ class TestOptions:
         assert result.exit_code == 0
         table_rows = rows(result.stdout)
         assert table_rows["g_minus"] == (0, 2, 1, 1)
-        assert table_rows["g_plus"] == (1, 2, 2, 1)
+        assert table_rows["g_plus"] == (2, 2, 2, 1)
 
     def test_min_freq(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "--min-freq", "0.2")
         assert result.exit_code == 0
-        assert rows(result.stdout)["g_plus"] == (1, 2, 2, 0)
+        assert rows(result.stdout)["g_plus"] == (2, 2, 2, 0)
 
     def test_verbose_enables_debug_logging(self, genome, gff_chr1, ingroup_vcf_plain, caplog):
         """An unindexed VCF makes every region query fail; --verbose surfaces the reason."""
