@@ -174,3 +174,23 @@ def test_batch_tsv_rejects_unknown_result_type(alpha_tg_undefined: AlphaTGResult
     """A result type without a batch layout is an error, not a silent format change."""
     with pytest.raises(TypeError, match="Unknown result type"):
         format_batch_results([("geneA", alpha_tg_undefined)], OutputFormat.TSV)
+
+
+def _two_results_with_the_same_name() -> list[tuple[str, MKResult]]:
+    return [
+        ("geneA", mk_test_from_counts(dn=10, ds=5, pn=4, ps=8)),
+        ("geneA", mk_test_from_counts(dn=1, ds=1, pn=1, ps=1)),
+    ]
+
+
+def test_batch_json_rejects_duplicate_gene_names() -> None:
+    """An object keyed by gene name cannot hold two results that share a name."""
+    with pytest.raises(ValueError, match="geneA"):
+        format_batch_results(_two_results_with_the_same_name(), OutputFormat.JSON)
+
+
+@pytest.mark.parametrize("output_format", [OutputFormat.TSV, OutputFormat.PRETTY])
+def test_batch_row_formats_keep_duplicate_gene_names(output_format: OutputFormat) -> None:
+    """A row per result loses nothing to a repeated name, so it is not rejected."""
+    out = format_batch_results(_two_results_with_the_same_name(), output_format)
+    assert out.count("geneA") == 2

@@ -662,3 +662,51 @@ class TestSfsModeOption:
         assert result.exit_code == 0
         assert "sfs_mode" in result.output
         assert "above" in result.output
+
+
+def _run_duplicate_name_batch(tmp_path: Path, output_format: str):
+    """Run a batch over two files whose stems collide, so both become gene 'gene1'."""
+    alignments = tmp_path / "alignments"
+    alignments.mkdir()
+    (alignments / "gene1.fa").write_text(">speciesA_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+    (alignments / "gene1.fasta").write_text(">speciesA_1\nATGAAAGGG\n>speciesB_1\nATGCCCGGG\n")
+    return runner.invoke(
+        app,
+        # A single glob can match two extensions, so one directory yields two 'gene1' results.
+        [
+            "batch",
+            str(alignments),
+            "--pattern",
+            "*.f*",
+            "-i",
+            "speciesA",
+            "-o",
+            "speciesB",
+            "--format",
+            output_format,
+        ],
+    )
+
+
+class TestBatchDuplicateGeneNames:
+    """Two input files that share a stem give two results with the same gene name."""
+
+    def test_json_reports_the_collision(self, tmp_path: Path) -> None:
+        result = _run_duplicate_name_batch(tmp_path, "json")
+        assert result.exit_code == 1
+        assert "gene1" in result.output
+        assert "Traceback" not in result.output
+
+    def test_tsv_keeps_both_rows(self, tmp_path: Path) -> None:
+        result = _run_duplicate_name_batch(tmp_path, "tsv")
+        assert result.exit_code == 0
+        assert [line.split("\t")[0] for line in result.stdout.strip().splitlines()[1:]] == [
+            "gene1",
+            "gene1",
+        ]
+
+    def test_warns_and_names_the_colliding_files(self, tmp_path: Path) -> None:
+        """The warning arrives before the run, and names the files the formatter cannot see."""
+        result = _run_duplicate_name_batch(tmp_path, "tsv")
+        assert "gene1.fa" in result.output
+        assert "gene1.fasta" in result.output

@@ -235,6 +235,11 @@ def format_batch_results(
     elif format == OutputFormat.JSON:
         data = {}
         for i, (name, result) in enumerate(results):
+            if name in data:
+                raise ValueError(
+                    f"Duplicate gene name '{name}': JSON output is keyed by gene name. "
+                    "Use tsv or pretty format."
+                )
             result_dict = result.to_dict()
             if adjusted_pvalues is not None:
                 result_dict["p_value_adjusted"] = adjusted_pvalues[i]
