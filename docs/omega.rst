@@ -84,6 +84,13 @@ VCF input does not use this rule for polymorphism. Each variant is classified on
 its own against the reference codon, so a codon carrying two SNPs contributes
 two independent single-position changes.
 
+A codon carrying more than two alleles is not a pair. Every allele is compared
+with the most common one, and a mutation is identified by the position it
+changes and the base it produces, so a change two alleles share is counted once
+while two different bases at one position count as two. Alleles are ordered most
+common first, ties broken alphabetically, because two alleles can reach the same
+base through different intermediate codons that classify differently.
+
 .. note::
 
    This is a parsimony rule, not the `Nei & Gojobori (1986)`_ treatment of

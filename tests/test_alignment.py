@@ -53,3 +53,36 @@ class TestClassifyPolymorphismPooled:
         pooled = pair(ingroup, outgroup).classify_polymorphism_pooled(0)
         together = pair(ingroup + outgroup, ["ACA"]).classify_polymorphism(0)
         assert pooled == together
+
+
+class TestMultiAllelicCodons:
+    """A codon carrying more than two alleles holds more than one mutation."""
+
+    def test_two_alleles_at_one_position_are_two_mutations(self):
+        """AAG is silent against AAA and AAC is a replacement, both at position 2."""
+        ingroup = ["AAA"] * 3 + ["AAG", "AAC"]
+        assert pair(ingroup, ["AAA"]).classify_polymorphism(0) == (1, 1)
+
+    def test_answer_does_not_depend_on_sequence_order(self):
+        """ACC and AAC both end in C at position 2, reached by different routes.
+
+        Which route classifies that shared mutation depends on which allele is read
+        first, so the order the alleles are visited has to come from the counts.
+        """
+        ingroup = ["AAA"] * 5 + ["ACC", "ACC", "AAC"]
+        assert pair(ingroup, ["AAA"]).classify_polymorphism(0) == (1, 1)
+        assert pair(list(reversed(ingroup)), ["AAA"]).classify_polymorphism(0) == (1, 1)
+
+    def test_answer_does_not_depend_on_order_when_the_majority_ties(self):
+        """Two codons tie for most common, so the tie cannot be broken by file order."""
+        ingroup = ["AAA", "AAA", "AAC", "AAC", "AAG"]
+        assert pair(ingroup, ["AAA"]).classify_polymorphism(0) == (1, 1)
+        assert pair(list(reversed(ingroup)), ["AAA"]).classify_polymorphism(0) == (1, 1)
+
+    def test_a_mutation_shared_by_two_alleles_counts_once(self):
+        """ACC and ACG both carry the position 1 change, which happened once.
+
+        Position 2 then carries two different bases, so the codon holds three
+        mutations in total rather than four.
+        """
+        assert pair(["AAA"] * 3 + ["ACC", "ACG"], ["AAA"]).classify_polymorphism(0) == (1, 2)

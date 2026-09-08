@@ -212,14 +212,16 @@ Example output (pretty format):
 .. code-block:: text
 
    Asymptotic MK Test Results:
-     Asymptotic α: 0.5723 (95% CI: 0.4879 - 0.6567)
+     Asymptotic α: 0.5997 (95% CI [monte-carlo]: 0.5162 - 0.6853)
      Divergence: Dn=18828, Ds=49857
-     Polymorphism: Pn=7843, Ps=25083
-     Sites: Ln=42137.50, Ls=14752.83
-     omega: 0.2189 (omega_a=0.1252, omega_na=0.0936)
-       omega_a 95% CI:  (0.1068, 0.1437)
-       omega_na 95% CI: (0.0751, 0.1119)
-     Fit (exponential): α(x) = 0.6612 + (-0.4521) * exp(-3.214 * x)
+     SFS mode: at
+     Polymorphism: Pn=8150, Ps=26641
+     Sites: Ln=473618.29, Ls=148023.71
+     omega: 0.1180 (omega_a=0.0708, omega_na=0.0472)
+       omega_a 95% CI:  (0.0609, 0.0809)
+       omega_na 95% CI: (0.0371, 0.0571)
+     Genes aggregated: 400
+     Fit (linear): α(x) = 0.4336 + 0.1661 * x
 
 The Alpha(x) Plot
 -----------------

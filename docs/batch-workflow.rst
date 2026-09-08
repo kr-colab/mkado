@@ -228,10 +228,10 @@ Example output (TSV format):
 
 .. code-block:: text
 
-   gene        Dn  Ds  Pn  Ps  p_value     p_value_adjusted  NI        alpha
-   AGAP000150  12  28  17  15  0.056485    0.143119          2.644444  -1.644444
-   AGAP000432  12  59  14  13  0.000853    0.005128          5.294872  -4.294872
-   AGAP001364  2   19  3   18  1           1                 1.583333  -0.583333
+   gene        Dn  Ds  Pn  Ps  p_value      p_value_adjusted  NI        alpha
+   AGAP000150  12  28  17  18  0.15342      0.288347          2.203704  -1.203704
+   AGAP000432  12  59  15  14  0.000904438  0.00556577        5.267857  -4.267857
+   AGAP001364  2   19  3   19  1            1                 1.500000  -0.500000
 
 Use ``p_value_adjusted`` when interpreting significance across multiple genes to control for false discoveries.
 
