@@ -203,7 +203,7 @@ def _format_tsv(
 
 
 def format_batch_results(
-    results: list[tuple[str, MKResult | PolarizedMKResult | AsymptoticMKResult]],
+    results: list[tuple[str, MKResult | PolarizedMKResult | AsymptoticMKResult | ImputedMKResult]],
     format: OutputFormat = OutputFormat.PRETTY,
     adjusted_pvalues: list[float] | None = None,
 ) -> str:
@@ -239,6 +239,7 @@ def format_batch_results(
 
     elif format == OutputFormat.TSV:
         from mkado.analysis.asymptotic import AsymptoticMKResult
+        from mkado.analysis.imputed import ImputedMKResult
         from mkado.analysis.mk_test import MKResult
         from mkado.analysis.polarized import PolarizedMKResult
 
@@ -247,7 +248,22 @@ def format_batch_results(
 
         # Check type of first result
         _, first_result = results[0]
-        if isinstance(first_result, MKResult):
+        if isinstance(first_result, ImputedMKResult):
+            header, _ = _format_tsv(first_result).split("\n")
+            header = "gene\t" + header
+            if adjusted_pvalues is not None:
+                header += "\tp_value_adjusted"
+            lines = [header]
+            for i, (name, result) in enumerate(results):
+                if isinstance(result, ImputedMKResult):
+                    _, values = _format_tsv(result).split("\n")
+                    row = f"{name}\t{values}"
+                    if adjusted_pvalues is not None:
+                        row += f"\t{adjusted_pvalues[i]:.6g}"
+                    lines.append(row)
+            return "\n".join(lines)
+
+        elif isinstance(first_result, MKResult):
             base_header = "gene\tDn\tDs\tPn\tPs\tp_value"
             if adjusted_pvalues is not None:
                 base_header += "\tp_value_adjusted"
