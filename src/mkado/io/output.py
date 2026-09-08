@@ -222,6 +222,9 @@ def format_batch_results(
     Returns:
         Formatted string representation
     """
+    if adjusted_pvalues is not None and len(adjusted_pvalues) != len(results):
+        raise ValueError("adjusted_pvalues must have the same length as results")
+
     if format == OutputFormat.PRETTY:
         lines = []
         for i, (name, result) in enumerate(results):
