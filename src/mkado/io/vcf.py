@@ -218,8 +218,10 @@ def _query_outgroup_genotype_with_handle(
     """Query outgroup VCF for genotypes at CDS positions.
 
     Uses a pre-opened cyvcf2.VCF handle. Returns dict mapping 0-based genomic
-    position -> outgroup allele. Only includes positions where outgroup differs
-    from reference.
+    position -> outgroup allele. Only includes positions where the outgroup is
+    homozygous for an allele that differs from reference; a heterozygous call
+    cannot resolve a single outgroup allele, so it is left out and treated like
+    a missing record.
     """
     outgroup_alleles: dict[int, str] = {}
 
@@ -256,8 +258,6 @@ def _query_outgroup_genotype_with_handle(
 
             gt = gt_types[0]
             if gt == 3:  # HOM_ALT
-                outgroup_alleles[pos_0] = alt
-            elif gt == 1:  # HET - treat as carrying ALT
                 outgroup_alleles[pos_0] = alt
 
     return outgroup_alleles
@@ -381,23 +381,25 @@ def extract_gene_data(
     ds = 0
 
     if outgroup_vcf_path is not None or outgroup_vcf is not None:
-        # The ingroup codon carries ALT where the ingroup is fixed for it. A polymorphic
-        # site cannot be a fixed difference, so any outgroup allele there, including a
-        # third base, is ignored. A position with no outgroup record is the reference.
+        # The ingroup codon carries ALT where the ingroup is fixed for it. A codon needs
+        # one clean codon per group to be a fixed difference, so any polymorphic position,
+        # including a third-allele outgroup base there, voids the whole codon, not just
+        # that one base. A position with no outgroup record is the reference.
         fixed_alt = {s.pos: s.alt for s in ingroup_snps if s.is_fixed_alt}
         polymorphic = {s.pos for s in ingroup_snps if not s.is_fixed_alt}
-        out_alt = {pos: base for pos, base in outgroup_alleles.items() if pos not in polymorphic}
+        poly_codons = {cds.genomic_pos_to_codon_index(pos) for pos in polymorphic}
 
         def in_fetch(chrom: str, pos: int) -> str:
             return fixed_alt.get(pos) or ref_fetch(chrom, pos)
 
         def out_fetch(chrom: str, pos: int) -> str:
-            return out_alt.get(pos) or ref_fetch(chrom, pos)
+            return outgroup_alleles.get(pos) or ref_fetch(chrom, pos)
 
         # Both allele maps were filtered by cds.contains_position, so every lookup hits.
         candidates = {
-            cds.genomic_pos_to_codon_index(pos) for pos in fixed_alt.keys() | out_alt.keys()
-        }
+            cds.genomic_pos_to_codon_index(pos)
+            for pos in fixed_alt.keys() | outgroup_alleles.keys()
+        } - poly_codons
         for codon_idx in sorted(candidates):
             in_codon = cds.extract_codon(codon_idx, in_fetch)
             out_codon = cds.extract_codon(codon_idx, out_fetch)
