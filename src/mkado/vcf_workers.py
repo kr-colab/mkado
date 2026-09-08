@@ -39,6 +39,7 @@ class VcfBatchTask:
     extract_only: bool = False
     ci_method: str = "monte-carlo"
     sfs_mode: str = "at"
+    frequency_cutoffs: tuple[float, float] = (0.1, 0.9)
 
 
 @dataclass
@@ -118,6 +119,7 @@ def _process_single_gene(
             )
             result = asymptotic_mk_test_aggregated(
                 gene_data=[poly_data],
+                frequency_cutoffs=task.frequency_cutoffs,
                 num_bins=task.bins,
                 ci_replicates=ci_replicates,
                 ci_method=task.ci_method,
@@ -251,6 +253,7 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
             )
             result = asymptotic_mk_test_aggregated(
                 gene_data=[poly_data],
+                frequency_cutoffs=task.frequency_cutoffs,
                 num_bins=task.bins,
                 ci_replicates=ci_replicates,
                 ci_method=task.ci_method,
