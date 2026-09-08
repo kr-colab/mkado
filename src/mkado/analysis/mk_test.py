@@ -109,6 +109,7 @@ def mk_test(
     genetic_code: GeneticCode | None = None,
     pool_polymorphisms: bool = False,
     min_frequency: float = 0.0,
+    no_singletons: bool = False,
 ) -> MKResult:
     """Perform the standard McDonald-Kreitman test.
 
@@ -181,32 +182,16 @@ def mk_test(
         if codon_idx in processed_codons:
             continue
 
-        # Apply frequency filter if specified
-        if min_frequency > 0:
-            # Get frequency spectrum from ingroup
-            freqs = ingroup.site_frequency_spectrum(codon_idx)
-            if not freqs:
+        # Filtering needs the ancestral state, so a site whose state cannot be
+        # determined is only dropped when a filter is actually in use.
+        if min_frequency > 0 or no_singletons:
+            state = ingroup.derived_state(outgroup, codon_idx)
+            if state is None:
                 continue
-
-            # Get outgroup codons to determine ancestral state
-            out_codons = outgroup.codon_set_clean(codon_idx)
-            if not out_codons:
+            derived_freq, derived_count = state
+            if no_singletons and derived_count == 1:
                 continue
-
-            # Find ancestral codon (shared between ingroup and outgroup)
-            ingroup_codons = set(freqs.keys())
-            shared_codons = ingroup_codons & out_codons
-            if not shared_codons:
-                continue
-
-            # Use the most frequent shared codon as ancestral
-            ancestral = max(shared_codons, key=lambda c: freqs.get(c, 0))
-
-            # Calculate derived allele frequency
-            derived_freq = 1.0 - freqs[ancestral]
-
-            # Skip if below minimum frequency threshold
-            if derived_freq < min_frequency + 1e-10:
+            if derived_freq < min_frequency:
                 continue
 
         result = classify_func(codon_idx)

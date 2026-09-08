@@ -621,6 +621,7 @@ def extract_polymorphism_data(
     pool_polymorphisms: bool = False,
     gene_id: str = "",
     min_frequency: float = 0.0,
+    no_singletons: bool = False,
 ) -> PolymorphismData:
     """Extract polymorphism and divergence data without curve fitting.
 
@@ -679,30 +680,16 @@ def extract_polymorphism_data(
         if len(codons) < 2:
             continue
 
-        # Get frequency spectrum
-        freqs = ingroup.site_frequency_spectrum(codon_idx)
-        if not freqs:
+        state = ingroup.derived_state(outgroup, codon_idx)
+        if state is None:
             continue
-
-        # Get outgroup codon to determine ancestral state
-        out_codons = outgroup.codon_set_clean(codon_idx)
-        if not out_codons:
-            continue
-
-        # Find ancestral codon: must be shared between ingroup and outgroup
-        ingroup_codons = set(freqs.keys())
-        shared_codons = ingroup_codons & out_codons
-        if not shared_codons:
-            continue
-        ancestral = max(shared_codons, key=lambda c: freqs.get(c, 0))
-
-        # Calculate derived allele frequency
-        derived_freq = 1.0 - freqs[ancestral]
+        derived_freq, derived_count = state
 
         if derived_freq <= 0 or derived_freq >= 1:
             continue
 
-        # Apply minimum frequency filter
+        if no_singletons and derived_count == 1:
+            continue
         if derived_freq < min_frequency:
             continue
 
@@ -1172,28 +1159,11 @@ def asymptotic_mk_test(
         if len(codons) < 2:
             continue
 
-        # Get frequency spectrum
-        freqs = ingroup.site_frequency_spectrum(codon_idx)
-        if not freqs:
+        # Polarizing needs an allele the ingroup shares with the outgroup.
+        state = ingroup.derived_state(outgroup, codon_idx)
+        if state is None:
             continue
-
-        # Get outgroup codon to determine ancestral state
-        out_codons = outgroup.codon_set_clean(codon_idx)
-        if not out_codons:
-            continue
-
-        # Find ancestral codon: must be shared between ingroup and outgroup
-        # to properly polarize the polymorphism
-        ingroup_codons = set(freqs.keys())
-        shared_codons = ingroup_codons & out_codons
-        if not shared_codons:
-            # No shared allele - can't determine ancestral state
-            continue
-        # Use the most frequent shared codon as ancestral
-        ancestral = max(shared_codons, key=lambda c: freqs.get(c, 0))
-
-        # Calculate derived allele frequency
-        derived_freq = 1.0 - freqs[ancestral]
+        derived_freq, _ = state
 
         if derived_freq <= 0 or derived_freq >= 1:
             continue

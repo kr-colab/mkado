@@ -304,39 +304,24 @@ ATGGTGATG
         )
 
         assert result.exit_code == 0
-        # Should show the singleton exclusion message
         assert "Excluding singletons" in result.output
-        assert "min frequency" in result.output
 
-    def test_batch_no_singletons_with_alpha_tg_succeeds(self, tmp_path: Path) -> None:
-        """Test that --no-singletons and --alpha-tg can be used together."""
+    def test_batch_no_singletons_drops_the_singleton_for_alpha_tg(self, tmp_path: Path) -> None:
+        """The flag reaches the alpha-TG extraction path, which it used not to."""
         alignment_dir = tmp_path / "alignments"
         alignment_dir.mkdir()
-        fasta = alignment_dir / "test.fa"
-        fasta.write_text(""">speciesA_1
-ATGATGATGATGATGATG
->speciesA_2
-ATGCTGATGATGATGATG
->speciesB_1
-ATGGTGATGATGATGATG
-""")
-
-        result = runner.invoke(
-            app,
-            [
-                "batch",
-                str(alignment_dir),
-                "-i",
-                "speciesA",
-                "-o",
-                "speciesB",
-                "--no-singletons",
-                "--alpha-tg",
-            ],
+        (alignment_dir / "gene0.fa").write_text(
+            ">speciesA_1\nATGGCCAAA\n>speciesA_2\nATGGCCAAA\n"
+            ">speciesA_3\nATGGCCAAA\n>speciesA_4\nATGGCTAAA\n"
+            ">speciesB_1\nATGGCCAAA\n"
         )
-
-        # Should succeed
-        assert result.exit_code == 0
+        argv = ["batch", str(alignment_dir), "-i", "speciesA", "-o", "speciesB", "--alpha-tg"]
+        kept = runner.invoke(app, argv)
+        dropped = runner.invoke(app, [*argv, "--no-singletons"])
+        assert kept.exit_code == 0
+        assert dropped.exit_code == 0
+        assert kept.stdout.splitlines()[1].split("\t")[3] == "1"
+        assert dropped.stdout.splitlines()[1].split("\t")[3] == "0"
 
 
 class TestCodeTable:

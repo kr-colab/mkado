@@ -89,6 +89,17 @@ def write_vcf():
     return _write_vcf
 
 
+def _write_alignment(path: Path, records: dict[str, str]) -> Path:
+    """Write a FASTA alignment from a name-to-sequence mapping."""
+    path.write_text("".join(f">{name}\n{seq}\n" for name, seq in records.items()))
+    return path
+
+
+@pytest.fixture
+def write_alignment():
+    return _write_alignment
+
+
 # ---------------------------------------------------------------------------
 # Synthetic genome
 # ---------------------------------------------------------------------------

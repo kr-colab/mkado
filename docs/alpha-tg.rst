@@ -63,8 +63,8 @@ To reduce the bias from low-frequency slightly deleterious polymorphisms,
 
 The ``--min-freq`` filter is applied per gene before α_TG is computed,
 so the weighted estimator sees only the high-frequency polymorphisms.
-``--no-singletons`` is the convenience equivalent of
-``--min-freq 1/n``.
+``--no-singletons`` is a separate filter that drops a site when the derived
+allele appears in exactly one sequence.
 
 .. _Fay, Wyckoff & Wu 2001: https://doi.org/10.1093/genetics/158.3.1227
 

@@ -139,6 +139,7 @@ def polarized_mk_test(
     genetic_code: GeneticCode | None = None,
     pool_polymorphisms: bool = False,
     min_frequency: float = 0.0,
+    no_singletons: bool = False,
 ) -> PolarizedMKResult:
     """Perform a polarized McDonald-Kreitman test.
 
@@ -244,32 +245,15 @@ def polarized_mk_test(
                     ps_unpol += syn
                 continue
 
-            # Polymorphism is polarized to ingroup lineage
-            # Apply frequency filter if specified
-            if min_frequency > 0:
-                # Get frequency spectrum from ingroup
-                freqs = ingroup.site_frequency_spectrum(codon_idx)
-                if not freqs:
+            # Polymorphism is polarized to ingroup lineage. The second outgroup carries
+            # the ancestral state here, as it does for the polarization itself.
+            if min_frequency > 0 or no_singletons:
+                state = ingroup.derived_state(outgroup2, codon_idx)
+                if state is None:
                     continue
-
-                # Get outgroup2 codons to determine ancestral state
-                out_codons = outgroup2.codon_set_clean(codon_idx)
-                if not out_codons:
+                derived_freq, derived_count = state
+                if no_singletons and derived_count == 1:
                     continue
-
-                # Find ancestral codon (shared between ingroup and outgroup2)
-                ingroup_codons = set(freqs.keys())
-                shared_codons = ingroup_codons & out_codons
-                if not shared_codons:
-                    continue
-
-                # Use the most frequent shared codon as ancestral
-                ancestral = max(shared_codons, key=lambda c: freqs.get(c, 0))
-
-                # Calculate derived allele frequency
-                derived_freq = 1.0 - freqs[ancestral]
-
-                # Skip if below minimum frequency threshold
                 if derived_freq < min_frequency:
                     continue
 

@@ -492,7 +492,7 @@ def test(
         bool,
         typer.Option(
             "--no-singletons",
-            help="Exclude singletons (sets --min-freq to 1/n automatically)",
+            help="Exclude sites where the derived allele appears once",
         ),
     ] = False,
     code_table: Annotated[
@@ -575,7 +575,7 @@ def test(
     if no_singletons and min_freq > 0.0:
         raise cli_error(
             "--no-singletons and --min-freq cannot be used together. "
-            "--no-singletons automatically sets the frequency threshold."
+            "--no-singletons filters by allele count instead."
         )
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
@@ -619,16 +619,8 @@ def test(
             err=True,
         )
 
-        # Calculate singleton frequency threshold if --no-singletons
         if no_singletons:
-            n_samples = len(ingroup_seqs)
-            if pool_polymorphisms:
-                n_samples += len(outgroup_seqs)
-            min_freq = 1.0 / n_samples
-            typer.echo(
-                f"Excluding singletons (min frequency: {min_freq:.4f}, n={n_samples})",
-                err=True,
-            )
+            typer.echo("Excluding singletons", err=True)
 
         # Run appropriate test
         if use_asymptotic:
@@ -669,6 +661,7 @@ def test(
                 reading_frame=reading_frame,
                 pool_polymorphisms=pool_polymorphisms,
                 min_frequency=min_freq,
+                no_singletons=no_singletons,
                 genetic_code=genetic_code,
             )
         else:
@@ -678,6 +671,7 @@ def test(
                 reading_frame=reading_frame,
                 pool_polymorphisms=pool_polymorphisms,
                 min_frequency=min_freq,
+                no_singletons=no_singletons,
                 genetic_code=genetic_code,
             )
 
@@ -689,18 +683,8 @@ def test(
         if polarize_match is not None:
             raise cli_error("Use -p/--polarize instead of --polarize-match in separate files mode")
 
-        # Calculate singleton frequency threshold if --no-singletons
         if no_singletons:
-            ingroup_seqs = SequenceSet.from_fasta(fasta, reading_frame=reading_frame)
-            outgroup_seqs = SequenceSet.from_fasta(outgroup_file, reading_frame=reading_frame)
-            n_samples = len(ingroup_seqs)
-            if pool_polymorphisms:
-                n_samples += len(outgroup_seqs)
-            min_freq = 1.0 / n_samples
-            typer.echo(
-                f"Excluding singletons (min frequency: {min_freq:.4f}, n={n_samples})",
-                err=True,
-            )
+            typer.echo("Excluding singletons", err=True)
 
         # Run appropriate test
         if use_asymptotic:
@@ -737,6 +721,7 @@ def test(
                 reading_frame=reading_frame,
                 pool_polymorphisms=pool_polymorphisms,
                 min_frequency=min_freq,
+                no_singletons=no_singletons,
                 genetic_code=genetic_code,
             )
         else:
@@ -746,6 +731,7 @@ def test(
                 reading_frame=reading_frame,
                 pool_polymorphisms=pool_polymorphisms,
                 min_frequency=min_freq,
+                no_singletons=no_singletons,
                 genetic_code=genetic_code,
             )
 
@@ -887,7 +873,7 @@ def batch(
         bool,
         typer.Option(
             "--no-singletons",
-            help="Exclude singletons (sets frequency threshold to 1/n per gene)",
+            help="Exclude sites where the derived allele appears once",
         ),
     ] = False,
     code_table: Annotated[
@@ -998,7 +984,7 @@ def batch(
     if no_singletons and min_freq > 0.0:
         raise cli_error(
             "--no-singletons and --min-freq cannot be used together. "
-            "--no-singletons automatically sets the frequency threshold."
+            "--no-singletons filters by allele count instead."
         )
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
