@@ -228,6 +228,26 @@ class SequenceSet:
         """
         return [i for i in range(self.num_codons) if self.is_polymorphic(i)]
 
+    def site_codon_counts(self, codon_index: int) -> tuple[dict[str, int], int]:
+        """Count each codon at a position, over sequences with no gap or ambiguity.
+
+        Args:
+            codon_index: Zero-based codon index
+
+        Returns:
+            Tuple of (codon counts, number of sequences counted). The count is the
+            denominator of the frequencies, which is below the sequence total wherever
+            a sequence is missing data at this codon.
+        """
+        counts: dict[str, int] = {}
+        total = 0
+        for seq in self.sequences:
+            codon = seq.get_codon(codon_index, self.reading_frame)
+            if "N" not in codon and "-" not in codon:
+                counts[codon] = counts.get(codon, 0) + 1
+                total += 1
+        return counts, total
+
     def site_frequency_spectrum(self, codon_index: int) -> dict[str, float]:
         """Calculate allele frequencies at a codon position.
 
@@ -237,39 +257,43 @@ class SequenceSet:
         Returns:
             Dict mapping codon strings to their frequencies (0-1)
         """
-        counts: dict[str, int] = {}
-        total = 0
-        for seq in self.sequences:
-            codon = seq.get_codon(codon_index, self.reading_frame)
-            if "N" not in codon and "-" not in codon:
-                counts[codon] = counts.get(codon, 0) + 1
-                total += 1
-
+        counts, total = self.site_codon_counts(codon_index)
         if total == 0:
             return {}
-
         return {codon: count / total for codon, count in counts.items()}
 
-    def derived_allele_frequency(self, codon_index: int, ancestral_codon: str) -> float | None:
-        """Calculate the derived allele frequency at a codon position.
+    def derived_state(
+        self, ancestral_source: SequenceSet, codon_index: int
+    ) -> tuple[float, int] | None:
+        """Derive the frequency and copy count of the non-ancestral alleles at a codon.
+
+        The ancestral codon is the one this set shares with ``ancestral_source`` at the
+        highest frequency here. Both figures cover every non-ancestral codon together,
+        so a codon carrying two different derived alleles reports a count of two.
 
         Args:
-            codon_index: Zero-based codon index
-            ancestral_codon: The ancestral (outgroup) codon
+            ancestral_source: Sequences used to infer the ancestral codon. This is the
+                outgroup for the standard test, and the second outgroup when polarizing.
+            codon_index: Zero-based codon index.
 
         Returns:
-            Frequency of derived alleles (0-1), or None if not computable
+            Tuple of (derived frequency, derived count), or None when the ancestral
+            state cannot be determined.
         """
-        freqs = self.site_frequency_spectrum(codon_index)
-        if not freqs:
+        counts, total = self.site_codon_counts(codon_index)
+        if total == 0:
             return None
 
-        ancestral_codon = ancestral_codon.upper()
-        if ancestral_codon not in freqs:
-            # Ancestral allele not present - all are derived
-            return 1.0
+        shared = set(counts) & ancestral_source.codon_set_clean(codon_index)
+        if not shared:
+            return None
 
-        return 1.0 - freqs[ancestral_codon]
+        ancestral = max(shared, key=lambda codon: counts[codon])
+        derived_count = total - counts[ancestral]
+        # Divide the count rather than subtracting the ancestral frequency, so a site
+        # sits exactly on its own frequency and a threshold comparison is not off by a
+        # rounding.
+        return derived_count / total, derived_count
 
     def filter_by_name(self, pattern: str) -> SequenceSet:
         """Filter sequences by name pattern (substring match).
