@@ -351,7 +351,7 @@ class TestAggregateModes:
             data = json.loads(result.stdout)
             assert set(data) == set(genome.expected)
             assert data["g_plus"]["cutoff"] == 0.15
-            assert data["g_plus"]["alpha"] == -3.0
+            assert data["g_plus"]["alpha"] == -1.0
         elif output_format == "pretty":
             assert "=== g_plus ===" in result.stdout
             assert "Imputed MK Test Results:" in result.stdout
@@ -364,7 +364,7 @@ class TestAggregateModes:
             }
             assert set(data) == set(genome.expected)
             assert data["g_plus"]["cutoff"] == "0.15"
-            assert data["g_plus"]["alpha"] == "-3.000000"
+            assert data["g_plus"]["alpha"] == "-1.000000"
 
 
 class TestPlots:
