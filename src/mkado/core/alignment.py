@@ -180,8 +180,9 @@ class AlignedPair:
     def classify_fixed_difference(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a fixed difference as synonymous/non-synonymous.
 
-        Uses the shortest mutational path to count the minimum number of
-        synonymous and non-synonymous changes.
+        Counts changes along the path with the fewest replacements, which is
+        MKado's rule for a pair differing at more than one position. See
+        :ref:`counting-differences`.
 
         Args:
             codon_index: Zero-based codon index

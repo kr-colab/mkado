@@ -64,6 +64,48 @@ outgroup at each analyzed position.
    (α × ω) is identical; the difference is in how :math:`L_n` and :math:`L_s`
    are estimated.
 
+.. _counting-differences:
+
+Counting differences
+--------------------
+
+:math:`D_n` and :math:`D_s` are classified one codon pair at a time, as are
+:math:`P_n` and :math:`P_s` for FASTA input. A pair differing at a single
+position is unambiguous. A pair differing at two or three positions can be
+reached by several orderings of the same length, each passing through different
+intermediate codons, so each carries its own split of synonymous and
+replacement steps.
+
+MKado discards orderings that pass through a stop codon and keeps the one with
+the **fewest replacements**. For AAA to CGC, the six orderings carry 1, 2, 3, 3,
+3 and 3 replacements, and MKado reports 1.
+
+VCF input does not use this rule for polymorphism. Each variant is classified on
+its own against the reference codon, so a codon carrying two SNPs contributes
+two independent single-position changes.
+
+.. note::
+
+   This is a parsimony rule, not the `Nei & Gojobori (1986)`_ treatment of
+   differences, which averages the counts over the surviving orderings. The two
+   agree whenever a pair differs at one position, and often otherwise: under the
+   standard code they agree for 79% of pairs differing at two positions and 41%
+   of pairs differing at three. Where they differ, parsimony reports fewer
+   replacements, never more, so :math:`D_n` runs low and :math:`D_s` high
+   relative to the averaged convention, which lowers ω and biases
+   :math:`\alpha` downward. The mean shortfall is 0.11 replacements per
+   two-position pair and 0.30 per three-position pair.
+
+   MKado's :math:`L_n` and :math:`L_s` **are** Nei-Gojobori, as described above.
+   The two conventions meet only in the site counts.
+
+.. warning::
+
+   When every ordering is blocked by a stop codon the pair is dropped from the
+   counts rather than classified. Under the vertebrate mitochondrial code this
+   silently discards four ordinary sense-codon pairs, AAA and AAG against TGA
+   and TGG, all of them Lys against Trp replacements.
+
 When ω_a / ω_na are reported (and when they are not)
 -----------------------------------------------------
 
@@ -180,6 +222,7 @@ References
 
 .. _Gossmann, Keightley & Eyre-Walker (2012): https://doi.org/10.1093/gbe/evs027
 .. _Gossmann et al. (2012): https://doi.org/10.1093/gbe/evs027
+.. _Nei & Gojobori (1986): https://doi.org/10.1093/oxfordjournals.molbev.a040410
 .. _Galtier (2016): https://doi.org/10.1371/journal.pgen.1005774
 .. _Coronado-Zamora et al. (2019): https://doi.org/10.1093/gbe/evz046
 .. _Messer & Petrov 2013: https://doi.org/10.1073/pnas.1220835110

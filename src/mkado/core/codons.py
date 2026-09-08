@@ -115,7 +115,15 @@ class GeneticCode:
         return "".join(amino_acids)
 
     def get_path(self, codon1: str, codon2: str) -> list[tuple[str, int]]:
-        """Get the shortest mutational path between two codons.
+        """Get one mutational path between two codons.
+
+        Codons differing at more than one position can be reached by several
+        orderings, all of the same length but passing through different
+        intermediate codons, so their synonymous and replacement totals differ.
+        This returns the ordering with the fewest replacements, and an empty list
+        when every ordering passes through a stop codon. Nei-Gojobori (1986)
+        instead average the totals over the surviving orderings, which reports no
+        fewer replacements than this. See :ref:`counting-differences`.
 
         Args:
             codon1: Starting codon

@@ -218,7 +218,7 @@ Divergence Extraction
 2. Build the outgroup codon: the reference codon with the outgroup allele at each position the outgroup VCF reports
 3. Positions where the ingroup is polymorphic keep the reference base in both codons; they cannot be fixed differences
 4. Skip codons that are identical, or that are stop codons in either group
-5. Classify using the shortest mutational path (via ``GeneticCode.get_path()``)
+5. Classify using the minimum-replacement path (see :ref:`counting-differences`) (via ``GeneticCode.get_path()``)
 
 The output is ``PolymorphismData`` (the same intermediate format used by the FASTA-based pipeline), which feeds directly into all existing analysis functions.
 
