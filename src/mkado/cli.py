@@ -51,13 +51,21 @@ def validate_path_not_flag(value: Path | None) -> Path | None:
 
 STDOUT_PATH = Path("-")
 
+
+def validate_output_path(value: Path | None) -> Path | None:
+    """Allow the stdout sentinel while retaining flag checks for output files."""
+    if value == STDOUT_PATH:
+        return value
+    return validate_path_not_flag(value)
+
+
 OutputOption = Annotated[
     Optional[Path],
     typer.Option(
         "--output",
         "-O",
         help="Write formatted results to this file (default: stdout). Use '-' for stdout.",
-        callback=validate_path_not_flag,
+        callback=validate_output_path,
     ),
 ]
 
