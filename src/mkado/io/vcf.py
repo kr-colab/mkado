@@ -34,18 +34,14 @@ def _open_vcf(path: str | Path) -> object:
     os.dup2(w_fd, 2)
     os.close(w_fd)
     try:
-        vcf = cyvcf2.VCF(str(path))
+        return cyvcf2.VCF(str(path))
     finally:
+        # Restore fd 2 before draining: read() only returns once the pipe's last writer is gone.
         os.dup2(orig_fd, 2)
         os.close(orig_fd)
-
-    with os.fdopen(r_fd, "r") as f:
-        captured = f.read()
-    if captured.strip():
-        for line in captured.strip().splitlines():
-            logger.debug("htslib: %s", line)
-
-    return vcf
+        with os.fdopen(r_fd) as f:
+            for line in f.read().strip().splitlines():
+                logger.debug("htslib: %s", line)
 
 
 @dataclass
