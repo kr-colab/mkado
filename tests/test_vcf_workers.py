@@ -66,15 +66,40 @@ class TestVcfBatchTask:
         assert task.extract_only is False
         assert task.ci_method == "monte-carlo"
         assert task.sfs_mode == "at"
+        assert task.frequency_cutoffs == (0.1, 0.9)
 
     def test_picklable(self, genome):
-        task = make_task(genome, "g_plus", use_asymptotic=True, bins=3)
+        task = make_task(
+            genome, "g_plus", use_asymptotic=True, bins=3, frequency_cutoffs=(0.2, 0.8)
+        )
         assert pickle.loads(pickle.dumps(task)) == task
         chunk = VcfBatchChunk(tasks=[task])
         assert pickle.loads(pickle.dumps(chunk)) == chunk
 
 
 class TestProcessVcfGene:
+    @pytest.mark.parametrize("chunked", [False, True])
+    @pytest.mark.parametrize("cutoffs", [(0.1, 0.9), (0.2, 0.8)])
+    def test_frequency_cutoffs_reach_fit(self, genome, monkeypatch, chunked, cutoffs):
+        from mkado.analysis import asymptotic
+
+        original = asymptotic.asymptotic_mk_test_aggregated
+        received = []
+
+        def record_cutoffs(*args, **kwargs):
+            received.append(kwargs.get("frequency_cutoffs"))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(asymptotic, "asymptotic_mk_test_aggregated", record_cutoffs)
+        task = make_task(
+            genome, "g_plus", use_asymptotic=True, bootstrap=0, frequency_cutoffs=cutoffs
+        )
+        task = pickle.loads(pickle.dumps(task))
+        result = process_vcf_chunk(VcfBatchChunk([task]))[0] if chunked else process_vcf_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, AsymptoticMKResult)
+        assert received == [cutoffs]
+
     def test_standard_mk(self, genome):
         expected = genome.expected["g_plus"]
         wr = process_vcf_gene(make_task(genome, "g_plus"))
