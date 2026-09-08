@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pysam
@@ -19,6 +20,13 @@ from mkado.io.vcf import (
 )
 
 OUTGROUP = ["outgroup"]
+
+needs_procfs = pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs procfs")
+
+
+def _open_fd_count() -> int:
+    """Descriptors open in this process. Raw pipe ends never raise ResourceWarning."""
+    return len(os.listdir("/proc/self/fd"))
 
 
 def _extract(genome, gene_id, **kwargs):
@@ -337,6 +345,20 @@ class TestHtslibWarningCapture:
             vcf = _open_vcf(genome.ingroup_vcf)
         vcf.close()
         assert not [r for r in caplog.records if r.message.startswith("htslib:")]
+
+    @needs_procfs
+    def test_failed_open_closes_pipe(self, not_a_vcf):
+        """The capture pipe must not leak a descriptor when htslib rejects the file."""
+        before = _open_fd_count()
+        with pytest.raises(OSError):
+            _open_vcf(not_a_vcf)
+        assert _open_fd_count() == before
+
+    @needs_procfs
+    def test_successful_open_closes_pipe(self, genome):
+        before = _open_fd_count()
+        _open_vcf(genome.ingroup_vcf).close()
+        assert _open_fd_count() == before
 
 
 class TestIngroupFiltering:
