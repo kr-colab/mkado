@@ -338,17 +338,13 @@ class TestAggregateModes:
         assert result.exit_code == 0
         assert [call["frequency_cutoffs"] for call in fitter_calls] == [(0.2, 0.8)] * 5
 
-    def test_imputed_per_gene_emits_json(self, genome, gff_chr1):
-        """The batch formatter has no TSV layout for imputed results and falls back to JSON.
-
-        Current behavior, tracked in #43.
-        """
+    def test_imputed_per_gene_table(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "--imputed", "--per-gene", *FAST)
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert set(data) == set(genome.expected)
-        assert data["g_plus"]["cutoff"] == 0.15
-        assert data["g_plus"]["alpha"] == -1.0
+        lines = result.stdout.strip().splitlines()
+        assert lines[0].startswith("gene\t" + IMPUTED_HEADER)
+        assert len(lines) == 6
+        assert lines[1].startswith("g_plus\t2\t2\t2\t1\t0.00\t2.00\t-1.000000\t1\t0.15\t")
 
 
 class TestPlots:
