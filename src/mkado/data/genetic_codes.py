@@ -379,7 +379,11 @@ NUCLEOTIDES = ["A", "C", "G", "T"]
 def _compute_codon_paths(
     code: dict[str, str] | None = None,
 ) -> dict[tuple[str, str], list[tuple[str, int]]]:
-    """Compute shortest paths between all codon pairs.
+    """Compute one mutational path between every pair of codons.
+
+    Orderings that pass through a stop codon are discarded. Among the rest, which
+    are all the same length, the one with the fewest replacements is kept, and the
+    path is empty when none survives.
 
     Args:
         code: Codon-to-amino-acid mapping. Uses standard code if None.
@@ -412,7 +416,8 @@ def _compute_codon_paths(
                 paths[(c1, c2)] = [(change_type, pos)]
 
             elif len(diffs) == 2:
-                # Two changes - find shortest path (minimize replacements)
+                # Two changes: every ordering is the same length, so keep the
+                # one with the fewest replacements.
                 best_path: list[tuple[str, int]] = []
                 best_replacements = 999
 
@@ -444,7 +449,7 @@ def _compute_codon_paths(
                 paths[(c1, c2)] = best_path
 
             else:
-                # Three changes - find shortest path
+                # Three changes: same rule, over the six orderings.
                 best_path = []
                 best_replacements = 999
 

@@ -68,15 +68,35 @@ class TestGeneticCode:
         """Test path for two nucleotide changes."""
         code = GeneticCode()
 
-        # AAA (Lys) -> AGA (Arg) - two changes at positions 1 and 2
-        # A->G at position 1, A->A at position 2 (wait, that's one change)
-        # Let's use AAA -> ACA (Thr) - one change at position 1
-        # Or AAT (Asn) -> ACT (Thr) - one change at position 1
-        # Actually, let's use a true 2-change case: AAA -> GAC
-        # AAA (Lys) -> GAC (Asp) - changes at positions 0 and 2
-        path = code.get_path("AAA", "GAC")
-        assert len(path) == 2
-        # Path should have some R and/or S changes
+        # AAA (Lys) -> GAC (Asp), changing positions 0 and 2. Either order passes
+        # through a codon of a third amino acid, so both steps are replacements and
+        # the two orderings tie. Which one the table keeps is not part of the rule.
+        assert sorted(code.get_path("AAA", "GAC")) == [("R", 0), ("R", 2)]
+
+    def test_get_path_picks_the_fewest_replacements(self) -> None:
+        """Orderings of a multi-position change are all the same length.
+
+        What separates them is how many steps are replacements, and the table keeps
+        the ordering with the fewest. Averaging over the orderings, as Nei-Gojobori
+        prescribes for differences, would report more replacements than this.
+        """
+        code = GeneticCode()
+
+        # AAA (Lys) -> CGC (Arg). Its six orderings carry 1, 2, 3, 3, 3 and 3
+        # replacements, so the average is 2.5 and the chosen path reports 1.
+        assert code.get_path("AAA", "CGC") == [("R", 1), ("S", 0), ("S", 2)]
+
+    def test_get_path_is_empty_when_every_ordering_hits_a_stop(self) -> None:
+        """A pair with no stop-free ordering has no path, so callers drop it.
+
+        Under the vertebrate mitochondrial code this reaches ordinary sense codons:
+        AAA is Lys and TGG is Trp, but AGA, AGG and TAA are all stops there.
+        """
+        code = GeneticCode(table_id=2)
+
+        assert code.translate("AAA") == "K"
+        assert code.translate("TGG") == "W"
+        assert code.get_path("AAA", "TGG") == []
 
     def test_get_path_same_codon(self) -> None:
         """Test path for identical codons."""
