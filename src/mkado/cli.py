@@ -1451,7 +1451,7 @@ def vcf(
         Path,
         typer.Option(
             "--outgroup-vcf",
-            help="Single-sample outgroup VCF (called against same reference)",
+            help="Single-sample outgroup VCF (same reference; absent positions count as reference)",
         ),
     ],
     # === Gene selection ===

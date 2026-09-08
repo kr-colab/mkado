@@ -185,7 +185,7 @@ INGROUP_RECORDS = [
     _rec("chr1", 6, "C", "T", ["0/0", "0/0", "0/0", "0/1"]),  # GCC>GCT  S  0.125
     _rec("chr1", 8, "A", "G", ["0/0", "0/0", "0/1", "0/1"]),  # AAA>AGA  N  0.25
     _rec("chr1", 10, "T", "<DEL>", ["0/1", "0/0", "0/0", "0/0"], "SVTYPE=DEL"),  # symbolic
-    _rec("chr1", 11, "T", "C", ["1/1"] * 4),  # fixed for ALT, not a polymorphism
+    _rec("chr1", 11, "T", "C", ["1/1"] * 4),  # fixed for ALT: TTC>TCC against the outgroup
     _rec("chr1", 13, "G", "T", ["./."] * 4),  # all genotypes missing
     _rec("chr1", 17, "T", "C", ["0/0", "0/0", "0/1", "0/1"]),  # CTG>CCG  N, outgroup has C
     _rec("chr1", 22, "T", "C", ["0/0"] * 4),  # ALT frequency zero
@@ -249,7 +249,7 @@ class Expected:
 EXPECTED = {
     "g_plus": Expected(
         ((0.125, "S"), (0.25, "N"), (0.75, "N")),
-        dn=1,
+        dn=2,
         ds=2,
         skipped=(2, 1, 1),
         warning="g_plus: skipped 2 indels, 1 multi-allelic",

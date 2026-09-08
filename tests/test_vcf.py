@@ -119,6 +119,13 @@ def outgroup_vcf_empty(tmp_path: Path, write_vcf) -> Path:
     return write_vcf(tmp_path / "outgroup_empty", [], samples=OUTGROUP)
 
 
+@pytest.fixture
+def ingroup_vcf_fixed_alt(tmp_path: Path, write_vcf) -> Path:
+    """Ingroup fixed for G at position 7 (0-based): codon AAA -> AGA in every sample."""
+    records = ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+    return write_vcf(tmp_path / "ingroup_fixed_alt", records)
+
+
 # htslib checks PL at header parse time and warns that it should be Number=G.
 # The warning goes to file descriptor 2 during open, which is what _open_vcf
 # captures. htslib prints it once per process, so this fixture must stay the
@@ -374,29 +381,32 @@ class TestIngroupFiltering:
         poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
         assert poly.polymorphisms == []
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="a site fixed for ALT in both ingroup and outgroup is counted as divergence (#44)",
-    )
     def test_shared_fixed_alt_is_not_divergence(
-        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+        self, synthetic_ref, simple_cds, ingroup_vcf_fixed_alt, outgroup_vcf_divergent
     ):
         """Ingroup and outgroup both carry G at codon 3; there is no difference between them."""
-        ingroup = write_vcf(
-            tmp_path / "shared_in", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        poly, _ = extract_gene_data(
+            ingroup_vcf_fixed_alt, outgroup_vcf_divergent, simple_cds, synthetic_ref
         )
-        outgroup = write_vcf(
-            tmp_path / "shared_out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
-        )
-        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
         assert poly.polymorphisms == []
         assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_fixed_alt_against_reference_outgroup_is_divergence(
+        self, synthetic_ref, simple_cds, ingroup_vcf_fixed_alt, outgroup_vcf_empty
+    ):
+        """The ingroup is fixed for G at codon 3 and the outgroup matches the reference A."""
+        poly, _ = extract_gene_data(
+            ingroup_vcf_fixed_alt, outgroup_vcf_empty, simple_cds, synthetic_ref
+        )
+        assert poly.polymorphisms == []
+        assert (poly.dn, poly.ds) == (1, 0)
 
 
 class TestOutgroupParsing:
     def test_sites_only_outgroup_ignored(self, genome, outgroup_vcf_sites_only):
+        """With no outgroup alleles, only the ingroup's fixed ALT at codon 3 is a difference."""
         poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_sites_only)
-        assert (poly.dn, poly.ds) == (0, 0)
+        assert (poly.dn, poly.ds) == (1, 0)
         # Without an outgroup allele at codon 5 the polymorphism there is not polarized.
         _assert_polys(poly.polymorphisms, [(0.125, "S"), (0.25, "N"), (0.25, "N")])
 
@@ -430,6 +440,17 @@ class TestOutgroupParsing:
             tmp_path / "same_out", ["chr1\t6\t.\tT\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
         )
         poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_third_allele_at_polymorphic_site_is_ignored(
+        self, synthetic_ref, simple_cds, ingroup_vcf_nonsyn, write_vcf, tmp_path
+    ):
+        """The ingroup is G/A at position 3 and the outgroup carries T: no fixed difference."""
+        outgroup = write_vcf(
+            tmp_path / "third_out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup_vcf_nonsyn, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.25, "N")])
         assert (poly.dn, poly.ds) == (0, 0)
 
     def test_created_stop_codon_skipped(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
@@ -501,10 +522,12 @@ class TestQueryFailures:
         assert poly.polymorphisms == []
         assert any("ingroup VCF query failed for g_plus" in r.message for r in caplog.records)
 
-    def test_unindexed_outgroup_logged_and_no_divergence(self, genome, outgroup_vcf_plain, caplog):
+    def test_unindexed_outgroup_logged_and_treated_as_reference(
+        self, genome, outgroup_vcf_plain, caplog
+    ):
         with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
             poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_plain)
-        assert (poly.dn, poly.ds) == (0, 0)
+        assert (poly.dn, poly.ds) == (1, 0)
         assert any("outgroup VCF query failed for g_plus" in r.message for r in caplog.records)
 
 
