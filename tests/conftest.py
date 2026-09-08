@@ -218,7 +218,7 @@ OUTGROUP_RECORDS = [
     _rec("chr1", 7, "A", "G,T", ["1/1"]),  # multi-allelic, ignored
     _rec("chr1", 9, "A", "<DEL>", ["1/1"], "SVTYPE=DEL"),  # symbolic, ignored
     _rec("chr1", 12, "C", "T", ["1/1"]),  # TTC>TTT  ds
-    _rec("chr1", 14, "G", "A", ["0/1"]),  # GGA>GAA  dn, heterozygous outgroup
+    _rec("chr1", 14, "G", "A", ["0/1"]),  # GGA>GAA, heterozygous outgroup, discarded
     _rec("chr1", 17, "T", "C", ["1/1"]),  # shared with an ingroup polymorphism, discarded
     _rec("chr1", 18, "G", "A", ["1/1"]),  # CTG>CTA  ds
     _rec("chr1", 19, "A", "G", ["0/0"]),  # homozygous reference, ignored
@@ -227,7 +227,9 @@ OUTGROUP_RECORDS = [
     _rec("chr1", 26, "A", "G", ["1/1"]),  # TAA>TGA inside the reference stop, ignored
     _rec("chr1", 31, "G", "A", ["1/1"]),  # g_minus TTC>TTT  ds
     _rec("chr1", 40, "C", "T", ["1/1"]),  # g_minus ATG>ATA  dn (table 2: ds)
-    _rec("chr1", 52, "C", "T", ["1/1"]),  # g_split CCT>TCT  dn
+    _rec(
+        "chr1", 52, "C", "T", ["1/1"]
+    ),  # g_split CCT>TCT, shares codon with ingroup poly, discarded
     _rec("chr1", 61, "G", "A", ["1/1"]),  # g_split GGG>GGA  ds
     _rec("chr1", 66, "A", "G", ["1/1"]),  # g_phase1 trimmed base, ignored
     _rec("chr1", 74, "A", "G", ["1/1"]),  # g_phase1 CAC>CGC  dn
@@ -260,13 +262,13 @@ class Expected:
 EXPECTED = {
     "g_plus": Expected(
         ((0.125, "S"), (0.25, "N"), (0.75, "N")),
-        dn=2,
-        ds=2,
+        dn=1,
+        ds=1,
         skipped=(2, 1, 1),
         warning="g_plus: skipped 2 indels, 1 multi-allelic",
     ),
     "g_minus": Expected(((0.125, "S"), (0.375, "N")), dn=1, ds=1),
-    "g_split": Expected(((0.125, "N"),), dn=1, ds=1),
+    "g_split": Expected(((0.125, "N"),), dn=0, ds=1),
     "g_phase1": Expected(((0.25, "S"),), dn=1, ds=0),
     "g_ncodon": Expected(((0.375, "S"),), dn=0, ds=0),
 }

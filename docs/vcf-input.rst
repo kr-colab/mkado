@@ -26,7 +26,7 @@ A multi-sample population VCF file. Bgzipped and tabix-indexed is recommended fo
 
 A single-sample VCF of the outgroup species, called against the **same reference genome** as the ingroup VCF. This is used to determine divergence (Dn/Ds) and to polarize polymorphisms.
 
-Positions with no record in the outgroup VCF, or with a missing genotype, are taken as the reference base. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence.
+Positions with no record in the outgroup VCF, with a missing genotype, or with a heterozygous genotype are taken as the reference base. A heterozygous call cannot resolve a single outgroup allele, so it is treated the same as a missing one. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence.
 
 ``--ref`` : Reference FASTA
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -209,14 +209,14 @@ Polymorphism Extraction
 5. For minus-strand genes, reverse complement the codons
 6. Classify each change as synonymous or nonsynonymous using the genetic code
 7. Compute the derived allele frequency from genotype counts
-8. If the outgroup carries the ALT allele, flip the polarization (derived frequency = 1 - ALT frequency)
+8. If the outgroup is homozygous for the ALT allele, flip the polarization (derived frequency = 1 - ALT frequency); a heterozygous outgroup genotype cannot resolve a single allele, so it does not flip the polarization
 
 Divergence Extraction
 ^^^^^^^^^^^^^^^^^^^^^
 
 1. Build the ingroup codon: the reference codon with the ALT base at each position where every ingroup sample carries ALT
-2. Build the outgroup codon: the reference codon with the outgroup allele at each position the outgroup VCF reports
-3. Positions where the ingroup is polymorphic keep the reference base in both codons; they cannot be fixed differences
+2. Build the outgroup codon: the reference codon with the outgroup allele at each position the outgroup VCF reports a homozygous-ALT genotype
+3. A codon needs one clean codon per group to be a fixed difference: if any position in the codon is polymorphic in the ingroup, the whole codon is excluded, not just that position
 4. Skip codons that are identical, or that are stop codons in either group
 5. Classify using the minimum-replacement path (see :ref:`counting-differences`) (via ``GeneticCode.get_path()``)
 
@@ -230,7 +230,9 @@ Edge Cases
 - **Missing genotypes**: Excluded from frequency calculation; only non-missing samples counted
 - **Two SNPs in the same codon**: Each SNP classified independently (standard MK convention, avoids phasing issues)
 - **Sites fixed for ALT in the ingroup**: A fixed difference when the outgroup carries the reference base; no difference when the outgroup carries the same ALT
+- **Heterozygous outgroup genotype**: Unresolved, treated the same as a missing outgroup record — not used for divergence, and does not polarize a polymorphism at that position
 - **Outgroup third allele at a polymorphic site**: Ignored for divergence, and the polymorphism is not polarized
+- **Codon with an ingroup polymorphism and an outgroup difference at another position**: The whole codon is excluded from divergence, matching the FASTA path's requirement of one clean codon per group
 - **Overlapping genes**: Each gene processed independently; the same variant can contribute to multiple genes
 - **Stop codons**: Reference stop codons skipped; premature stop-creating variants treated as nonsynonymous
 - **Incomplete CDS**: Genes where CDS length % 3 != 0 are skipped

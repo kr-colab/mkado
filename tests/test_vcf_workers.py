@@ -117,7 +117,7 @@ class TestProcessVcfGene:
         assert wr.error is None
         result = wr.result
         assert isinstance(result, AsymptoticMKResult)
-        assert (result.dn, result.ds, result.pn_total, result.ps_total) == (2, 2, 2, 1)
+        assert (result.dn, result.ds, result.pn_total, result.ps_total) == (1, 1, 2, 1)
         assert result.num_genes == 1
         assert result.ci_method == ci_method
         assert result.alpha_asymptotic == pytest.approx(-1.0)
@@ -147,7 +147,7 @@ class TestProcessVcfGene:
         result = wr.result
         assert isinstance(result, ImputedMKResult)
         assert result.cutoff == 0.3
-        assert (result.dn, result.ds, result.pn_total, result.ps_total) == (2, 2, 2, 1)
+        assert (result.dn, result.ds, result.pn_total, result.ps_total) == (1, 1, 2, 1)
 
     def test_vertebrate_mito_code(self, genome):
         wr = process_vcf_gene(make_task(genome, "g_minus", code_table=2))
@@ -155,11 +155,11 @@ class TestProcessVcfGene:
 
     def test_min_freq(self, genome):
         wr = process_vcf_gene(make_task(genome, "g_plus", min_freq=0.2))
-        assert _counts(wr.result) == (2, 2, 2, 0)
+        assert _counts(wr.result) == (1, 1, 2, 0)
 
     def test_no_singletons(self, genome):
         wr = process_vcf_gene(make_task(genome, "g_plus", no_singletons=True))
-        assert _counts(wr.result) == (2, 2, 2, 0)
+        assert _counts(wr.result) == (1, 1, 2, 0)
 
     def test_no_outgroup(self, genome):
         wr = process_vcf_gene(make_task(genome, "g_plus", outgroup_vcf_path=None))

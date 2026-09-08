@@ -103,6 +103,18 @@ def ingroup_vcf_nonsyn(tmp_path: Path, write_vcf) -> Path:
 
 
 @pytest.fixture
+def ingroup_vcf_codon2_het(tmp_path: Path, write_vcf) -> Path:
+    """Ingroup VCF with one nonsynonymous polymorphism at codon 2, base 2.
+
+    Site at position 4 (0-based): C->T in codon GCC -> GTC (Ala -> Val).
+    4 diploid samples: 1 het, 3 hom-ref => alt_freq = 1/8 = 0.125
+    VCF is 1-based, so pos=5.
+    """
+    records = ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
+    return write_vcf(tmp_path / "ingroup_codon2_het", records)
+
+
+@pytest.fixture
 def outgroup_vcf_divergent(tmp_path: Path, write_vcf) -> Path:
     """Outgroup VCF with a fixed difference at codon 3 (AAA -> AGA = Lys -> Arg).
 
@@ -410,13 +422,25 @@ class TestOutgroupParsing:
         # Without an outgroup allele at codon 5 the polymorphism there is not polarized.
         _assert_polys(poly.polymorphisms, [(0.125, "S"), (0.25, "N"), (0.25, "N")])
 
-    def test_het_outgroup_counts_as_alt(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+    def test_het_outgroup_not_counted_as_alt(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        """A heterozygous outgroup call is unresolved, like a missing record, not ALT."""
         ingroup = write_vcf(tmp_path / "het_in", [])
         outgroup = write_vcf(
             tmp_path / "het_out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
         )
         poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
-        assert (poly.dn, poly.ds) == (1, 0)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_het_outgroup_does_not_polarize(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, ingroup_vcf_codon2_het
+    ):
+        """A heterozygous outgroup call cannot resolve the ancestral allele, so the
+        ingroup polymorphism keeps its raw ALT frequency instead of being flipped."""
+        outgroup = write_vcf(
+            tmp_path / "poly_out", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup_vcf_codon2_het, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.125, "N")])
 
     def test_indel_multiallelic_symbolic_ignored(
         self, synthetic_ref, simple_cds, write_vcf, tmp_path
@@ -464,17 +488,16 @@ class TestOutgroupParsing:
 
 
 class TestPartiallyPolymorphicCodon:
-    def test_outgroup_allele_discarded_at_polymorphic_position(
-        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    def test_whole_codon_discarded_when_ingroup_polymorphic(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, ingroup_vcf_codon2_het
     ):
         """Codon GCC: the ingroup is polymorphic at base 2 and the outgroup differs at bases 2 and 3.
 
-        Only base 3 counts, so the divergence is GCC to GCT (synonymous). The
-        polymorphism at base 2 is polarized because the outgroup carries its ALT.
+        A polymorphic base voids the whole codon as a fixed difference, matching the
+        FASTA path's requirement of one clean codon per group, so base 3's clean
+        divergence does not count either. The polymorphism at base 2 is still polarized,
+        since polarization reads the outgroup's raw genotype, not the divergence codon.
         """
-        ingroup = write_vcf(
-            tmp_path / "part_in", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
-        )
         outgroup = write_vcf(
             tmp_path / "part_out",
             [
@@ -483,9 +506,9 @@ class TestPartiallyPolymorphicCodon:
             ],
             samples=OUTGROUP,
         )
-        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        poly, _ = extract_gene_data(ingroup_vcf_codon2_het, outgroup, simple_cds, synthetic_ref)
         _assert_polys(poly.polymorphisms, [(0.875, "N")])
-        assert (poly.dn, poly.ds) == (0, 1)
+        assert (poly.dn, poly.ds) == (0, 0)
 
 
 class TestHandles:
