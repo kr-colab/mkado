@@ -2,11 +2,80 @@
 
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from mkado.cli import app
 
 runner = CliRunner()
+
+
+class TestOutputPaths:
+    @pytest.mark.parametrize("command", ["test", "batch"])
+    @pytest.mark.parametrize("option", ["--output", "-O"])
+    def test_explicit_stdout_matches_default(self, tmp_path, monkeypatch, command, option):
+        monkeypatch.chdir(tmp_path)
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(">speciesA_1\nATGATGATG\n>speciesA_2\nATGCTGATG\n>speciesB_1\nATGGTGATG\n")
+        args = [
+            command,
+            str(fasta if command == "test" else tmp_path),
+            "-i",
+            "speciesA",
+            "-o",
+            "speciesB",
+            "--format",
+            "json",
+        ]
+        default = runner.invoke(app, args)
+        explicit = runner.invoke(app, [*args, option, "-"])
+        assert default.exit_code == 0, default.output
+        assert explicit.exit_code == 0, explicit.output
+        assert explicit.stdout == default.stdout
+        assert not (tmp_path / "-").exists()
+
+    @pytest.mark.parametrize("command", ["test", "batch", "vcf"])
+    def test_flag_like_output_is_rejected(self, command):
+        result = runner.invoke(app, [command, "--output", "--asymptotic"])
+        assert result.exit_code == 2
+        assert "looks like a flag" in result.output
+
+    def test_vcf_stdout_reaches_file_validation(self, tmp_path):
+        missing = str(tmp_path / "missing.vcf")
+        result = runner.invoke(
+            app,
+            [
+                "vcf",
+                "--vcf",
+                missing,
+                "--ref",
+                missing,
+                "--gff",
+                missing,
+                "--outgroup-vcf",
+                missing,
+                "--output",
+                "-",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "--vcf file not found" in result.output
+
+    def test_other_file_options_still_reject_dash(self):
+        result = runner.invoke(app, ["test", "--plot-asymptotic", "-"])
+        assert result.exit_code == 2
+        assert "looks like a flag" in result.output
+
+    def test_output_file_matches_stdout(self, tmp_path):
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(">speciesA_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+        args = ["test", str(fasta), "-i", "speciesA", "-o", "speciesB", "-f", "json"]
+        default = runner.invoke(app, args)
+        target = tmp_path / "results.json"
+        saved = runner.invoke(app, [*args, "--output", str(target)])
+        assert default.exit_code == saved.exit_code == 0
+        assert target.read_text() == default.stdout
+        assert saved.stdout == ""
 
 
 class TestOptionValidation:
