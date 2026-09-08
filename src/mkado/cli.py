@@ -1682,6 +1682,7 @@ def vcf(
             strand=cds.strand,
             phase=cds.phase,
             vcf_path=vcf_file,
+            frequency_cutoffs=frequency_cutoffs,
             outgroup_vcf_path=outgroup_vcf,
             ref_fasta_path=ref,
             code_table=code_table_id,
