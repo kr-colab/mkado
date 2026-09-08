@@ -338,3 +338,87 @@ def test_batch_row_formats_keep_duplicate_gene_names(output_format: OutputFormat
     """A row per result loses nothing to a repeated name, so it is not rejected."""
     out = format_batch_results(_two_results_with_the_same_name(), output_format)
     assert out.count("geneA") == 2
+
+
+@pytest.fixture
+def two_mk_results() -> list[tuple[str, MKResult]]:
+    """Two distinct records make row loss and name mixups visible."""
+    return [
+        (
+            "geneA",
+            MKResult(dn=10, ds=5, pn=4, ps=8, p_value=0.01, ni=0.25, alpha=0.75, dos=0.2),
+        ),
+        (
+            "geneB",
+            MKResult(dn=6, ds=3, pn=2, ps=4, p_value=0.05, ni=0.25, alpha=0.75, dos=0.2),
+        ),
+    ]
+
+
+@pytest.mark.parametrize("output_format", list(OutputFormat))
+def test_batch_formats_keep_both_gene_names(
+    two_mk_results: list[tuple[str, MKResult]], output_format: OutputFormat
+) -> None:
+    output = format_batch_results(two_mk_results, output_format)
+    assert "geneA" in output
+    assert "geneB" in output
+    if output_format == OutputFormat.TSV:
+        assert len(output.splitlines()) == 3
+    elif output_format == OutputFormat.JSON:
+        assert list(json.loads(output)) == ["geneA", "geneB"]
+    else:
+        assert output.count("=== ") == 2
+
+
+@pytest.mark.parametrize("output_format", list(OutputFormat))
+def test_batch_adjusted_pvalues_are_attached_to_matching_results(
+    two_mk_results: list[tuple[str, MKResult]], output_format: OutputFormat
+) -> None:
+    output = format_batch_results(two_mk_results, output_format, adjusted_pvalues=[0.02, 0.1])
+    if output_format == OutputFormat.JSON:
+        parsed = json.loads(output)
+        assert parsed["geneA"]["p_value_adjusted"] == 0.02
+        assert parsed["geneB"]["p_value_adjusted"] == 0.1
+    elif output_format == OutputFormat.TSV:
+        rows = [line.split("\t") for line in output.splitlines()]
+        adjusted_index = rows[0].index("p_value_adjusted")
+        assert rows[1][adjusted_index] == "0.02"
+        assert rows[2][adjusted_index] == "0.1"
+    else:
+        assert "p-value (BH adj):     0.02" in output
+        assert "p-value (BH adj):     0.1" in output
+
+
+@pytest.mark.parametrize("adjusted_pvalues", [[], [0.01], [0.01, 0.02, 0.03]])
+def test_batch_rejects_adjusted_pvalue_length_mismatch(
+    two_mk_results: list[tuple[str, MKResult]], adjusted_pvalues: list[float]
+) -> None:
+    with pytest.raises(ValueError, match="same length"):
+        format_batch_results(two_mk_results, adjusted_pvalues=adjusted_pvalues)
+
+
+@pytest.mark.parametrize(
+    ("output_format", "expected"),
+    [(OutputFormat.PRETTY, ""), (OutputFormat.TSV, ""), (OutputFormat.JSON, "{}")],
+)
+def test_batch_empty_results(output_format: OutputFormat, expected: str) -> None:
+    assert format_batch_results([], output_format) == expected
+
+
+def test_batch_json_preserves_mixed_result_shapes(
+    mk_undefined: MKResult,
+    polarized_undefined: PolarizedMKResult,
+    asymptotic_undefined: AsymptoticMKResult,
+) -> None:
+    output = format_batch_results(
+        [
+            ("standard", mk_undefined),
+            ("polarized", polarized_undefined),
+            ("asymptotic", asymptotic_undefined),
+        ],
+        OutputFormat.JSON,
+    )
+    parsed = json.loads(output)
+    assert parsed["standard"]["dn"] == 0
+    assert parsed["polarized"]["ingroup"]["dn"] == 0
+    assert parsed["asymptotic"]["alpha_asymptotic"] == 0.0
