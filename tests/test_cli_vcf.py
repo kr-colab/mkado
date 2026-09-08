@@ -244,15 +244,23 @@ class TestSingleGeneModes:
         assert result.exit_code == 0
         assert "  Neutrality Index (NI):  2.0000" in result.stdout
 
-    @pytest.mark.parametrize("extra", [["-a"], ["--imputed"], ["--alpha-tg"]])
-    def test_aggregate_modes_fall_back_to_standard_mk(self, genome, gff_chr1, extra):
-        """With one gene and the default --aggregate, the mode is dropped and standard MK runs.
-
-        Current behavior, tracked in #41.
-        """
+    @pytest.mark.parametrize(
+        ("extra", "header"),
+        [
+            (["-a"], ASYMPTOTIC_HEADER),
+            (["--imputed"], IMPUTED_HEADER),
+            (["--alpha-tg"], ALPHA_TG_HEADER),
+        ],
+    )
+    def test_single_gene_runs_requested_mode(self, genome, gff_chr1, extra, header):
+        """A mode asked for alongside --gene runs that mode on the one selected gene."""
         result = invoke(genome, gff_chr1, "--gene", "g_plus", *extra, *FAST)
         assert result.exit_code == 0
-        assert header_and_row(result.stdout) == (SINGLE_HEADER, G_PLUS_SINGLE_ROW)
+        # Only the aggregate branches announce their gene count, so this pins the path.
+        assert "Using 1 genes for" in result.output
+        got_header, row = header_and_row(result.stdout)
+        assert got_header.startswith(header)
+        assert row.split("\t")[:4] == ["2", "2", "2", "1"]
 
     def test_asymptotic_per_gene(self, genome, gff_chr1):
         result = invoke(
