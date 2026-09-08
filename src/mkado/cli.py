@@ -1011,6 +1011,8 @@ def batch(
     except (ValueError, IndexError):
         raise cli_error(f"Invalid frequency cutoffs '{freq_cutoffs}'. Use 'low,high'")
 
+    is_aggregate = (use_asymptotic and aggregate) or alpha_tg or (use_imputed and aggregate)
+
     # Auto-detect mode based on -i flag
     combined_mode = ingroup_match is not None
 
@@ -1054,9 +1056,7 @@ def batch(
                 pool_polymorphisms=pool_polymorphisms,
                 min_freq=min_freq,
                 no_singletons=no_singletons,
-                extract_only=(use_asymptotic and aggregate)
-                or alpha_tg
-                or (use_imputed and aggregate),
+                extract_only=is_aggregate,
                 code_table=code_table_id,
                 ci_method=ci_method,
                 sfs_mode=sfs_mode,
@@ -1238,9 +1238,7 @@ def batch(
                     pool_polymorphisms=pool_polymorphisms,
                     min_freq=min_freq,
                     no_singletons=no_singletons,
-                    extract_only=(use_asymptotic and aggregate)
-                    or alpha_tg
-                    or (use_imputed and aggregate),
+                    extract_only=is_aggregate,
                     code_table=code_table_id,
                     sfs_mode=sfs_mode,
                 )
@@ -1673,12 +1671,6 @@ def vcf(
         for cds in cds_regions
     ]
 
-    # Single-gene mode
-    if gene and len(tasks) == 1:
-        tasks[0].extract_only = False
-        if not use_asymptotic and not use_imputed:
-            tasks[0].extract_only = False
-
     # Determine workers
     num_workers = get_worker_count(workers, len(tasks))
 
@@ -1740,8 +1732,8 @@ def vcf(
         report_no_results(had_error)
         return
 
-    # Single gene mode: output single result
-    if gene and len(worker_results) == 1:
+    # An aggregate mode asked for with --gene still runs below, on that one gene.
+    if gene and len(worker_results) == 1 and not is_aggregate:
         write_output(format_result(worker_results[0].result, fmt), output)
         return
 

@@ -97,6 +97,15 @@ Basic Usage
        --gff annotation.gff3 \
        --gene BRCA1
 
+   # Single gene, asymptotic MK
+   mkado vcf \
+       --vcf population.vcf.gz \
+       --outgroup-vcf outgroup.vcf.gz \
+       --ref reference.fa \
+       --gff annotation.gff3 \
+       --gene BRCA1 \
+       --asymptotic
+
 Gene Selection
 --------------
 
@@ -266,7 +275,8 @@ Per-gene standard MK output (the default multi-gene mode) produces the same colu
 - **p_value**: Raw Fisher's exact test p-value
 - **p_value_adjusted**: Benjamini-Hochberg corrected p-value (controls false discovery rate across genes)
 
-Single-gene mode (``--gene``) outputs a single result in the chosen format rather than the batch table.
+Single-gene mode (``--gene``) outputs a single result in the chosen format rather than the
+batch table. A mode flag given alongside ``--gene`` runs that mode on the selected gene.
 
 Multiple Testing Correction
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
