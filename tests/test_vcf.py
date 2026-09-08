@@ -2,16 +2,39 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pysam
 import pytest
 
 from mkado.core.cds import CdsRegion
+from mkado.core.codons import GeneticCode
 from mkado.io.vcf import (
+    _complement_base,
+    _open_vcf,
     _reconstruct_codon_with_sub,
+    _ref_base_fetcher,
     extract_gene_data,
 )
+
+OUTGROUP = ["outgroup"]
+
+
+def _extract(genome, gene_id, **kwargs):
+    """Run extract_gene_data on one gene of a dataset; keyword arguments override the call."""
+    call = dict(
+        vcf_path=genome.ingroup_vcf,
+        outgroup_vcf_path=genome.outgroup_vcf,
+        cds=genome.cds(gene_id),
+        ref_fasta_path=genome.ref_fasta,
+    )
+    return extract_gene_data(**{**call, **kwargs})
+
+
+def _assert_polys(actual, expected):
+    assert [kind for _, kind in actual] == [kind for _, kind in expected]
+    assert [freq for freq, _ in actual] == pytest.approx([freq for freq, _ in expected])
 
 
 # ---- Fixtures for synthetic test data ----
@@ -47,72 +70,57 @@ def simple_cds() -> CdsRegion:
     )
 
 
-def _write_vcf(path: Path, header_lines: list[str], records: list[str]) -> Path:
-    """Write a VCF file and create tabix index."""
-    import subprocess
-
-    vcf_path = path.with_suffix(".vcf")
-    lines = []
-    lines.append("##fileformat=VCFv4.2")
-    lines.append('##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">')
-    lines.append("##contig=<ID=chr1,length=30>")
-    for h in header_lines:
-        lines.append(h)
-    lines.extend(records)
-
-    vcf_path.write_text("\n".join(lines) + "\n")
-
-    # bgzip and tabix
-    bgz_path = path.with_suffix(".vcf.gz")
-    subprocess.run(["bgzip", "-c", str(vcf_path)], stdout=open(str(bgz_path), "wb"), check=True)
-    subprocess.run(["tabix", "-p", "vcf", str(bgz_path)], check=True)
-
-    return bgz_path
-
-
 @pytest.fixture
-def ingroup_vcf_synonymous(tmp_path: Path) -> Path:
+def ingroup_vcf_synonymous(tmp_path: Path, write_vcf) -> Path:
     """Ingroup VCF with one synonymous polymorphism.
 
     Site at position 5 (0-based): C->T in codon GCC -> GCT (both Ala).
     4 diploid samples: 3 hom-ref, 1 het => alt_freq = 1/8 = 0.125
     VCF is 1-based, so pos=6.
     """
-    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsamp1\tsamp2\tsamp3\tsamp4"]
     records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/1"]
-    return _write_vcf(tmp_path / "ingroup_syn", header, records)
+    return write_vcf(tmp_path / "ingroup_syn", records)
 
 
 @pytest.fixture
-def ingroup_vcf_nonsyn(tmp_path: Path) -> Path:
+def ingroup_vcf_nonsyn(tmp_path: Path, write_vcf) -> Path:
     """Ingroup VCF with one nonsynonymous polymorphism.
 
     Site at position 3 (0-based): G->A in codon GCC -> ACC (Ala -> Thr).
     4 diploid samples: 2 hom-ref, 2 het => alt_freq = 2/8 = 0.25
     VCF is 1-based, so pos=4.
     """
-    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tsamp1\tsamp2\tsamp3\tsamp4"]
     records = ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"]
-    return _write_vcf(tmp_path / "ingroup_nonsyn", header, records)
+    return write_vcf(tmp_path / "ingroup_nonsyn", records)
 
 
 @pytest.fixture
-def outgroup_vcf_divergent(tmp_path: Path) -> Path:
+def outgroup_vcf_divergent(tmp_path: Path, write_vcf) -> Path:
     """Outgroup VCF with a fixed difference at codon 3 (AAA -> AGA = Lys -> Arg).
 
     Site at position 7 (0-based): A->G. VCF pos=8.
     Single sample, hom-alt.
     """
-    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"]
     records = ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"]
-    return _write_vcf(tmp_path / "outgroup", header, records)
+    return write_vcf(tmp_path / "outgroup", records, samples=OUTGROUP)
 
 
 @pytest.fixture
-def outgroup_vcf_empty(tmp_path: Path) -> Path:
+def outgroup_vcf_empty(tmp_path: Path, write_vcf) -> Path:
     """Outgroup VCF with no variants (all same as reference)."""
-    header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"]
-    return _write_vcf(tmp_path / "outgroup_empty", header, [])
+    return write_vcf(tmp_path / "outgroup_empty", [], samples=OUTGROUP)
+
+
+# htslib checks PL at header parse time and warns that it should be Number=G.
+# The warning goes to file descriptor 2 during open, which is what _open_vcf
+# captures. htslib prints it once per process, so this fixture must stay the
+# only one in the suite whose header carries it.
+PL_BAD_HEADER = '##FORMAT=<ID=PL,Number=1,Type=Integer,Description="Phred-scaled likelihoods">'
+
+
+@pytest.fixture
+def ingroup_vcf_pl_header(tmp_path: Path, write_vcf) -> Path:
+    return write_vcf(tmp_path / "ingroup_pl", [], extra_header=[PL_BAD_HEADER])
 
 
 # ---- Tests ----
@@ -234,17 +242,15 @@ class TestExtractGeneData:
 
 
 class TestPolarization:
-    def test_polarization_flips_frequency(self, synthetic_ref, simple_cds, tmp_path):
+    def test_polarization_flips_frequency(self, synthetic_ref, simple_cds, tmp_path, write_vcf):
         """If outgroup carries ALT, derived freq should be 1 - alt_freq."""
         # Create ingroup with a SNP at pos 5 (C->T, synonymous)
-        header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\ts1\ts2\ts3\ts4"]
         ingroup_records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/1"]
-        ingroup_vcf = _write_vcf(tmp_path / "ig_polar", header, ingroup_records)
+        ingroup_vcf = write_vcf(tmp_path / "ig_polar", ingroup_records)
 
         # Outgroup also carries T at this position
-        out_header = ["#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\toutgroup"]
         out_records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"]
-        outgroup_vcf = _write_vcf(tmp_path / "og_polar", out_header, out_records)
+        outgroup_vcf = write_vcf(tmp_path / "og_polar", out_records, samples=OUTGROUP)
 
         poly_data, _ = extract_gene_data(
             vcf_path=ingroup_vcf,
@@ -257,3 +263,250 @@ class TestPolarization:
         assert len(poly_data.polymorphisms) == 1
         freq, _ = poly_data.polymorphisms[0]
         assert abs(freq - 0.875) < 0.01
+
+
+# ---- Synthetic genome: parser branches ----
+
+
+EXPECTED_CODONS = {
+    "g_plus": "ATG GCC AAA TTC GGA CTG AGC TAC TAA",
+    "g_minus": "ATG GAC AAG TTC",
+    "g_split": "ATG AAA CCT GGG",
+    "g_phase1": "ATG GTT CAC",
+    "g_ncodon": "ATG CNT GGC",
+    "tiny00": "ATG AAA TTT",
+    "tiny11": "ATG AAA TTT",
+}
+
+
+class TestSyntheticGenome:
+    def test_codons_match_design(self, genome):
+        """Guard the reference literal: every gene must read as designed."""
+        fasta = pysam.FastaFile(str(genome.ref_fasta))
+        fetch = _ref_base_fetcher(fasta)
+        for gene_id, expected in EXPECTED_CODONS.items():
+            cds = genome.cds(gene_id)
+            codons = [cds.extract_codon(i, fetch) for i in range(cds.num_codons())]
+            assert " ".join(codons) == expected, gene_id
+        fasta.close()
+
+    @pytest.mark.parametrize(
+        "gene_id",
+        [
+            pytest.param("g_plus", id="plus_strand_with_skipped_sites"),
+            pytest.param("g_minus", id="minus_strand"),
+            pytest.param("g_split", id="codon_spans_exon_junction"),
+            pytest.param("g_phase1", id="phase_trimmed_base"),
+            pytest.param("g_ncodon", id="ambiguous_reference_base"),
+        ],
+    )
+    def test_counts_match_design(self, genome, gene_id):
+        """Every record in the synthetic VCFs lands in the branch it was written for."""
+        expected = genome.expected[gene_id]
+        poly, stats = _extract(genome, gene_id)
+        _assert_polys(poly.polymorphisms, expected.polymorphisms)
+        assert (poly.dn, poly.ds) == (expected.dn, expected.ds)
+        assert stats == expected.stats
+
+    def test_g_minus_vertebrate_mito(self, genome):
+        """Under table 2 ATA codes for Met, so the ATG to ATA difference becomes synonymous."""
+        poly, _ = _extract(genome, "g_minus", genetic_code=GeneticCode(table_id=2))
+        _assert_polys(poly.polymorphisms, genome.expected["g_minus"].polymorphisms)
+        assert (poly.dn, poly.ds) == (0, 2)
+
+
+class TestComplementBase:
+    @pytest.mark.parametrize(
+        ("base", "expected"), [("A", "T"), ("C", "G"), ("g", "c"), ("t", "a"), ("N", "N")]
+    )
+    def test_complement(self, base, expected):
+        assert _complement_base(base) == expected
+
+
+class TestHtslibWarningCapture:
+    def test_bad_pl_header_logged(self, ingroup_vcf_pl_header, caplog):
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            vcf = _open_vcf(ingroup_vcf_pl_header)
+        vcf.close()
+        htslib = [r.message for r in caplog.records if r.message.startswith("htslib:")]
+        assert htslib
+        assert any("PL" in message for message in htslib)
+
+    def test_clean_header_logs_nothing(self, genome, caplog):
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            vcf = _open_vcf(genome.ingroup_vcf)
+        vcf.close()
+        assert not [r for r in caplog.records if r.message.startswith("htslib:")]
+
+
+class TestIngroupFiltering:
+    def test_hom_alt_counts_two_alleles(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t0/0\t0/0\t0/0"]
+        ingroup = write_vcf(tmp_path / "hom_alt", records)
+        poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.25, "S")])
+
+    def test_fixed_alt_site_not_polymorphic(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        records = ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        ingroup = write_vcf(tmp_path / "fixed_alt", records)
+        poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
+        assert poly.polymorphisms == []
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason="a site fixed for ALT in both ingroup and outgroup is counted as divergence (#44)",
+    )
+    def test_shared_fixed_alt_is_not_divergence(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """Ingroup and outgroup both carry G at codon 3; there is no difference between them."""
+        ingroup = write_vcf(
+            tmp_path / "shared_in", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "shared_out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert poly.polymorphisms == []
+        assert (poly.dn, poly.ds) == (0, 0)
+
+
+class TestOutgroupParsing:
+    def test_sites_only_outgroup_ignored(self, genome, outgroup_vcf_sites_only):
+        poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_sites_only)
+        assert (poly.dn, poly.ds) == (0, 0)
+        # Without an outgroup allele at codon 5 the polymorphism there is not polarized.
+        _assert_polys(poly.polymorphisms, [(0.125, "S"), (0.25, "N"), (0.25, "N")])
+
+    def test_het_outgroup_counts_as_alt(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        ingroup = write_vcf(tmp_path / "het_in", [])
+        outgroup = write_vcf(
+            tmp_path / "het_out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (1, 0)
+
+    def test_indel_multiallelic_symbolic_ignored(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        ingroup = write_vcf(tmp_path / "skip_in", [])
+        records = [
+            "chr1\t2\t.\tTG\tT\t30\tPASS\t.\tGT\t1/1",
+            "chr1\t4\t.\tG\tA,T\t30\tPASS\t.\tGT\t1/1",
+            "chr1\t7\t.\tA\t<DEL>\t30\tPASS\tSVTYPE=DEL\tGT\t1/1",
+        ]
+        outgroup = write_vcf(tmp_path / "skip_out", records, samples=OUTGROUP)
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_ref_mismatch_identical_codon_skipped(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """The record's ALT equals the FASTA base, so the reconstructed codons are identical."""
+        ingroup = write_vcf(tmp_path / "same_in", [])
+        outgroup = write_vcf(
+            tmp_path / "same_out", ["chr1\t6\t.\tT\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_created_stop_codon_skipped(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        """AAA to TAA would create a stop, so the difference is not counted."""
+        ingroup = write_vcf(tmp_path / "stop_in", [])
+        outgroup = write_vcf(
+            tmp_path / "stop_out", ["chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+
+class TestPartiallyPolymorphicCodon:
+    def test_outgroup_allele_discarded_at_polymorphic_position(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """Codon GCC: the ingroup is polymorphic at base 2 and the outgroup differs at bases 2 and 3.
+
+        Only base 3 counts, so the divergence is GCC to GCT (synonymous). The
+        polymorphism at base 2 is polarized because the outgroup carries its ALT.
+        """
+        ingroup = write_vcf(
+            tmp_path / "part_in", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "part_out",
+            [
+                "chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t1/1",
+                "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1",
+            ],
+            samples=OUTGROUP,
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.875, "N")])
+        assert (poly.dn, poly.ds) == (0, 1)
+
+
+class TestHandles:
+    def test_preopened_handles_match_paths(self, genome):
+        ingroup = _open_vcf(genome.ingroup_vcf)
+        outgroup = _open_vcf(genome.outgroup_vcf)
+        fasta = pysam.FastaFile(str(genome.ref_fasta))
+        try:
+            via_handles, stats_handles = extract_gene_data(
+                vcf_path=Path("unused.vcf.gz"),
+                outgroup_vcf_path=Path("unused_out.vcf.gz"),
+                cds=genome.cds("g_plus"),
+                ref_fasta_path=Path("unused.fa"),
+                ingroup_vcf=ingroup,
+                outgroup_vcf=outgroup,
+                ref_fasta=fasta,
+            )
+            # The caller owns the handles, so they stay open after the call.
+            assert fasta.fetch("chr1", 0, 3) == "ATG"
+        finally:
+            ingroup.close()
+            outgroup.close()
+            fasta.close()
+
+        via_paths, stats_paths = _extract(genome, "g_plus")
+        assert via_handles == via_paths
+        assert stats_handles == stats_paths
+
+
+class TestQueryFailures:
+    def test_unindexed_ingroup_logged_and_empty(self, genome, ingroup_vcf_plain, caplog):
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            poly, _ = _extract(genome, "g_plus", vcf_path=ingroup_vcf_plain)
+        assert poly.polymorphisms == []
+        assert any("ingroup VCF query failed for g_plus" in r.message for r in caplog.records)
+
+    def test_unindexed_outgroup_logged_and_no_divergence(self, genome, outgroup_vcf_plain, caplog):
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_plain)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert any("outgroup VCF query failed for g_plus" in r.message for r in caplog.records)
+
+
+class TestSingletons:
+    @pytest.mark.xfail(
+        strict=True,
+        reason="the singleton threshold is compared with a strict less-than, so singletons stay (#40)",
+    )
+    def test_no_singletons_removes_singletons(self, genome):
+        """Four diploid samples make 0.125 the singleton frequency."""
+        poly, _ = _extract(genome, "g_plus", no_singletons=True)
+        _assert_polys(poly.polymorphisms, [(0.25, "N"), (0.75, "N")])
+
+    def test_no_singletons_keeps_higher_min_frequency(self, genome):
+        poly, _ = _extract(genome, "g_plus", no_singletons=True, min_frequency=0.5)
+        _assert_polys(poly.polymorphisms, [(0.75, "N")])
+
+    def test_no_singletons_without_snps(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        ingroup = write_vcf(tmp_path / "empty_in", [])
+        poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref, no_singletons=True)
+        assert poly.polymorphisms == []
+
+
+class TestFrequencyFilter:
+    def test_min_frequency_on_g_plus(self, genome):
+        poly, _ = _extract(genome, "g_plus", min_frequency=0.2)
+        _assert_polys(poly.polymorphisms, [(0.25, "N"), (0.75, "N")])
