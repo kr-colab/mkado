@@ -209,6 +209,11 @@ For programmatic processing:
 
    mkado batch alignments/ -i species1 -o species2 -f json > results.json
 
+The output is a JSON object keyed by gene name, where each gene name is the stem of its
+input file. Two input files that share a stem, such as ``gene1.fa`` and ``gene1.fasta``,
+therefore produce the same key and are rejected. Rename one input, narrow ``--pattern``,
+or use ``-f tsv``, which writes one row per result.
+
 Multiple Testing Correction
 ---------------------------
 

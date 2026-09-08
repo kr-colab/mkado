@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import TYPE_CHECKING, Annotated, Optional
 
 import typer
 from rich.console import Console
@@ -32,6 +32,10 @@ from scipy.stats import false_discovery_control
 
 from mkado.analysis.mk_test import MKResult
 from mkado.analysis.polarized import PolarizedMKResult
+
+if TYPE_CHECKING:
+    from mkado.analysis.asymptotic import AsymptoticMKResult
+    from mkado.analysis.imputed import ImputedMKResult
 
 # Console that writes to stderr (so progress doesn't mix with data output)
 stderr_console = Console(stderr=True)
@@ -153,6 +157,34 @@ def _collect_gene_data(
     else:
         typer.echo(f"Using {len(gene_data)} genes for {mode_label}", err=True)
     return gene_data
+
+
+def warn_duplicate_stems(files: list[Path]) -> None:
+    """Warn when input files share a stem, because the stem becomes the gene name."""
+    by_stem: dict[str, list[Path]] = {}
+    for path in files:
+        by_stem.setdefault(path.stem, []).append(path)
+    for stem, paths in sorted(by_stem.items()):
+        if len(paths) > 1:
+            names = ", ".join(str(path) for path in paths)
+            typer.echo(
+                f"Warning: {len(paths)} files share the gene name '{stem}': {names}", err=True
+            )
+
+
+def write_batch_output(
+    results: list[tuple[str, MKResult | PolarizedMKResult | AsymptoticMKResult | ImputedMKResult]],
+    fmt: OutputFormat,
+    adjusted_pvalues: list[float] | None,
+    output: Path | None,
+) -> None:
+    """Format batch results and write them, reporting a rejected result set as an error."""
+    try:
+        content = format_batch_results(results, fmt, adjusted_pvalues)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1) from e
+    write_output(content, output)
 
 
 def compute_adjusted_pvalues(
@@ -1042,6 +1074,7 @@ def batch(
             raise typer.Exit(1)
 
         typer.echo(f"Found {len(alignment_files)} alignment files", err=True)
+        warn_duplicate_stems(alignment_files)
 
         # Determine workers
         num_workers = get_worker_count(workers, len(alignment_files))
@@ -1187,6 +1220,7 @@ def batch(
             raise typer.Exit(1)
 
         typer.echo(f"Found {len(ingroup_files)} ingroup files", err=True)
+        warn_duplicate_stems(ingroup_files)
 
         def find_outgroup_file(ingroup_file: Path) -> Path | None:
             base_name = ingroup_file.stem
@@ -1364,7 +1398,7 @@ def batch(
 
     if results:
         adjusted_pvalues = compute_adjusted_pvalues(results)
-        write_output(format_batch_results(results, fmt, adjusted_pvalues), output)
+        write_batch_output(results, fmt, adjusted_pvalues, output)
 
         # Generate volcano plot if requested
         if volcano:
@@ -1854,7 +1888,7 @@ def vcf(
 
     if results_list:
         adjusted_pvalues = compute_adjusted_pvalues(results_list)
-        write_output(format_batch_results(results_list, fmt, adjusted_pvalues), output)
+        write_batch_output(results_list, fmt, adjusted_pvalues, output)
 
         # Generate volcano plot if requested
         if volcano:
