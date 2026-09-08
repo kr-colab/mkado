@@ -205,10 +205,6 @@ class TestPerGeneOutput:
         assert "g_plus" not in result.stdout
         assert out.read_text().splitlines()[1] == G_PLUS_ROW
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the flag-path check rejects '-' before write_output can treat it as stdout (#46)",
-    )
     def test_output_dash_is_stdout(self, genome, gff_chr1):
         """The --output help text documents '-' as stdout."""
         result = invoke(genome, gff_chr1, "--output", "-")
