@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 import pysam
@@ -19,6 +20,13 @@ from mkado.io.vcf import (
 )
 
 OUTGROUP = ["outgroup"]
+
+needs_procfs = pytest.mark.skipif(not os.path.isdir("/proc/self/fd"), reason="needs procfs")
+
+
+def _open_fd_count() -> int:
+    """Descriptors open in this process. Raw pipe ends never raise ResourceWarning."""
+    return len(os.listdir("/proc/self/fd"))
 
 
 def _extract(genome, gene_id, **kwargs):
@@ -109,6 +117,13 @@ def outgroup_vcf_divergent(tmp_path: Path, write_vcf) -> Path:
 def outgroup_vcf_empty(tmp_path: Path, write_vcf) -> Path:
     """Outgroup VCF with no variants (all same as reference)."""
     return write_vcf(tmp_path / "outgroup_empty", [], samples=OUTGROUP)
+
+
+@pytest.fixture
+def ingroup_vcf_fixed_alt(tmp_path: Path, write_vcf) -> Path:
+    """Ingroup fixed for G at position 7 (0-based): codon AAA -> AGA in every sample."""
+    records = ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+    return write_vcf(tmp_path / "ingroup_fixed_alt", records)
 
 
 # htslib checks PL at header parse time and warns that it should be Number=G.
@@ -338,6 +353,20 @@ class TestHtslibWarningCapture:
         vcf.close()
         assert not [r for r in caplog.records if r.message.startswith("htslib:")]
 
+    @needs_procfs
+    def test_failed_open_closes_pipe(self, not_a_vcf):
+        """The capture pipe must not leak a descriptor when htslib rejects the file."""
+        before = _open_fd_count()
+        with pytest.raises(OSError):
+            _open_vcf(not_a_vcf)
+        assert _open_fd_count() == before
+
+    @needs_procfs
+    def test_successful_open_closes_pipe(self, genome):
+        before = _open_fd_count()
+        _open_vcf(genome.ingroup_vcf).close()
+        assert _open_fd_count() == before
+
 
 class TestIngroupFiltering:
     def test_hom_alt_counts_two_alleles(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
@@ -352,29 +381,32 @@ class TestIngroupFiltering:
         poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
         assert poly.polymorphisms == []
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="a site fixed for ALT in both ingroup and outgroup is counted as divergence (#44)",
-    )
     def test_shared_fixed_alt_is_not_divergence(
-        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+        self, synthetic_ref, simple_cds, ingroup_vcf_fixed_alt, outgroup_vcf_divergent
     ):
         """Ingroup and outgroup both carry G at codon 3; there is no difference between them."""
-        ingroup = write_vcf(
-            tmp_path / "shared_in", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        poly, _ = extract_gene_data(
+            ingroup_vcf_fixed_alt, outgroup_vcf_divergent, simple_cds, synthetic_ref
         )
-        outgroup = write_vcf(
-            tmp_path / "shared_out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
-        )
-        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
         assert poly.polymorphisms == []
         assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_fixed_alt_against_reference_outgroup_is_divergence(
+        self, synthetic_ref, simple_cds, ingroup_vcf_fixed_alt, outgroup_vcf_empty
+    ):
+        """The ingroup is fixed for G at codon 3 and the outgroup matches the reference A."""
+        poly, _ = extract_gene_data(
+            ingroup_vcf_fixed_alt, outgroup_vcf_empty, simple_cds, synthetic_ref
+        )
+        assert poly.polymorphisms == []
+        assert (poly.dn, poly.ds) == (1, 0)
 
 
 class TestOutgroupParsing:
     def test_sites_only_outgroup_ignored(self, genome, outgroup_vcf_sites_only):
+        """With no outgroup alleles, only the ingroup's fixed ALT at codon 3 is a difference."""
         poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_sites_only)
-        assert (poly.dn, poly.ds) == (0, 0)
+        assert (poly.dn, poly.ds) == (1, 0)
         # Without an outgroup allele at codon 5 the polymorphism there is not polarized.
         _assert_polys(poly.polymorphisms, [(0.125, "S"), (0.25, "N"), (0.25, "N")])
 
@@ -408,6 +440,17 @@ class TestOutgroupParsing:
             tmp_path / "same_out", ["chr1\t6\t.\tT\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
         )
         poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_third_allele_at_polymorphic_site_is_ignored(
+        self, synthetic_ref, simple_cds, ingroup_vcf_nonsyn, write_vcf, tmp_path
+    ):
+        """The ingroup is G/A at position 3 and the outgroup carries T: no fixed difference."""
+        outgroup = write_vcf(
+            tmp_path / "third_out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup_vcf_nonsyn, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.25, "N")])
         assert (poly.dn, poly.ds) == (0, 0)
 
     def test_created_stop_codon_skipped(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
@@ -479,18 +522,16 @@ class TestQueryFailures:
         assert poly.polymorphisms == []
         assert any("ingroup VCF query failed for g_plus" in r.message for r in caplog.records)
 
-    def test_unindexed_outgroup_logged_and_no_divergence(self, genome, outgroup_vcf_plain, caplog):
+    def test_unindexed_outgroup_logged_and_treated_as_reference(
+        self, genome, outgroup_vcf_plain, caplog
+    ):
         with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
             poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_plain)
-        assert (poly.dn, poly.ds) == (0, 0)
+        assert (poly.dn, poly.ds) == (1, 0)
         assert any("outgroup VCF query failed for g_plus" in r.message for r in caplog.records)
 
 
 class TestSingletons:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the singleton threshold is compared with a strict less-than, so singletons stay (#40)",
-    )
     def test_no_singletons_removes_singletons(self, genome):
         """Four diploid samples make 0.125 the singleton frequency."""
         poly, _ = _extract(genome, "g_plus", no_singletons=True)
@@ -499,6 +540,33 @@ class TestSingletons:
     def test_no_singletons_keeps_higher_min_frequency(self, genome):
         poly, _ = _extract(genome, "g_plus", no_singletons=True, min_frequency=0.5)
         _assert_polys(poly.polymorphisms, [(0.75, "N")])
+
+    def test_no_singletons_removes_polarized_singleton(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """Seven of eight ALT with the outgroup on ALT makes REF the derived singleton."""
+        ingroup = write_vcf(
+            tmp_path / "pol_in", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t0/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "pol_out", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        kept, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(kept.polymorphisms, [(0.125, "S")])
+        dropped, _ = extract_gene_data(
+            ingroup, outgroup, simple_cds, synthetic_ref, no_singletons=True
+        )
+        assert dropped.polymorphisms == []
+
+    def test_no_singletons_with_missing_genotypes(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """A single ALT copy is a singleton whatever the number of called samples."""
+        ingroup = write_vcf(
+            tmp_path / "miss_in", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t./.\t0/1\t0/0\t0/0"]
+        )
+        poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref, no_singletons=True)
+        assert poly.polymorphisms == []
 
     def test_no_singletons_without_snps(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
         ingroup = write_vcf(tmp_path / "empty_in", [])
@@ -510,3 +578,8 @@ class TestFrequencyFilter:
     def test_min_frequency_on_g_plus(self, genome):
         poly, _ = _extract(genome, "g_plus", min_frequency=0.2)
         _assert_polys(poly.polymorphisms, [(0.25, "N"), (0.75, "N")])
+
+    def test_site_at_min_frequency_is_kept(self, genome):
+        """Only sites below the minimum are dropped, as the option's documentation says."""
+        poly, _ = _extract(genome, "g_plus", min_frequency=0.125)
+        _assert_polys(poly.polymorphisms, genome.expected["g_plus"].polymorphisms)
