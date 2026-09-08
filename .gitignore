@@ -20,3 +20,6 @@ examples/benchmarks/cache/
 
 # Manuscript repo (cloned locally, tracked separately)
 mkado-paper/
+
+# Sphinx build output (regenerable)
+docs/_build/
