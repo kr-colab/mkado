@@ -39,6 +39,12 @@ def make_task(genome, spec_id: str, **overrides) -> VcfBatchTask:
     return VcfBatchTask(**{**fields, **overrides})
 
 
+def _via_chunk(task: VcfBatchTask):
+    """Run one task through the chunk worker, the path the parallel CLI uses."""
+    (wr,) = process_vcf_chunk(VcfBatchChunk(tasks=[task]))
+    return wr
+
+
 def _counts(result: MKResult) -> tuple[int, int, int, int]:
     return (result.dn, result.ds, result.pn, result.ps)
 
@@ -66,6 +72,7 @@ class TestVcfBatchTask:
         assert task.extract_only is False
         assert task.ci_method == "monte-carlo"
         assert task.sfs_mode == "at"
+        assert task.frequency_cutoffs == (0.1, 0.9)
 
     def test_picklable(self, genome):
         task = make_task(genome, "g_plus", use_asymptotic=True, bins=3)
@@ -114,6 +121,15 @@ class TestProcessVcfGene:
         assert result.num_genes == 1
         assert result.ci_method == ci_method
         assert result.alpha_asymptotic == pytest.approx(-1.0)
+
+    @pytest.mark.parametrize("run", [process_vcf_gene, _via_chunk], ids=["gene", "chunk"])
+    def test_asymptotic_frequency_cutoffs_forwarded(self, genome, fitter_calls, run):
+        task = make_task(
+            genome, "g_plus", use_asymptotic=True, bootstrap=1, frequency_cutoffs=(0.2, 0.8)
+        )
+        wr = run(task)
+        assert wr.error is None
+        assert [call["frequency_cutoffs"] for call in fitter_calls] == [(0.2, 0.8)]
 
     def test_asymptotic_options_forwarded(self, genome):
         task = make_task(

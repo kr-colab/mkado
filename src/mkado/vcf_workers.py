@@ -39,6 +39,7 @@ class VcfBatchTask:
     extract_only: bool = False
     ci_method: str = "monte-carlo"
     sfs_mode: str = "at"
+    frequency_cutoffs: tuple[float, float] = (0.1, 0.9)
 
 
 @dataclass
@@ -122,6 +123,7 @@ def _process_single_gene(
                 ci_replicates=ci_replicates,
                 ci_method=task.ci_method,
                 sfs_mode=task.sfs_mode,
+                frequency_cutoffs=task.frequency_cutoffs,
             )
             return WorkerResult(gene_id=task.gene_id, result=result, warning=warning)
 
@@ -255,6 +257,7 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
                 ci_replicates=ci_replicates,
                 ci_method=task.ci_method,
                 sfs_mode=task.sfs_mode,
+                frequency_cutoffs=task.frequency_cutoffs,
             )
             return WorkerResult(gene_id=task.gene_id, result=result, warning=warning)
 

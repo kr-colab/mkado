@@ -331,17 +331,12 @@ class TestAggregateModes:
         assert lines[1].startswith("g_plus\t2\t2\t-1.000000\t-1.000000\t-1.000000\texponential\t")
         assert len(lines) == 6
 
-    def test_asymptotic_per_gene_ignores_freq_cutoffs(self, genome, gff_chr1):
-        """Per-gene workers never receive --freq-cutoffs, so the output does not change.
-
-        Current behavior, tracked in #42.
-        """
-        base = invoke(genome, gff_chr1, "-a", "--per-gene", "--bootstrap", "2")
-        cutoffs = invoke(
+    def test_asymptotic_per_gene_honors_freq_cutoffs(self, genome, gff_chr1, fitter_calls):
+        result = invoke(
             genome, gff_chr1, "-a", "--per-gene", "--bootstrap", "2", "--freq-cutoffs", "0.2,0.8"
         )
-        assert cutoffs.exit_code == 0
-        assert cutoffs.stdout == base.stdout
+        assert result.exit_code == 0
+        assert [call["frequency_cutoffs"] for call in fitter_calls] == [(0.2, 0.8)] * 5
 
     def test_imputed_per_gene_emits_json(self, genome, gff_chr1):
         """The batch formatter has no TSV layout for imputed results and falls back to JSON.

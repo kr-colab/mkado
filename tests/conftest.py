@@ -362,6 +362,25 @@ def gff_invalid_len(tmp_path: Path) -> Path:
     return _write_gff3(tmp_path / "invalid.gff3", (GeneSpec("g_bad", "chr1", ((0, 10),)),))
 
 
+@pytest.fixture
+def fitter_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+    """Record the keyword arguments of each aggregated asymptotic fit made in this process.
+
+    The workers import the fitter lazily, so patching the module attribute reaches them.
+    """
+    import mkado.analysis.asymptotic as asymptotic
+
+    real = asymptotic.asymptotic_mk_test_aggregated
+    calls: list[dict] = []
+
+    def recording(*args, **kwargs):
+        calls.append(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(asymptotic, "asymptotic_mk_test_aggregated", recording)
+    return calls
+
+
 @pytest.fixture(scope="session")
 def example_dataset() -> VcfDataset:
     """The tracked example data: 42 genes, bgzipped reference, indexed VCFs."""
