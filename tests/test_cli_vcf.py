@@ -335,17 +335,25 @@ class TestAggregateModes:
         assert lines[1].startswith("g_plus\t1\t2\t-3.000000\t-3.000000\t-3.000000\texponential\t")
         assert len(lines) == 6
 
-    def test_asymptotic_per_gene_ignores_freq_cutoffs(self, genome, gff_chr1):
-        """Per-gene workers never receive --freq-cutoffs, so the output does not change.
+    @pytest.mark.parametrize("cutoffs", [None, "0.2,0.8"])
+    def test_asymptotic_per_gene_receives_freq_cutoffs(
+        self, genome, gff_chr1, monkeypatch, cutoffs
+    ):
+        from mkado.analysis import asymptotic
 
-        Current behavior, tracked in #42.
-        """
-        base = invoke(genome, gff_chr1, "-a", "--per-gene", "--bootstrap", "2")
-        cutoffs = invoke(
-            genome, gff_chr1, "-a", "--per-gene", "--bootstrap", "2", "--freq-cutoffs", "0.2,0.8"
-        )
-        assert cutoffs.exit_code == 0
-        assert cutoffs.stdout == base.stdout
+        original = asymptotic.asymptotic_mk_test_aggregated
+        received = []
+
+        def record_cutoffs(*args, **kwargs):
+            received.append(kwargs.get("frequency_cutoffs"))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(asymptotic, "asymptotic_mk_test_aggregated", record_cutoffs)
+        options = ["--freq-cutoffs", cutoffs] if cutoffs else []
+        result = invoke(genome, gff_chr1, "-a", "--per-gene", "--bootstrap", "0", *options)
+        assert result.exit_code == 0, result.output
+        expected = (0.2, 0.8) if cutoffs else (0.1, 0.9)
+        assert received == [expected] * len(genome.expected)
 
     def test_imputed_per_gene_emits_json(self, genome, gff_chr1):
         """The batch formatter has no TSV layout for imputed results and falls back to JSON.
