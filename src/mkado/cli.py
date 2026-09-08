@@ -285,14 +285,29 @@ def get_worker_count(requested: int, num_tasks: int) -> int:
     return max(1, min(cpu_count - 1, num_tasks))
 
 
+def report_no_results(had_error: bool) -> None:
+    """Report an empty result set.
+
+    Producing no results is a normal outcome, so it succeeds. It is a failure only
+    when the set is empty because genes errored, which the per-gene messages detail.
+    """
+    if had_error:
+        raise cli_error("No results to display; every gene failed")
+    typer.echo("No results to display", err=True)
+
+
 def run_parallel_batch(
     tasks: list[BatchTask],
     num_workers: int,
     description: str,
-) -> tuple[list[WorkerResult], list[str]]:
-    """Run batch processing with ProcessPoolExecutor."""
+) -> tuple[list[WorkerResult], list[str], bool]:
+    """Run batch processing with ProcessPoolExecutor.
+
+    Returns the successful results, the messages to print, and whether any task errored.
+    """
     results: list[WorkerResult] = []
     warnings: list[str] = []
+    had_error = False
 
     if num_workers == 1:
         with create_rainbow_progress() as progress:
@@ -301,6 +316,7 @@ def run_parallel_batch(
                 worker_result = process_gene(task)
                 if worker_result.error:
                     warnings.append(worker_result.error)
+                    had_error = True
                 elif worker_result.warning:
                     warnings.append(f"Warning: {worker_result.warning}")
                 elif worker_result.result is not None:
@@ -316,6 +332,7 @@ def run_parallel_batch(
                         worker_result = future.result()
                         if worker_result.error:
                             warnings.append(worker_result.error)
+                            had_error = True
                         elif worker_result.warning:
                             warnings.append(f"Warning: {worker_result.warning}")
                         elif worker_result.result is not None:
@@ -323,9 +340,10 @@ def run_parallel_batch(
                     except Exception as e:
                         task = futures[future]
                         warnings.append(f"Error processing {task.file_path.name}: {e}")
+                        had_error = True
                     progress.advance(task_id)
 
-    return results, warnings
+    return results, warnings, had_error
 
 
 def find_alignment_files(input_dir: Path) -> list[Path]:
@@ -1051,7 +1069,7 @@ def batch(
             from mkado.analysis.alpha_tg import alpha_tg_from_gene_data
             from mkado.analysis.asymptotic import PolymorphismData
 
-            worker_results, warnings = run_parallel_batch(
+            worker_results, warnings, _ = run_parallel_batch(
                 tasks, num_workers, "Extracting polymorphism data"
             )
 
@@ -1074,7 +1092,7 @@ def batch(
         if use_asymptotic and aggregate:
             from mkado.analysis.asymptotic import PolymorphismData
 
-            worker_results, warnings = run_parallel_batch(
+            worker_results, warnings, _ = run_parallel_batch(
                 tasks, num_workers, "Extracting polymorphism data"
             )
 
@@ -1116,7 +1134,7 @@ def batch(
             from mkado.analysis.asymptotic import PolymorphismData
             from mkado.analysis.imputed import imputed_mk_test_multi
 
-            worker_results, warnings = run_parallel_batch(
+            worker_results, warnings, _ = run_parallel_batch(
                 tasks, num_workers, "Extracting polymorphism data"
             )
 
@@ -1139,7 +1157,9 @@ def batch(
             return
 
         # Per-gene mode
-        worker_results, warnings = run_parallel_batch(tasks, num_workers, "Processing alignments")
+        worker_results, warnings, had_error = run_parallel_batch(
+            tasks, num_workers, "Processing alignments"
+        )
 
         for warning in warnings:
             typer.echo(warning, err=True)
@@ -1237,7 +1257,7 @@ def batch(
             from mkado.analysis.alpha_tg import alpha_tg_from_gene_data
             from mkado.analysis.asymptotic import PolymorphismData
 
-            worker_results, warnings = run_parallel_batch(
+            worker_results, warnings, _ = run_parallel_batch(
                 tasks, num_workers, "Extracting polymorphism data"
             )
 
@@ -1260,7 +1280,7 @@ def batch(
         if use_asymptotic and aggregate:
             from mkado.analysis.asymptotic import PolymorphismData
 
-            worker_results, warnings = run_parallel_batch(
+            worker_results, warnings, _ = run_parallel_batch(
                 tasks, num_workers, "Extracting polymorphism data"
             )
 
@@ -1302,7 +1322,7 @@ def batch(
             from mkado.analysis.asymptotic import PolymorphismData
             from mkado.analysis.imputed import imputed_mk_test_multi
 
-            worker_results, warnings = run_parallel_batch(
+            worker_results, warnings, _ = run_parallel_batch(
                 tasks, num_workers, "Extracting polymorphism data"
             )
 
@@ -1325,7 +1345,9 @@ def batch(
             return
 
         # Per-gene mode
-        worker_results, warnings = run_parallel_batch(tasks, num_workers, "Processing files")
+        worker_results, warnings, had_error = run_parallel_batch(
+            tasks, num_workers, "Processing files"
+        )
 
         for warning in warnings:
             typer.echo(warning, err=True)
@@ -1353,7 +1375,7 @@ def batch(
                 err=True,
             )
     else:
-        typer.echo("No results to display", err=True)
+        report_no_results(had_error)
 
 
 @app.command()
@@ -1663,6 +1685,7 @@ def vcf(
     # Run parallel processing
     worker_results: list[WorkerResult] = []
     batch_warnings: list[str] = []
+    had_error = False
 
     if num_workers == 1:
         with create_rainbow_progress() as progress:
@@ -1671,6 +1694,7 @@ def vcf(
                 wr = process_vcf_gene(task)
                 if wr.error:
                     batch_warnings.append(wr.error)
+                    had_error = True
                 elif wr.warning:
                     batch_warnings.append(f"Warning: {wr.warning}")
                 if wr.result is not None:
@@ -1698,11 +1722,13 @@ def vcf(
                         for wr in chunk_results:
                             if wr.error:
                                 batch_warnings.append(wr.error)
+                                had_error = True
                             elif wr.warning:
                                 batch_warnings.append(f"Warning: {wr.warning}")
                             if wr.result is not None:
                                 worker_results.append(wr)
                     except Exception as e:
+                        had_error = True
                         for t in chunk.tasks:
                             batch_warnings.append(f"Error processing {t.gene_id}: {e}")
                     progress.advance(task_id, advance=len(chunk.tasks))
@@ -1711,7 +1737,8 @@ def vcf(
         typer.echo(w, err=True)
 
     if not worker_results:
-        raise cli_error("No results to display")
+        report_no_results(had_error)
+        return
 
     # Single gene mode: output single result
     if gene and len(worker_results) == 1:
@@ -1799,28 +1826,25 @@ def vcf(
         else:
             results_list.append((wr.gene_id, wr.result))
 
-    if results_list:
-        adjusted_pvalues = compute_adjusted_pvalues(results_list)
-        write_batch_output(results_list, fmt, adjusted_pvalues, output)
+    adjusted_pvalues = compute_adjusted_pvalues(results_list)
+    write_batch_output(results_list, fmt, adjusted_pvalues, output)
 
-        # Generate volcano plot if requested
-        if volcano:
-            from mkado.io.plotting import create_volcano_plot
+    # Generate volcano plot if requested
+    if volcano:
+        from mkado.io.plotting import create_volcano_plot
 
-            try:
-                create_volcano_plot(results_list, volcano)
-                typer.echo(f"Volcano plot saved to {volcano}", err=True)
-            except Exception as e:
-                typer.echo(f"Could not generate volcano plot: {e}", err=True)
+        try:
+            create_volcano_plot(results_list, volcano)
+            typer.echo(f"Volcano plot saved to {volcano}", err=True)
+        except Exception as e:
+            typer.echo(f"Could not generate volcano plot: {e}", err=True)
 
-        # Warn if --plot-asymptotic was used without --asymptotic
-        if plot_asymptotic and not use_asymptotic:
-            typer.echo(
-                "Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)",
-                err=True,
-            )
-    else:
-        typer.echo("No results to display", err=True)
+    # Warn if --plot-asymptotic was used without --asymptotic
+    if plot_asymptotic and not use_asymptotic:
+        typer.echo(
+            "Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)",
+            err=True,
+        )
 
 
 if __name__ == "__main__":

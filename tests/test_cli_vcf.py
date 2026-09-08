@@ -220,8 +220,10 @@ class TestPerGeneOutput:
         assert rows(result.stdout) == {"g_plus": (2, 2, 2, 1)}
 
     def test_every_gene_failing_exits_nonzero(self, genome, gff_bad_chrom_only):
+        """An empty result set is normal, but not when it is empty because every gene failed."""
         result = invoke(genome, gff_bad_chrom_only)
         assert result.exit_code == 1
+        assert "Error processing g_nochrom:" in result.output
         assert "No results to display" in result.output
 
     def test_vcf_with_invalid_content(self, genome, gff_chr1, not_a_vcf):

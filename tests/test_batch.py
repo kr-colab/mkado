@@ -257,7 +257,7 @@ ATGGTGATG
             for i in range(3)
         ]
 
-        results, warnings = run_parallel_batch(tasks, 1, "Testing")
+        results, warnings, _ = run_parallel_batch(tasks, 1, "Testing")
 
         assert len(results) == 3
         assert len(warnings) == 0
@@ -287,7 +287,7 @@ ATGGTGATG
             for i in range(5)
         ]
 
-        results, warnings = run_parallel_batch(tasks, 2, "Testing parallel")
+        results, warnings, _ = run_parallel_batch(tasks, 2, "Testing parallel")
 
         assert len(results) == 5
         assert len(warnings) == 0
@@ -325,7 +325,7 @@ ATGATGATG
             ),
         ]
 
-        results, warnings = run_parallel_batch(tasks, 1, "Testing warnings")
+        results, warnings, _ = run_parallel_batch(tasks, 1, "Testing warnings")
 
         assert len(results) == 1
         assert len(warnings) == 1
@@ -355,10 +355,10 @@ ATGGTGATGATG
         ]
 
         # Run in sequential mode
-        seq_results, seq_warnings = run_parallel_batch(tasks, 1, "Sequential")
+        seq_results, seq_warnings, _ = run_parallel_batch(tasks, 1, "Sequential")
 
         # Run in parallel mode
-        par_results, par_warnings = run_parallel_batch(tasks, 2, "Parallel")
+        par_results, par_warnings, _ = run_parallel_batch(tasks, 2, "Parallel")
 
         # Same number of results
         assert len(seq_results) == len(par_results)
@@ -452,3 +452,32 @@ class TestWorkerResultDataclass:
         assert result.gene_id == "gene1"
         assert result.result is None
         assert result.warning == "Missing data"
+
+
+class TestRunParallelBatchErrorFlag:
+    """The empty-result exit code depends on whether the emptiness came from errors."""
+
+    def test_reports_no_error_for_a_clean_run(self, tmp_path: Path) -> None:
+        f = tmp_path / "gene1.fa"
+        f.write_text(">speciesA_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+        task = BatchTask(file_path=f, ingroup_match="speciesA", outgroup_match="speciesB")
+        results, warnings, had_error = run_parallel_batch([task], 1, "Testing")
+        assert len(results) == 1
+        assert had_error is False
+
+    def test_reports_no_error_when_input_is_only_unanalysable(self, tmp_path: Path) -> None:
+        f = tmp_path / "gene1.fa"
+        f.write_text(">speciesA_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+        task = BatchTask(file_path=f, ingroup_match="nomatch", outgroup_match="alsonomatch")
+        results, warnings, had_error = run_parallel_batch([task], 1, "Testing")
+        assert results == []
+        assert warnings
+        assert had_error is False
+
+    def test_reports_an_error_when_a_gene_raises(self, tmp_path: Path) -> None:
+        task = BatchTask(
+            file_path=tmp_path / "missing.fa", ingroup_match="speciesA", outgroup_match="speciesB"
+        )
+        results, warnings, had_error = run_parallel_batch([task], 1, "Testing")
+        assert results == []
+        assert had_error is True
