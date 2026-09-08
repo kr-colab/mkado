@@ -347,17 +347,28 @@ class TestAggregateModes:
         assert cutoffs.exit_code == 0
         assert cutoffs.stdout == base.stdout
 
-    def test_imputed_per_gene_emits_json(self, genome, gff_chr1):
-        """The batch formatter has no TSV layout for imputed results and falls back to JSON.
-
-        Current behavior, tracked in #43.
-        """
-        result = invoke(genome, gff_chr1, "--imputed", "--per-gene", *FAST)
+    @pytest.mark.parametrize("output_format", ["tsv", "json", "pretty"])
+    def test_imputed_per_gene_respects_format(self, genome, gff_chr1, output_format):
+        result = invoke(genome, gff_chr1, "--imputed", "--per-gene", "-f", output_format, *FAST)
         assert result.exit_code == 0
-        data = json.loads(result.stdout)
-        assert set(data) == set(genome.expected)
-        assert data["g_plus"]["cutoff"] == 0.15
-        assert data["g_plus"]["alpha"] == -3.0
+        if output_format == "json":
+            data = json.loads(result.stdout)
+            assert set(data) == set(genome.expected)
+            assert data["g_plus"]["cutoff"] == 0.15
+            assert data["g_plus"]["alpha"] == -3.0
+        elif output_format == "pretty":
+            assert "=== g_plus ===" in result.stdout
+            assert "Imputed MK Test Results:" in result.stdout
+        else:
+            lines = result.stdout.strip().splitlines()
+            assert lines[0].startswith("gene\t" + IMPUTED_HEADER)
+            data = {
+                fields[0]: dict(zip(lines[0].split("\t"), fields))
+                for fields in (line.split("\t") for line in lines[1:])
+            }
+            assert set(data) == set(genome.expected)
+            assert data["g_plus"]["cutoff"] == "0.15"
+            assert data["g_plus"]["alpha"] == "-3.000000"
 
 
 class TestPlots:
