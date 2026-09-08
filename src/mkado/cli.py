@@ -1698,6 +1698,7 @@ def vcf(
             extract_only=is_aggregate or (gene is None and not use_asymptotic and not use_imputed),
             ci_method=ci_method,
             sfs_mode=sfs_mode,
+            frequency_cutoffs=frequency_cutoffs,
         )
         for cds in cds_regions
     ]
