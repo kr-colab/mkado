@@ -141,10 +141,6 @@ class TestProcessVcfGene:
         wr = process_vcf_gene(make_task(genome, "g_plus", min_freq=0.2))
         assert _counts(wr.result) == (1, 2, 2, 0)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the singleton threshold is compared with a strict less-than, so singletons stay (#40)",
-    )
     def test_no_singletons(self, genome):
         wr = process_vcf_gene(make_task(genome, "g_plus", no_singletons=True))
         assert _counts(wr.result) == (1, 2, 2, 0)

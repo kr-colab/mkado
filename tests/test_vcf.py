@@ -509,10 +509,6 @@ class TestQueryFailures:
 
 
 class TestSingletons:
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the singleton threshold is compared with a strict less-than, so singletons stay (#40)",
-    )
     def test_no_singletons_removes_singletons(self, genome):
         """Four diploid samples make 0.125 the singleton frequency."""
         poly, _ = _extract(genome, "g_plus", no_singletons=True)
@@ -521,6 +517,33 @@ class TestSingletons:
     def test_no_singletons_keeps_higher_min_frequency(self, genome):
         poly, _ = _extract(genome, "g_plus", no_singletons=True, min_frequency=0.5)
         _assert_polys(poly.polymorphisms, [(0.75, "N")])
+
+    def test_no_singletons_removes_polarized_singleton(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """Seven of eight ALT with the outgroup on ALT makes REF the derived singleton."""
+        ingroup = write_vcf(
+            tmp_path / "pol_in", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t0/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "pol_out", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        kept, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(kept.polymorphisms, [(0.125, "S")])
+        dropped, _ = extract_gene_data(
+            ingroup, outgroup, simple_cds, synthetic_ref, no_singletons=True
+        )
+        assert dropped.polymorphisms == []
+
+    def test_no_singletons_with_missing_genotypes(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """A single ALT copy is a singleton whatever the number of called samples."""
+        ingroup = write_vcf(
+            tmp_path / "miss_in", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t./.\t0/1\t0/0\t0/0"]
+        )
+        poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref, no_singletons=True)
+        assert poly.polymorphisms == []
 
     def test_no_singletons_without_snps(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
         ingroup = write_vcf(tmp_path / "empty_in", [])
@@ -532,3 +555,8 @@ class TestFrequencyFilter:
     def test_min_frequency_on_g_plus(self, genome):
         poly, _ = _extract(genome, "g_plus", min_frequency=0.2)
         _assert_polys(poly.polymorphisms, [(0.25, "N"), (0.75, "N")])
+
+    def test_site_at_min_frequency_is_kept(self, genome):
+        """Only sites below the minimum are dropped, as the option's documentation says."""
+        poly, _ = _extract(genome, "g_plus", min_frequency=0.125)
+        _assert_polys(poly.polymorphisms, genome.expected["g_plus"].polymorphisms)
