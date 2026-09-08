@@ -12,6 +12,12 @@ if TYPE_CHECKING:
     pass
 
 
+def _count_path(path: list[tuple[str, int]]) -> tuple[int, int]:
+    """Split a mutational path into (replacement, synonymous) step counts."""
+    nonsyn = sum(1 for change_type, _ in path if change_type == "R")
+    return (nonsyn, len(path) - nonsyn)
+
+
 @dataclass
 class AlignedPair:
     """Represents a pair of aligned sequence sets (ingroup and outgroup)."""
@@ -208,16 +214,20 @@ class AlignedPair:
         if not path:
             return None
 
-        nonsyn = sum(1 for change_type, _ in path if change_type == "R")
-        syn = sum(1 for change_type, _ in path if change_type == "S")
-
-        return (nonsyn, syn)
+        return _count_path(path)
 
     def _classify_against_major(self, counts: dict[str, int]) -> tuple[int, int] | None:
         """Classify a codon's alleles against the most common one.
 
-        Every allele is compared with the majority codon, and each nucleotide position
-        contributes at most once, so one mutation is not counted down two paths.
+        Every allele is compared with the majority codon. A mutation is identified by
+        the position it changes and the base it produces, so a change two alleles share
+        is counted once while two different bases at one position count as two.
+
+        Alleles are ordered most common first, ties broken alphabetically, and the first
+        is the one the rest are compared against. Two alleles can reach the same base at
+        one position through different intermediate codons, which classify differently,
+        so a fixed order is what keeps the result independent of the order of sequences
+        in the file.
 
         Args:
             counts: Codon counts at this position over the sample being classified.
@@ -226,32 +236,31 @@ class AlignedPair:
             Tuple of (non_synonymous_count, synonymous_count), or None if not a valid
             polymorphism.
         """
-        codons = list(counts)
-        if len(codons) < 2:
+        if len(counts) < 2:
             return None
 
-        if len(codons) == 2:
-            path = self.genetic_code.get_path(codons[0], codons[1])
+        major_codon, *others = sorted(counts, key=lambda c: (-counts[c], c))
+
+        if len(others) == 1:
+            path = self.genetic_code.get_path(major_codon, others[0])
+            # No stop-free ordering exists, so the pair cannot be classified.
             if not path:
                 return None
-            nonsyn = sum(1 for change_type, _ in path if change_type == "R")
-            syn = sum(1 for change_type, _ in path if change_type == "S")
-            return (nonsyn, syn)
+            return _count_path(path)
 
         total_nonsyn = 0
         total_syn = 0
-        counted_positions: set[int] = set()
-        major_codon = max(counts, key=lambda c: counts[c])
-        for codon in codons:
-            if codon == major_codon:
-                continue
+        counted: set[tuple[int, str]] = set()
+        for codon in others:
             for change_type, pos in self.genetic_code.get_path(major_codon, codon):
-                if pos not in counted_positions:
-                    if change_type == "R":
-                        total_nonsyn += 1
-                    else:
-                        total_syn += 1
-                    counted_positions.add(pos)
+                mutation = (pos, codon[pos])
+                if mutation in counted:
+                    continue
+                counted.add(mutation)
+                if change_type == "R":
+                    total_nonsyn += 1
+                else:
+                    total_syn += 1
 
         return (total_nonsyn, total_syn)
 
@@ -271,8 +280,9 @@ class AlignedPair:
     def classify_polymorphism_pooled(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a polymorphism using codons from both populations.
 
-        This follows the libsequence convention of using all unique codons
-        from both ingroup and outgroup when classifying polymorphisms.
+        Follows the libsequence convention of drawing codons from both the ingroup
+        and the outgroup. Their counts are pooled, so a codon's multiplicity decides
+        which one the others are compared against.
 
         Args:
             codon_index: Zero-based codon index
@@ -338,10 +348,7 @@ class PolarizedAlignedPair(AlignedPair):
         if not path:
             return None
 
-        nonsyn = sum(1 for change_type, _ in path if change_type == "R")
-        syn = sum(1 for change_type, _ in path if change_type == "S")
-
-        return (lineage, (nonsyn, syn))
+        return (lineage, _count_path(path))
 
     def polarize_ingroup_polymorphism(self, codon_index: int) -> tuple[int, int] | None:
         """Polarize and classify an ingroup polymorphism.

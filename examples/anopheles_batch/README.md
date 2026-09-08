@@ -42,10 +42,10 @@ mkado batch examples/anopheles_batch/ -i afun -o gamb -a -b 5
 
 ```bash
 # Standard MK test on a single gene
-mkado test examples/anopheles_batch/AGAP000074.fa -i afun -o gamb
+mkado test examples/anopheles_batch/AGAP000078.fa -i afun -o gamb
 
 # Asymptotic test on a single gene
-mkado test examples/anopheles_batch/AGAP000074.fa -i afun -o gamb -a
+mkado test examples/anopheles_batch/AGAP000078.fa -i afun -o gamb -a
 ```
 
 ## Expected Output
@@ -54,8 +54,8 @@ Running `mkado batch examples/anopheles_batch/ -i afun -o gamb` produces TSV out
 
 ```
 gene        Dn   Ds    Pn   Ps   p_value    p_value_adjusted  NI        alpha
-AGAP000074  26   77    4    23   0.464508   0.694932          0.576291  0.423709
-AGAP000099  21   81    6    40   0.240606   0.490040          0.574074  0.425926
+AGAP000150  12   28    6    17   0.781067   0.949626          0.823529  0.176471
+AGAP001182  31   44    19   32   0.712357   0.930941          0.842742  0.157258
 ...
 ```
 
@@ -63,7 +63,7 @@ Running the aggregate asymptotic MK test with 20 frequency bins fits an exponent
 
 ```
 Dn     Ds     Pn    Ps     alpha_asymptotic  CI_low    CI_high   model        num_genes
-18828  49857  4524  23117  0.687539          0.631612  0.715877  exponential  400
+18828  49857  4673  24340  0.690074          0.583694  0.718920  exponential  400
 ```
 
 ### Visualization Options
