@@ -17,7 +17,7 @@ from mkado.analysis.asymptotic import AsymptoticMKResult
 from mkado.analysis.imputed import ImputedMKResult
 from mkado.analysis.mk_test import MKResult, mk_test_from_counts
 from mkado.analysis.polarized import PolarizedMKResult
-from mkado.io.output import OutputFormat, format_result
+from mkado.io.output import OutputFormat, format_batch_results, format_result
 
 
 @pytest.fixture
@@ -52,6 +52,22 @@ def imputed_undefined() -> ImputedMKResult:
         ps_total=0,
         cutoff=0.15,
     )
+
+
+@pytest.mark.parametrize("adjusted", [None, [0.25, 0.5]])
+def test_imputed_batch_tsv_preserves_single_result_columns(imputed_undefined, adjusted):
+    header, row = format_result(imputed_undefined, OutputFormat.TSV).splitlines()
+    output = format_batch_results(
+        [("first", imputed_undefined), ("second", imputed_undefined)],
+        OutputFormat.TSV,
+        adjusted_pvalues=adjusted,
+    ).splitlines()
+    suffix = "\tp_value_adjusted" if adjusted is not None else ""
+    assert output[0] == "gene\t" + header + suffix
+    for i, name in enumerate(["first", "second"]):
+        suffix = f"\t{adjusted[i]:.6g}" if adjusted is not None else ""
+        assert output[i + 1] == f"{name}\t{row}{suffix}"
+        assert len(output[i + 1].split("\t")) == len(output[0].split("\t"))
 
 
 @pytest.fixture
