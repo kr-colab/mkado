@@ -17,7 +17,7 @@ from mkado.analysis.asymptotic import AsymptoticMKResult
 from mkado.analysis.imputed import ImputedMKResult
 from mkado.analysis.mk_test import MKResult, mk_test_from_counts
 from mkado.analysis.polarized import PolarizedMKResult
-from mkado.io.output import OutputFormat, format_result
+from mkado.io.output import OutputFormat, format_batch_results, format_result
 
 
 @pytest.fixture
@@ -146,3 +146,31 @@ def test_tsv_NA_appears_when_alpha_undefined() -> None:
     # TSV header has no NA; data row has NA wherever a None field landed
     _, values = tsv.split("\n")
     assert "NA" in values.split("\t"), f"expected NA among TSV fields; got:\n{tsv}"
+
+
+def test_batch_tsv_imputed(imputed_undefined: ImputedMKResult) -> None:
+    """Batch TSV renders imputed results as one row per gene."""
+    defined = ImputedMKResult(
+        alpha=0.5,
+        p_value=0.01,
+        pn_neutral=3.0,
+        pwd=1.0,
+        dn=10,
+        ds=5,
+        pn_total=4,
+        ps_total=8,
+        cutoff=0.15,
+        ci_method="bootstrap",
+    )
+    out = format_batch_results([("geneA", defined), ("geneB", imputed_undefined)], OutputFormat.TSV)
+    lines = out.splitlines()
+    assert lines[0].startswith("gene\tDn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha")
+    assert len(lines) == 3
+    assert lines[1].startswith("geneA\t10\t5\t4\t8\t1.00\t3.00\t0.500000\t0.01\t0.15\t")
+    assert lines[2].startswith("geneB\t0\t0\t0\t0\t0.00\t0.00\tNA\t")
+
+
+def test_batch_tsv_rejects_unknown_result_type(alpha_tg_undefined: AlphaTGResult) -> None:
+    """A result type without a batch layout is an error, not a silent format change."""
+    with pytest.raises(TypeError, match="Unknown result type"):
+        format_batch_results([("geneA", alpha_tg_undefined)], OutputFormat.TSV)
