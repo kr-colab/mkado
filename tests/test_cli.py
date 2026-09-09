@@ -160,7 +160,88 @@ ATGATGATG
         )
 
         assert result.exit_code == 1
-        assert "Polarized asymptotic test not supported" in result.output
+        assert "--asymptotic and --polarize-match are mutually exclusive." in result.output
+
+    def test_imputed_with_polarize_match_error(self, tmp_path: Path) -> None:
+        """Test that --imputed and --polarize-match cannot be used together."""
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(""">speciesA_1
+ATGATGATG
+>speciesB_1
+ATGGTGATG
+>speciesC_1
+ATGATGATG
+""")
+
+        result = runner.invoke(
+            app,
+            [
+                "test",
+                str(fasta),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--imputed",
+                "--polarize-match",
+                "speciesC",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--imputed and --polarize-match are mutually exclusive." in result.output
+
+    @pytest.mark.parametrize("flag", ["--asymptotic", "--imputed"])
+    def test_with_polarize_file_error(self, tmp_path: Path, flag: str) -> None:
+        """Test that --asymptotic/--imputed and -p/--polarize (separate files) conflict."""
+        ingroup = tmp_path / "ingroup.fa"
+        ingroup.write_text(">speciesA_1\nATGATGATG\n")
+        outgroup = tmp_path / "outgroup.fa"
+        outgroup.write_text(">speciesB_1\nATGGTGATG\n")
+        polarize = tmp_path / "polarize.fa"
+        polarize.write_text(">speciesC_1\nATGATGATG\n")
+
+        result = runner.invoke(
+            app,
+            [
+                "test",
+                str(ingroup),
+                str(outgroup),
+                flag,
+                "-p",
+                str(polarize),
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert f"{flag} and -p/--polarize are mutually exclusive." in result.output
+
+    def test_plot_asymptotic_without_asymptotic_warns_ignored(self, tmp_path: Path) -> None:
+        """Test that `test`'s --plot-asymptotic warning matches batch/vcf wording."""
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(""">speciesA_1
+ATGATGATG
+>speciesB_1
+ATGGTGATG
+""")
+        plot = tmp_path / "plot.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "test",
+                str(fasta),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--plot-asymptotic",
+                str(plot),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)" in result.output
 
     def test_asymptotic_without_min_freq_succeeds(self, tmp_path: Path) -> None:
         """Test that --asymptotic works without --min-freq."""
@@ -251,6 +332,128 @@ ATGATGATG
 
         assert result.exit_code == 1
         assert "--asymptotic and --polarize-match are mutually exclusive" in result.output
+
+    def test_batch_imputed_with_polarize_match_error(self, tmp_path: Path) -> None:
+        """Test that batch --imputed and --polarize-match cannot be used together."""
+        alignment_dir = tmp_path / "alignments"
+        alignment_dir.mkdir()
+        fasta = alignment_dir / "test.fa"
+        fasta.write_text(""">speciesA_1
+ATGATGATG
+>speciesB_1
+ATGGTGATG
+>speciesC_1
+ATGATGATG
+""")
+
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--imputed",
+                "--polarize-match",
+                "speciesC",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--imputed and --polarize-match are mutually exclusive." in result.output
+
+    @pytest.mark.parametrize("flag", ["--asymptotic", "--imputed"])
+    def test_batch_with_polarize_pattern_error(self, tmp_path: Path, flag: str) -> None:
+        """Test that batch --asymptotic/--imputed and --polarize-pattern (separate files) conflict."""
+        alignment_dir = tmp_path / "alignments"
+        alignment_dir.mkdir()
+
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                flag,
+                "--polarize-pattern",
+                "*_out2.fa",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert f"{flag} and --polarize-pattern are mutually exclusive." in result.output
+
+    def test_batch_alpha_tg_with_per_gene_warns(self, tmp_path: Path) -> None:
+        """Test that --alpha-tg --per-gene warns instead of silently ignoring --per-gene."""
+        alignment_dir = tmp_path / "alignments"
+        alignment_dir.mkdir()
+        fasta = alignment_dir / "test.fa"
+        fasta.write_text(""">speciesA_1
+ATGATGATGATGATGATG
+>speciesA_2
+ATGCTGATGATGATGATG
+>speciesB_1
+ATGGTGATGATGATGATG
+""")
+
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--alpha-tg",
+                "--per-gene",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert (
+            "Warning: --alpha-tg always aggregates across genes; --per-gene is ignored"
+            in result.output
+        )
+
+    def test_batch_volcano_plot_propagates_non_value_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A non-ValueError from create_volcano_plot must not be swallowed."""
+        import mkado.io.plotting as plotting
+
+        def boom(*args, **kwargs):
+            raise TypeError("boom")
+
+        monkeypatch.setattr(plotting, "create_volcano_plot", boom)
+
+        alignment_dir = tmp_path / "alignments"
+        alignment_dir.mkdir()
+        fasta = alignment_dir / "test.fa"
+        fasta.write_text(""">speciesA_1
+ATGATGATG
+>speciesB_1
+ATGGTGATG
+""")
+        plot = tmp_path / "volcano.png"
+
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--volcano",
+                str(plot),
+            ],
+        )
+
+        assert "Could not generate volcano plot" not in result.output
+        assert isinstance(result.exception, TypeError)
 
 
 class TestNoSingletonsOption:

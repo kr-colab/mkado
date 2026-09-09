@@ -169,6 +169,47 @@ def validate_option_compatibility(
         )
 
 
+def validate_polarize_compatibility(
+    *, use_asymptotic: bool, use_imputed: bool, polarize: bool, polarize_flag: str
+) -> None:
+    """Reject a second-outgroup flag combined with a test mode that can't use it.
+
+    ``polarize_flag`` names the flag actually in play, since it differs by command
+    and mode: ``--polarize-match``, ``-p/--polarize``, or ``--polarize-pattern``.
+    """
+    if use_asymptotic and polarize:
+        raise cli_error(f"--asymptotic and {polarize_flag} are mutually exclusive.")
+    if use_imputed and polarize:
+        raise cli_error(f"--imputed and {polarize_flag} are mutually exclusive.")
+
+
+def resolve_imputed_cutoff(*, use_imputed: bool, min_freq: float) -> float:
+    """Resolve the imputed test's derived-allele-frequency cutoff from --min-freq."""
+    return min_freq if (use_imputed and min_freq > 0.0) else 0.15
+
+
+def resolve_is_aggregate(
+    *, use_asymptotic: bool, use_imputed: bool, alpha_tg: bool, aggregate: bool
+) -> bool:
+    """alpha_TG is always aggregate; asymptotic/imputed follow --aggregate/--per-gene."""
+    return (use_asymptotic and aggregate) or alpha_tg or (use_imputed and aggregate)
+
+
+def warn_if_plot_asymptotic_ignored(*, plot_asymptotic: Path | None, use_asymptotic: bool) -> None:
+    """Warn that --plot-asymptotic has no effect without --asymptotic."""
+    if plot_asymptotic and not use_asymptotic:
+        typer.echo("Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)", err=True)
+
+
+def warn_if_alpha_tg_ignores_per_gene(*, alpha_tg: bool, aggregate: bool) -> None:
+    """Warn that --per-gene has no effect on --alpha-tg, which is always aggregate."""
+    if alpha_tg and not aggregate:
+        typer.echo(
+            "Warning: --alpha-tg always aggregates across genes; --per-gene is ignored",
+            err=True,
+        )
+
+
 def parse_frequency_cutoffs(freq_cutoffs: str) -> tuple[float, float]:
     """Parse a ``--freq-cutoffs 'low,high'`` string into a (low, high) tuple."""
     try:
@@ -252,6 +293,17 @@ def write_batch_output(
     except ValueError as e:
         raise cli_error(str(e)) from e
     write_output(content, output)
+
+
+def save_volcano_plot(results: list[tuple[str, BatchResult]], path: Path) -> None:
+    """Write a volcano plot for batch/vcf results, or report why it couldn't be made."""
+    from mkado.io.plotting import create_volcano_plot
+
+    try:
+        create_volcano_plot(results, path)
+        typer.echo(f"Volcano plot saved to {path}", err=True)
+    except ValueError as e:
+        typer.echo(f"Could not generate volcano plot: {e}", err=True)
 
 
 def compute_adjusted_pvalues(
@@ -627,8 +679,7 @@ def test(
         alpha_tg=False,
     )
 
-    # Resolve imputed cutoff from --min-freq (default 0.15)
-    imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
+    imputed_cutoff = resolve_imputed_cutoff(use_imputed=use_imputed, min_freq=min_freq)
 
     # Build genetic code
     from mkado.core.codons import GeneticCode
@@ -653,6 +704,13 @@ def test(
         if polarize_file is not None:
             raise cli_error("Use --polarize-match instead of -p in combined mode")
 
+        validate_polarize_compatibility(
+            use_asymptotic=use_asymptotic,
+            use_imputed=use_imputed,
+            polarize=bool(polarize_match),
+            polarize_flag="--polarize-match",
+        )
+
         # Load and filter sequences
         all_seqs = SequenceSet.from_fasta(fasta, reading_frame=reading_frame)
         ingroup_seqs = all_seqs.filter_by_name(ingroup_match)
@@ -673,8 +731,6 @@ def test(
 
         # Run appropriate test
         if use_asymptotic:
-            if polarize_match:
-                raise cli_error("Polarized asymptotic test not supported")
             result = asymptotic_mk_test(
                 ingroup=ingroup_seqs,
                 outgroup=outgroup_seqs,
@@ -733,13 +789,18 @@ def test(
         if polarize_match is not None:
             raise cli_error("Use -p/--polarize instead of --polarize-match in separate files mode")
 
+        validate_polarize_compatibility(
+            use_asymptotic=use_asymptotic,
+            use_imputed=use_imputed,
+            polarize=bool(polarize_file),
+            polarize_flag="-p/--polarize",
+        )
+
         if no_singletons:
             typer.echo("Excluding singletons", err=True)
 
         # Run appropriate test
         if use_asymptotic:
-            if polarize_file:
-                raise cli_error("Polarized asymptotic test not supported")
             result = asymptotic_mk_test(
                 ingroup=fasta,
                 outgroup=outgroup_file,
@@ -799,8 +860,7 @@ def test(
                 typer.echo(f"Asymptotic plot saved to {plot_asymptotic}", err=True)
             except ValueError as e:
                 typer.echo(f"Could not generate plot: {e}", err=True)
-    elif plot_asymptotic and not use_asymptotic:
-        typer.echo("Warning: --plot-asymptotic requires --asymptotic/-a flag", err=True)
+    warn_if_plot_asymptotic_ignored(plot_asymptotic=plot_asymptotic, use_asymptotic=use_asymptotic)
 
 
 @app.command()
@@ -1009,12 +1069,17 @@ def batch(
         alpha_tg=alpha_tg,
     )
 
-    # Resolve imputed cutoff from --min-freq (default 0.15)
-    imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
+    imputed_cutoff = resolve_imputed_cutoff(use_imputed=use_imputed, min_freq=min_freq)
 
     frequency_cutoffs = parse_frequency_cutoffs(freq_cutoffs)
 
-    is_aggregate = (use_asymptotic and aggregate) or alpha_tg or (use_imputed and aggregate)
+    is_aggregate = resolve_is_aggregate(
+        use_asymptotic=use_asymptotic,
+        use_imputed=use_imputed,
+        alpha_tg=alpha_tg,
+        aggregate=aggregate,
+    )
+    warn_if_alpha_tg_ignores_per_gene(alpha_tg=alpha_tg, aggregate=aggregate)
 
     # Auto-detect mode based on -i flag
     combined_mode = ingroup_match is not None
@@ -1024,8 +1089,12 @@ def batch(
         if not outgroup_match:
             raise cli_error("-o/--outgroup-match required with -i/--ingroup-match")
 
-        if use_asymptotic and polarize_match:
-            raise cli_error("--asymptotic and --polarize-match are mutually exclusive")
+        validate_polarize_compatibility(
+            use_asymptotic=use_asymptotic,
+            use_imputed=use_imputed,
+            polarize=bool(polarize_match),
+            polarize_flag="--polarize-match",
+        )
 
         # Find alignment files
         if file_pattern:
@@ -1172,8 +1241,12 @@ def batch(
 
     else:
         # === SEPARATE FILES MODE ===
-        if use_asymptotic and polarize_pattern:
-            raise cli_error("--asymptotic and --polarize-pattern are mutually exclusive")
+        validate_polarize_compatibility(
+            use_asymptotic=use_asymptotic,
+            use_imputed=use_imputed,
+            polarize=bool(polarize_pattern),
+            polarize_flag="--polarize-pattern",
+        )
 
         ingroup_files = sorted(input_dir.glob(ingroup_pattern))
 
@@ -1361,22 +1434,12 @@ def batch(
         adjusted_pvalues = compute_adjusted_pvalues(results)
         write_batch_output(results, fmt, adjusted_pvalues, output)
 
-        # Generate volcano plot if requested
         if volcano:
-            from mkado.io.plotting import create_volcano_plot
+            save_volcano_plot(results, volcano)
 
-            try:
-                create_volcano_plot(results, volcano)
-                typer.echo(f"Volcano plot saved to {volcano}", err=True)
-            except ValueError as e:
-                typer.echo(f"Could not generate volcano plot: {e}", err=True)
-
-        # Warn if --plot-asymptotic was used without --asymptotic
-        if plot_asymptotic and not use_asymptotic:
-            typer.echo(
-                "Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)",
-                err=True,
-            )
+        warn_if_plot_asymptotic_ignored(
+            plot_asymptotic=plot_asymptotic, use_asymptotic=use_asymptotic
+        )
     else:
         report_no_results(had_error)
 
@@ -1594,7 +1657,7 @@ def vcf(
         alpha_tg=alpha_tg,
     )
 
-    imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
+    imputed_cutoff = resolve_imputed_cutoff(use_imputed=use_imputed, min_freq=min_freq)
 
     # Resolve genetic code
     code_table_id = resolve_code_table_or_exit(code_table)
@@ -1628,7 +1691,13 @@ def vcf(
     # Build tasks
     from mkado.vcf_workers import VcfBatchChunk, VcfBatchTask, process_vcf_chunk, process_vcf_gene
 
-    is_aggregate = (use_asymptotic and aggregate) or alpha_tg or (use_imputed and aggregate)
+    is_aggregate = resolve_is_aggregate(
+        use_asymptotic=use_asymptotic,
+        use_imputed=use_imputed,
+        alpha_tg=alpha_tg,
+        aggregate=aggregate,
+    )
+    warn_if_alpha_tg_ignores_per_gene(alpha_tg=alpha_tg, aggregate=aggregate)
 
     tasks = [
         VcfBatchTask(
@@ -1807,22 +1876,10 @@ def vcf(
     adjusted_pvalues = compute_adjusted_pvalues(results_list)
     write_batch_output(results_list, fmt, adjusted_pvalues, output)
 
-    # Generate volcano plot if requested
     if volcano:
-        from mkado.io.plotting import create_volcano_plot
+        save_volcano_plot(results_list, volcano)
 
-        try:
-            create_volcano_plot(results_list, volcano)
-            typer.echo(f"Volcano plot saved to {volcano}", err=True)
-        except Exception as e:
-            typer.echo(f"Could not generate volcano plot: {e}", err=True)
-
-    # Warn if --plot-asymptotic was used without --asymptotic
-    if plot_asymptotic and not use_asymptotic:
-        typer.echo(
-            "Warning: --plot-asymptotic requires --asymptotic/-a flag (ignored)",
-            err=True,
-        )
+    warn_if_plot_asymptotic_ignored(plot_asymptotic=plot_asymptotic, use_asymptotic=use_asymptotic)
 
 
 if __name__ == "__main__":

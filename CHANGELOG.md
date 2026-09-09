@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- `--imputed` combined with a polarize flag silently ran an unpolarized
+  imputed test instead of erroring, unlike `--asymptotic` which already
+  rejected the combination (with wording that had itself drifted
+  between `test` and `batch`). `--plot-asymptotic`'s ignored-flag
+  warning was missing its "(ignored)" suffix in `test`. `vcf`'s
+  volcano-plot code caught a broader exception than `batch`'s identical
+  call, swallowing real bugs. `--alpha-tg` combined with `--per-gene`
+  silently ignored `--per-gene` with no warning. The `imputed_cutoff`
+  and `is_aggregate` calculations were duplicated verbatim across
+  `test`/`batch`/`vcf`. All six now go through shared helpers
+  (closes #103).
 - `test`, `batch`, and `vcf` each hand-wrote the same option-conflict
   checks and the copies had drifted: `vcf` dropped the explanatory
   clause from its messages, and checked `--alpha-tg`/`--imputed`
