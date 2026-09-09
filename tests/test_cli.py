@@ -103,6 +103,36 @@ ATGGTGATG
         assert result.exit_code == 1
         assert "--alpha-tg and --asymptotic are mutually exclusive" in result.output
 
+    def test_batch_imputed_alpha_tg_asymptotic_error(self, tmp_path: Path) -> None:
+        """With all three of --imputed/--alpha-tg/--asymptotic set, --alpha-tg vs
+        --asymptotic wins, matching the precedence `vcf` must also follow."""
+        alignment_dir = tmp_path / "alignments"
+        alignment_dir.mkdir()
+        fasta = alignment_dir / "test.fa"
+        fasta.write_text(""">speciesA_1
+ATGATGATG
+>speciesB_1
+ATGGTGATG
+""")
+
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--imputed",
+                "--alpha-tg",
+                "--asymptotic",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert "--alpha-tg and --asymptotic are mutually exclusive" in result.output
+
     def test_asymptotic_with_polarize_match_error(self, tmp_path: Path) -> None:
         """Test that --asymptotic and --polarize-match cannot be used together."""
         fasta = tmp_path / "test.fa"
