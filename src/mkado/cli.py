@@ -140,24 +140,19 @@ def validate_option_compatibility(
     """Reject combinations of frequency-filter and alpha-method flags that conflict.
 
     Shared by ``test``, ``batch``, and ``vcf`` so all three raise the same message in
-    the same precedence order. ``alpha_tg`` defaults to False since ``test`` has no
-    ``--alpha-tg`` flag.
+    the same precedence order. ``alpha_tg`` defaults to False for callers without an
+    ``--alpha-tg`` flag; ``test`` has none and passes False explicitly.
     """
+    freq_cutoffs_note = "The asymptotic test uses --freq-cutoffs for frequency filtering."
     if use_asymptotic and min_freq > 0.0:
-        raise cli_error(
-            "--min-freq cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering."
-        )
+        raise cli_error(f"--min-freq cannot be used with --asymptotic. {freq_cutoffs_note}")
     if alpha_tg and use_asymptotic:
         raise cli_error(
             "--alpha-tg and --asymptotic are mutually exclusive. "
             "Choose one method for estimating alpha."
         )
     if use_asymptotic and no_singletons:
-        raise cli_error(
-            "--no-singletons cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering."
-        )
+        raise cli_error(f"--no-singletons cannot be used with --asymptotic. {freq_cutoffs_note}")
     if use_imputed and use_asymptotic:
         raise cli_error("--imputed and --asymptotic are mutually exclusive.")
     if use_imputed and alpha_tg:
@@ -629,6 +624,7 @@ def test(
         use_imputed=use_imputed,
         no_singletons=no_singletons,
         min_freq=min_freq,
+        alpha_tg=False,
     )
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
