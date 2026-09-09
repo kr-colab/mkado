@@ -437,6 +437,26 @@ class TestAlphaTGOmegaCIs:
         ):
             assert key in d
 
+    def test_single_gene_all_cis_none(self) -> None:
+        # One gene gives the gene-resampling bootstrap nothing to vary, so the
+        # alpha CI and every omega CI derived from it are undefined.
+        gene_data = [
+            PolymorphismData(
+                polymorphisms=[(0.2, "N")] * 5 + [(0.5, "S")] * 15,
+                dn=10,
+                ds=20,
+                ln=200.0,
+                ls=100.0,
+            ),
+        ]
+        result = alpha_tg_from_gene_data(gene_data, bootstrap_replicates=10, seed=42)
+        assert result.omega is not None
+        assert result.ci_low is None
+        assert result.ci_high is None
+        assert result.omega_ci_low is None
+        assert result.omega_a_ci_low is None
+        assert result.omega_na_ci_low is None
+
     def test_cis_none_when_sites_missing(self) -> None:
         # If any gene lacks site counts, omega_total is None and so are the CIs.
         gene_data = [

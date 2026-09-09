@@ -42,11 +42,19 @@ class AlphaTGResult:
     ni_tg: float
     """The underlying weighted neutrality index."""
 
-    ci_low: float
-    """Lower bound of 95% bootstrap confidence interval for alpha_tg."""
+    ci_low: float | None
+    """Lower bound of 95% bootstrap confidence interval for alpha_tg.
 
-    ci_high: float
-    """Upper bound of 95% bootstrap confidence interval for alpha_tg."""
+    ``None`` when fewer than two genes are available: the gene-resampling
+    bootstrap always redraws the same single gene, so no interval can be
+    estimated.
+    """
+
+    ci_high: float | None
+    """Upper bound of 95% bootstrap confidence interval for alpha_tg.
+
+    ``None`` under the same one-gene condition as ``ci_low``.
+    """
 
     num_genes: int
     """Number of genes used in the calculation."""
@@ -91,10 +99,12 @@ class AlphaTGResult:
 
     def __str__(self) -> str:
         """Return a human-readable string representation."""
+        ci_low_str = f"{self.ci_low:.4f}" if self.ci_low is not None else "NA"
+        ci_high_str = f"{self.ci_high:.4f}" if self.ci_high is not None else "NA"
         lines = [
             "Tarone-Greenland Alpha (Stoletzki & Eyre-Walker 2011):",
             f"  α_TG:  {self.alpha_tg:.4f} "
-            f"(95% CI [{self.ci_method}]: {self.ci_low:.4f} - {self.ci_high:.4f})",
+            f"(95% CI [{self.ci_method}]: {ci_low_str} - {ci_high_str})",
             f"  NI_TG: {self.ni_tg:.4f}",
             f"  Divergence:    Dn={self.dn_total}, Ds={self.ds_total}",
             f"  Polymorphism:  Pn={self.pn_total}, Ps={self.ps_total}",
@@ -231,39 +241,45 @@ def alpha_tg_from_gene_data(
 
     # Bootstrap for confidence intervals; resamples genes, so Dn/Ds/Ln/Ls
     # totals also vary per replicate, giving omega its own sampling distribution.
-    rng = np.random.default_rng(seed)
+    # With one gene every replicate redraws that same gene, so the interval
+    # cannot be estimated; skip the resampling and report it as undefined
+    # rather than a zero-width interval that looks like real precision.
     bootstrap_alphas: list[float] = []
     # omega_decomposition returns all three or none, so these stay in lockstep.
     bootstrap_omegas: list[float] = []
     bootstrap_omega_a: list[float] = []
     bootstrap_omega_na: list[float] = []
 
-    for _ in range(bootstrap_replicates):
-        indices = rng.integers(0, num_genes, size=num_genes)
-        boot_data = [gene_data[i] for i in indices]
+    if num_genes >= 2:
+        rng = np.random.default_rng(seed)
+        for _ in range(bootstrap_replicates):
+            indices = rng.integers(0, num_genes, size=num_genes)
+            boot_data = [gene_data[i] for i in indices]
 
-        boot_ni = compute_ni_tg(boot_data)
-        if boot_ni is None:
-            continue
-        boot_alpha = 1.0 - boot_ni
-        bootstrap_alphas.append(boot_alpha)
+            boot_ni = compute_ni_tg(boot_data)
+            if boot_ni is None:
+                continue
+            boot_alpha = 1.0 - boot_ni
+            bootstrap_alphas.append(boot_alpha)
 
-        boot_dn = sum(g.dn for g in boot_data)
-        boot_ds = sum(g.ds for g in boot_data)
-        boot_ln, boot_ls = sum_site_totals(boot_data)
-        boot_omega, boot_oa, boot_ona = omega_decomposition(
-            boot_dn, boot_ds, boot_ln, boot_ls, boot_alpha
-        )
-        if boot_omega is not None:
-            bootstrap_omegas.append(boot_omega)
-            bootstrap_omega_a.append(boot_oa)
-            bootstrap_omega_na.append(boot_ona)
+            boot_dn = sum(g.dn for g in boot_data)
+            boot_ds = sum(g.ds for g in boot_data)
+            boot_ln, boot_ls = sum_site_totals(boot_data)
+            boot_omega, boot_oa, boot_ona = omega_decomposition(
+                boot_dn, boot_ds, boot_ln, boot_ls, boot_alpha
+            )
+            if boot_omega is not None:
+                bootstrap_omegas.append(boot_omega)
+                bootstrap_omega_a.append(boot_oa)
+                bootstrap_omega_na.append(boot_ona)
 
     if bootstrap_alphas:
         ci_low, ci_high = np.percentile(bootstrap_alphas, [2.5, 97.5])
         ci_low, ci_high = float(ci_low), float(ci_high)
     else:
-        ci_low = ci_high = alpha_tg
+        # Undefined, not a fabricated zero-width interval: either num_genes < 2
+        # (skipped above) or every replicate failed (denominator always zero).
+        ci_low = ci_high = None
 
     if bootstrap_omegas:
         cis = np.percentile(

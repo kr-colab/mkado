@@ -34,6 +34,7 @@ from mkado.analysis.mk_test import MKResult
 from mkado.analysis.polarized import PolarizedMKResult
 
 if TYPE_CHECKING:
+    from mkado.analysis.alpha_tg import AlphaTGResult
     from mkado.io.output import BatchResult
 
 # Console that writes to stderr (so progress doesn't mix with data output)
@@ -206,6 +207,16 @@ def warn_if_alpha_tg_ignores_per_gene(*, alpha_tg: bool, aggregate: bool) -> Non
     if alpha_tg and not aggregate:
         typer.echo(
             "Warning: --alpha-tg always aggregates across genes; --per-gene is ignored",
+            err=True,
+        )
+
+
+def warn_if_alpha_tg_ci_undefined(result: AlphaTGResult) -> None:
+    """Warn that the alpha_TG bootstrap CI is undefined with fewer than two genes."""
+    if result.num_genes < 2:
+        typer.echo(
+            "Warning: alpha_TG confidence interval requires at least 2 genes "
+            f"(got {result.num_genes}); CI fields reported as NA",
             err=True,
         )
 
@@ -1156,6 +1167,7 @@ def batch(
                     gene_data=gene_data_list,
                     bootstrap_replicates=bootstrap,
                 )
+                warn_if_alpha_tg_ci_undefined(result)
                 write_output(format_result(result, fmt), output)
             else:
                 typer.echo("No valid gene data extracted", err=True)
@@ -1347,6 +1359,7 @@ def batch(
                     gene_data=gene_data_list,
                     bootstrap_replicates=bootstrap,
                 )
+                warn_if_alpha_tg_ci_undefined(result)
                 write_output(format_result(result, fmt), output)
             else:
                 typer.echo("No valid gene data extracted", err=True)
@@ -1803,6 +1816,7 @@ def vcf(
                 gene_data=gene_data_list,
                 bootstrap_replicates=bootstrap,
             )
+            warn_if_alpha_tg_ci_undefined(result)
             write_output(format_result(result, fmt), output)
         else:
             typer.echo("No valid gene data extracted", err=True)

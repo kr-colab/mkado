@@ -156,6 +156,48 @@ class TestAlphaTgFromGeneData:
         ci_width = result.ci_high - result.ci_low
         assert ci_width < 0.5  # Should not be excessively wide
 
+    def test_single_gene_ci_is_none(self) -> None:
+        """A single gene gives the bootstrap nothing to resample: CI is undefined."""
+        gene_data = [
+            PolymorphismData(
+                polymorphisms=[(0.2, "N")] * 5 + [(0.5, "S")] * 15,
+                dn=10,
+                ds=20,
+                gene_id="gene1",
+            )
+        ]
+
+        result = alpha_tg_from_gene_data(gene_data, bootstrap_replicates=100, seed=42)
+
+        assert result.num_genes == 1
+        assert result.ci_low is None
+        assert result.ci_high is None
+        # Point estimate stays meaningful even though the interval is undefined.
+        assert result.alpha_tg == pytest.approx(1 / 3)
+
+    def test_two_genes_ci_is_defined(self) -> None:
+        """Two genes is enough for the gene-resampling bootstrap to vary."""
+        gene_data = [
+            PolymorphismData(
+                polymorphisms=[(0.2, "N")] * 5 + [(0.5, "S")] * 10,
+                dn=10,
+                ds=20,
+                gene_id="gene1",
+            ),
+            PolymorphismData(
+                polymorphisms=[(0.3, "N")] * 3 + [(0.6, "S")] * 7,
+                dn=5,
+                ds=8,
+                gene_id="gene2",
+            ),
+        ]
+
+        result = alpha_tg_from_gene_data(gene_data, bootstrap_replicates=100, seed=42)
+
+        assert result.num_genes == 2
+        assert result.ci_low is not None
+        assert result.ci_high is not None
+
     def test_reproducibility_with_seed(self) -> None:
         """Test that results are reproducible with same seed."""
         gene_data = [
@@ -251,6 +293,9 @@ class TestAlphaTGIntegration:
         assert isinstance(result, AlphaTGResult)
         assert result.num_genes == 1
         assert result.dn_total > 0 or result.ds_total > 0
+        # One gene gives the bootstrap nothing to resample: CI is undefined.
+        assert result.ci_low is None
+        assert result.ci_high is None
 
     def test_comparison_with_simple_alpha(self, tmp_path: Path) -> None:
         """Test that α_TG differs from simple α average when heterogeneity exists."""

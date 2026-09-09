@@ -71,6 +71,22 @@ def alpha_tg_undefined() -> AlphaTGResult:
 
 
 @pytest.fixture
+def alpha_tg_ci_undefined() -> AlphaTGResult:
+    """A single-gene result: point estimates are defined, CI fields are not."""
+    return AlphaTGResult(
+        alpha_tg=0.35,
+        ni_tg=0.65,
+        ci_low=None,
+        ci_high=None,
+        num_genes=1,
+        dn_total=10,
+        ds_total=20,
+        pn_total=5,
+        ps_total=15,
+    )
+
+
+@pytest.fixture
 def polarized_undefined() -> PolarizedMKResult:
     return PolarizedMKResult(
         dn_ingroup=0,
@@ -95,6 +111,7 @@ _ALL_UNDEFINED = [
     "asymptotic_undefined",
     "imputed_undefined",
     "alpha_tg_undefined",
+    "alpha_tg_ci_undefined",
     "polarized_undefined",
 ]
 
@@ -144,6 +161,23 @@ def test_tsv_NA_appears_when_alpha_undefined() -> None:
     result = mk_test_from_counts(dn=0, ds=0, pn=0, ps=0)
     tsv = format_result(result, OutputFormat.TSV)
     # TSV header has no NA; data row has NA wherever a None field landed
+    _, values = tsv.split("\n")
+    assert "NA" in values.split("\t"), f"expected NA among TSV fields; got:\n{tsv}"
+
+
+def test_pretty_NA_appears_when_alpha_tg_ci_undefined(
+    alpha_tg_ci_undefined: AlphaTGResult,
+) -> None:
+    """Targeted check: with one gene, AlphaTGResult.__str__ emits 'NA' for the CI."""
+    pretty = str(alpha_tg_ci_undefined)
+    assert "NA" in pretty, f"expected NA in pretty output; got:\n{pretty}"
+
+
+def test_tsv_NA_appears_when_alpha_tg_ci_undefined(
+    alpha_tg_ci_undefined: AlphaTGResult,
+) -> None:
+    """Targeted check: with one gene, AlphaTGResult TSV emits 'NA' for CI_low/CI_high."""
+    tsv = format_result(alpha_tg_ci_undefined, OutputFormat.TSV)
     _, values = tsv.split("\n")
     assert "NA" in values.split("\t"), f"expected NA among TSV fields; got:\n{tsv}"
 
