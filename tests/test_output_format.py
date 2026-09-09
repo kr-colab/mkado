@@ -170,6 +170,62 @@ def test_batch_tsv_imputed(imputed_undefined: ImputedMKResult) -> None:
     assert lines[2].startswith("geneB\t0\t0\t0\t0\t0.00\t0.00\tNA\t")
 
 
+def test_batch_tsv_imputed_with_adjusted_pvalues(imputed_undefined: ImputedMKResult) -> None:
+    """The adjusted p-value column, when present, sits directly after p_value."""
+    defined = ImputedMKResult(
+        alpha=0.5,
+        p_value=0.01,
+        pn_neutral=3.0,
+        pwd=1.0,
+        dn=10,
+        ds=5,
+        pn_total=4,
+        ps_total=8,
+        cutoff=0.15,
+        ci_method="bootstrap",
+    )
+    out = format_batch_results(
+        [("geneA", defined), ("geneB", imputed_undefined)],
+        OutputFormat.TSV,
+        adjusted_pvalues=[0.02, 0.9],
+    )
+    lines = out.splitlines()
+    assert lines[0].startswith(
+        "gene\tDn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha\tp_value\tp_value_adjusted\tcutoff\t"
+    )
+    assert lines[1].startswith("geneA\t10\t5\t4\t8\t1.00\t3.00\t0.500000\t0.01\t0.02\t0.15\t")
+    assert lines[2].startswith("geneB\t0\t0\t0\t0\t0.00\t0.00\tNA\t1\t0.9\t0.15\t")
+
+
+def test_batch_json_polarized_adjusted_pvalue_nests_in_ingroup(
+    polarized_undefined: PolarizedMKResult,
+) -> None:
+    """The adjusted p-value sits beside the p-value it adjusts, inside ``ingroup``."""
+    out = format_batch_results(
+        [("geneA", polarized_undefined), ("geneB", polarized_undefined)],
+        OutputFormat.JSON,
+        adjusted_pvalues=[0.02, 0.9],
+    )
+    data = json.loads(out)
+    assert data["geneA"]["ingroup"]["p_value_adjusted"] == 0.02
+    assert "p_value_adjusted" not in data["geneA"]
+    assert data["geneB"]["ingroup"]["p_value_adjusted"] == 0.9
+
+
+def test_batch_json_imputed_adjusted_pvalue_is_top_level(
+    imputed_undefined: ImputedMKResult,
+) -> None:
+    """Unlike polarized, imputed's ``to_dict`` is flat, so the adjusted value stays top-level."""
+    out = format_batch_results(
+        [("geneA", imputed_undefined), ("geneB", imputed_undefined)],
+        OutputFormat.JSON,
+        adjusted_pvalues=[0.02, 0.9],
+    )
+    data = json.loads(out)
+    assert data["geneA"]["p_value_adjusted"] == 0.02
+    assert data["geneB"]["p_value_adjusted"] == 0.9
+
+
 def test_batch_tsv_rejects_unknown_result_type(alpha_tg_undefined: AlphaTGResult) -> None:
     """A result type without a batch layout is an error, not a silent format change."""
     with pytest.raises(TypeError, match="Unknown result type"):

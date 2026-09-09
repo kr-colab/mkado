@@ -349,12 +349,19 @@ class TestAggregateModes:
         assert [call["frequency_cutoffs"] for call in fitter_calls] == [(0.2, 0.8)] * 5
 
     def test_imputed_per_gene_table(self, genome, gff_chr1):
+        """A per-gene batch carries a real adjusted p-value, spliced after p_value."""
         result = invoke(genome, gff_chr1, "--imputed", "--per-gene", *FAST)
         assert result.exit_code == 0
         lines = result.stdout.strip().splitlines()
-        assert lines[0].startswith("gene\t" + IMPUTED_HEADER)
+        assert lines[0].startswith(
+            "gene\t"
+            + IMPUTED_HEADER.replace("p_value\tcutoff", "p_value\tp_value_adjusted\tcutoff")
+        )
         assert len(lines) == 6
-        assert lines[1].startswith("g_plus\t1\t1\t2\t1\t0.00\t2.00\t-1.000000\t1\t0.15\t")
+        fields = lines[1].split("\t")
+        assert fields[:9] == ["g_plus", "1", "1", "2", "1", "0.00", "2.00", "-1.000000", "1"]
+        float(fields[9])  # p_value_adjusted is a real number, not the old hardcoded 1.0
+        assert fields[10] == "0.15"
 
 
 class TestPlots:

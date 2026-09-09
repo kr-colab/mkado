@@ -34,8 +34,7 @@ from mkado.analysis.mk_test import MKResult
 from mkado.analysis.polarized import PolarizedMKResult
 
 if TYPE_CHECKING:
-    from mkado.analysis.asymptotic import AsymptoticMKResult
-    from mkado.analysis.imputed import ImputedMKResult
+    from mkado.io.output import BatchResult
 
 # Console that writes to stderr (so progress doesn't mix with data output)
 stderr_console = Console(stderr=True)
@@ -202,7 +201,7 @@ def warn_duplicate_stems(files: list[Path]) -> None:
 
 
 def write_batch_output(
-    results: list[tuple[str, MKResult | PolarizedMKResult | AsymptoticMKResult | ImputedMKResult]],
+    results: list[tuple[str, BatchResult]],
     fmt: OutputFormat,
     adjusted_pvalues: list[float] | None,
     output: Path | None,
@@ -216,27 +215,41 @@ def write_batch_output(
 
 
 def compute_adjusted_pvalues(
-    results: list[tuple[str, MKResult | PolarizedMKResult]],
-) -> list[float]:
+    results: list[tuple[str, BatchResult]],
+) -> list[float] | None:
     """Compute Benjamini-Hochberg adjusted p-values for batch results.
 
     Args:
         results: List of (name, result) tuples from MK tests
 
     Returns:
-        List of adjusted p-values in the same order as input results
+        Adjusted p-values in the same order as ``results``, or ``None`` when
+        the result type carries no p-value (currently only
+        ``AsymptoticMKResult``) or ``results`` is empty.
     """
+    from mkado.analysis.asymptotic import AsymptoticMKResult
+    from mkado.analysis.imputed import ImputedMKResult
+
     p_values = []
     for _, result in results:
         if isinstance(result, MKResult):
             p_values.append(result.p_value)
         elif isinstance(result, PolarizedMKResult):
             p_values.append(result.p_value_ingroup)
+        elif isinstance(result, ImputedMKResult):
+            p_values.append(result.p_value)
+        elif isinstance(result, AsymptoticMKResult):
+            # Every call site batches one result type per invocation, so
+            # dropping these entries still leaves p_values index-aligned
+            # with `results` (all-or-nothing: either every entry is skipped
+            # here and the empty-p_values check below returns None, or none
+            # is).
+            continue
         else:
-            p_values.append(1.0)  # Default for unknown types
+            raise TypeError(f"Unknown result type: {type(result)}")
 
     if not p_values:
-        return []
+        return None
 
     return list(false_discovery_control(p_values, method="bh"))
 

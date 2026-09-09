@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from mkado.analysis.mk_test import MKResult
     from mkado.analysis.polarized import PolarizedMKResult
 
+    # The four result types that carry a per-gene batch layout (TSV/JSON/pretty).
+    # AlphaTGResult has no batch layout, so it is deliberately excluded here.
+    BatchResult = MKResult | PolarizedMKResult | AsymptoticMKResult | ImputedMKResult
+
 
 class OutputFormat(Enum):
     """Supported output formats."""
@@ -55,21 +59,31 @@ def _omega_tsv_columns(result: MKResult | PolarizedMKResult) -> str:
     return f"{_fmt_optional(result.ln)}\t{_fmt_optional(result.ls)}\t{_fmt_optional(result.omega)}"
 
 
-_IMPUTED_TSV_HEADER = (
-    "Dn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha\tp_value\tcutoff\t"
-    "Ln\tLs\tomega\tomega_a\tomega_na\t"
-    "alpha_CI_low\talpha_CI_high\t"
-    "omega_a_CI_low\tomega_a_CI_high\tomega_na_CI_low\tomega_na_CI_high\tci_method"
-)
-
-
-def _imputed_tsv_row(result: ImputedMKResult) -> str:
-    """One TSV row for an imputed result, in the column order of _IMPUTED_TSV_HEADER."""
-    ci_method_str = result.ci_method if result.ci_method is not None else "NA"
+def _imputed_tsv_header(include_adjusted: bool = False) -> str:
+    """Column header for an imputed result row, matching _imputed_tsv_row's order."""
+    header = "Dn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha\tp_value"
+    if include_adjusted:
+        header += "\tp_value_adjusted"
     return (
+        f"{header}\tcutoff\t"
+        "Ln\tLs\tomega\tomega_a\tomega_na\t"
+        "alpha_CI_low\talpha_CI_high\t"
+        "omega_a_CI_low\tomega_a_CI_high\tomega_na_CI_low\tomega_na_CI_high\tci_method"
+    )
+
+
+def _imputed_tsv_row(result: ImputedMKResult, adjusted_p_value: float | None = None) -> str:
+    """One TSV row for an imputed result, in the column order of _imputed_tsv_header()."""
+    ci_method_str = result.ci_method if result.ci_method is not None else "NA"
+    row = (
         f"{result.dn}\t{result.ds}\t{result.pn_total}\t{result.ps_total}\t"
         f"{result.pwd:.2f}\t{result.pn_neutral:.2f}\t{_fmt_optional(result.alpha)}\t"
-        f"{result.p_value:.6g}\t{result.cutoff}\t"
+        f"{result.p_value:.6g}"
+    )
+    if adjusted_p_value is not None:
+        row += f"\t{adjusted_p_value:.6g}"
+    return (
+        f"{row}\t{result.cutoff}\t"
         f"{_omega_full_tsv_columns(result)}\t"
         f"{_fmt_optional(result.alpha_ci_low)}\t{_fmt_optional(result.alpha_ci_high)}\t"
         f"{_omega_a_na_ci_tsv_columns(result)}\t"
@@ -114,7 +128,7 @@ def _format_tsv(
     from mkado.analysis.polarized import PolarizedMKResult
 
     if isinstance(result, ImputedMKResult):
-        return f"{_IMPUTED_TSV_HEADER}\n{_imputed_tsv_row(result)}"
+        return f"{_imputed_tsv_header()}\n{_imputed_tsv_row(result)}"
 
     elif isinstance(result, MKResult):
         header = "Dn\tDs\tPn\tPs\tp_value\tNI\talpha\tDoS\tLn\tLs\tomega"
@@ -207,7 +221,7 @@ def _format_tsv(
 
 
 def format_batch_results(
-    results: list[tuple[str, MKResult | PolarizedMKResult | AsymptoticMKResult | ImputedMKResult]],
+    results: list[tuple[str, BatchResult]],
     format: OutputFormat = OutputFormat.PRETTY,
     adjusted_pvalues: list[float] | None = None,
 ) -> str:
@@ -233,6 +247,8 @@ def format_batch_results(
         return "\n".join(lines)
 
     elif format == OutputFormat.JSON:
+        from mkado.analysis.polarized import PolarizedMKResult
+
         data = {}
         for i, (name, result) in enumerate(results):
             if name in data:
@@ -242,7 +258,12 @@ def format_batch_results(
                 )
             result_dict = result.to_dict()
             if adjusted_pvalues is not None:
-                result_dict["p_value_adjusted"] = adjusted_pvalues[i]
+                if isinstance(result, PolarizedMKResult):
+                    # Nest next to the p-value it adjusts (ingroup.p_value) rather than
+                    # sitting as an ambiguous sibling of ingroup/outgroup/unpolarized.
+                    result_dict["ingroup"]["p_value_adjusted"] = adjusted_pvalues[i]
+                else:
+                    result_dict["p_value_adjusted"] = adjusted_pvalues[i]
             data[name] = result_dict
         return json.dumps(data, indent=2)
 
@@ -333,10 +354,11 @@ def format_batch_results(
             return "\n".join(lines)
 
         elif isinstance(first_result, ImputedMKResult):
-            lines = ["gene\t" + _IMPUTED_TSV_HEADER]
-            for name, result in results:
+            lines = ["gene\t" + _imputed_tsv_header(adjusted_pvalues is not None)]
+            for i, (name, result) in enumerate(results):
                 if isinstance(result, ImputedMKResult):
-                    lines.append(f"{name}\t{_imputed_tsv_row(result)}")
+                    adjusted = adjusted_pvalues[i] if adjusted_pvalues is not None else None
+                    lines.append(f"{name}\t{_imputed_tsv_row(result, adjusted)}")
             return "\n".join(lines)
 
         else:
