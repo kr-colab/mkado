@@ -13,7 +13,7 @@ from mkado.analysis.statistics import (
     neutrality_index,
     omega_decomposition,
 )
-from mkado.core.alignment import AlignedPair
+from mkado.core.alignment import AlignedPair, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import SequenceSet
 
@@ -35,7 +35,9 @@ class MKResult:
       are filtered by ``min_frequency`` (default ``0.0``); the
       ``--no-singletons`` CLI flag sets this threshold to ``1/n``. When
       ``pool_polymorphisms`` is true, polymorphic sites in the outgroup are
-      pooled into the ingroup counts.
+      pooled into the ingroup counts, and filtering has no ancestral state to
+      work from, so it uses the folded minor-allele frequency over the
+      combined ingroup+outgroup sample instead of a derived frequency.
     """
 
     dn: int
@@ -127,11 +129,14 @@ def mk_test(
         genetic_code: Genetic code for translation (uses standard if None)
         pool_polymorphisms: If True, count polymorphisms from both ingroup
             and outgroup (libsequence convention). If False (default), count
-            only ingroup polymorphisms (DnaSP/original MK convention).
-        min_frequency: Minimum derived allele frequency for a polymorphism
-            to be counted (default 0.0, i.e., include all polymorphisms).
-            Useful for filtering out rare variants that may be slightly
-            deleterious.
+            only ingroup polymorphisms (DnaSP/original MK convention). Pooled
+            mode has no ancestral state, so ``min_frequency``/``no_singletons``
+            filter on the folded minor-allele frequency over the combined
+            sample rather than a derived-allele frequency.
+        min_frequency: Minimum derived (or, in pooled mode, minor) allele
+            frequency for a polymorphism to be counted (default 0.0, i.e.,
+            include all polymorphisms). Useful for filtering out rare variants
+            that may be slightly deleterious.
 
     Returns:
         MKResult containing test statistics
@@ -183,15 +188,16 @@ def mk_test(
             continue
 
         # Filtering needs the ancestral state, so a site whose state cannot be
-        # determined is only dropped when a filter is actually in use.
+        # determined is only dropped when a filter is actually in use. Pooled mode
+        # has no ancestral state, so it folds ingroup and outgroup together and
+        # filters on the minor allele instead of the derived one.
         if min_frequency > 0 or no_singletons:
-            state = ingroup.derived_state(outgroup, codon_idx)
-            if state is None:
-                continue
-            derived_freq, derived_count = state
-            if no_singletons and derived_count == 1:
-                continue
-            if derived_freq < min_frequency:
+            state = (
+                pair.minor_allele_state(codon_idx)
+                if pool_polymorphisms
+                else ingroup.derived_state(outgroup, codon_idx)
+            )
+            if not passes_frequency_filter(state, min_frequency, no_singletons):
                 continue
 
         result = classify_func(codon_idx)
