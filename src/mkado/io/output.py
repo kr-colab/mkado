@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 if TYPE_CHECKING:
     from mkado.analysis.alpha_tg import AlphaTGResult
@@ -220,6 +220,22 @@ def _format_tsv(
         raise TypeError(f"Unknown result type: {type(result)}")
 
 
+def _raise_mixed_batch_type(
+    first_name: str, first_type_name: str, name: str, type_name: str
+) -> NoReturn:
+    """Fail loudly on a batch TSV row whose type differs from the first row's.
+
+    A single TSV table has one column layout for every row; a mismatched
+    type would otherwise be silently skipped, dropping the gene with no
+    error and no trace in the output.
+    """
+    raise TypeError(
+        f"Batch TSV requires one result type per file: gene '{first_name}' is "
+        f"{first_type_name}, but gene '{name}' is {type_name}. "
+        "Use JSON output for a batch that mixes result types."
+    )
+
+
 def format_batch_results(
     results: list[tuple[str, BatchResult]],
     format: OutputFormat = OutputFormat.PRETTY,
@@ -276,8 +292,15 @@ def format_batch_results(
         if not results:
             return ""
 
-        # Check type of first result
-        _, first_result = results[0]
+        # Every row must share the first row's type: a TSV table has one column
+        # layout for all its rows, so a mismatch is a caller error, not a row to skip.
+        first_name, first_result = results[0]
+        for name, result in results[1:]:
+            if not isinstance(result, type(first_result)):
+                _raise_mixed_batch_type(
+                    first_name, type(first_result).__name__, name, type(result).__name__
+                )
+
         if isinstance(first_result, MKResult):
             base_header = "gene\tDn\tDs\tPn\tPs\tp_value"
             if adjusted_pvalues is not None:
@@ -285,20 +308,19 @@ def format_batch_results(
             header = base_header + "\tNI\talpha\tDoS\tLn\tLs\tomega"
             lines = [header]
             for i, (name, result) in enumerate(results):
-                if isinstance(result, MKResult):
-                    ni_str = f"{result.ni:.6f}" if result.ni is not None else "NA"
-                    alpha_str = f"{result.alpha:.6f}" if result.alpha is not None else "NA"
-                    dos_str = f"{result.dos:.6f}" if result.dos is not None else "NA"
-                    base_row = (
-                        f"{name}\t{result.dn}\t{result.ds}\t{result.pn}\t{result.ps}\t"
-                        f"{result.p_value:.6g}"
-                    )
-                    if adjusted_pvalues is not None:
-                        base_row += f"\t{adjusted_pvalues[i]:.6g}"
-                    lines.append(
-                        f"{base_row}\t{ni_str}\t{alpha_str}\t{dos_str}\t"
-                        f"{_omega_tsv_columns(result)}"
-                    )
+                assert isinstance(result, MKResult)  # guaranteed uniform above
+                ni_str = f"{result.ni:.6f}" if result.ni is not None else "NA"
+                alpha_str = f"{result.alpha:.6f}" if result.alpha is not None else "NA"
+                dos_str = f"{result.dos:.6f}" if result.dos is not None else "NA"
+                base_row = (
+                    f"{name}\t{result.dn}\t{result.ds}\t{result.pn}\t{result.ps}\t"
+                    f"{result.p_value:.6g}"
+                )
+                if adjusted_pvalues is not None:
+                    base_row += f"\t{adjusted_pvalues[i]:.6g}"
+                lines.append(
+                    f"{base_row}\t{ni_str}\t{alpha_str}\t{dos_str}\t{_omega_tsv_columns(result)}"
+                )
             return "\n".join(lines)
 
         elif isinstance(first_result, AsymptoticMKResult):
@@ -310,15 +332,15 @@ def format_batch_results(
             )
             lines = [header]
             for name, result in results:
-                if isinstance(result, AsymptoticMKResult):
-                    lines.append(
-                        f"{name}\t{result.dn}\t{result.ds}\t"
-                        f"{result.alpha_asymptotic:.6f}\t{result.ci_low:.6f}\t"
-                        f"{result.ci_high:.6f}\t{result.model_type}\t"
-                        f"{_omega_full_tsv_columns(result)}\t"
-                        f"{_omega_a_na_ci_tsv_columns(result)}\t"
-                        f"{result.ci_method}\t{result.sfs_mode}"
-                    )
+                assert isinstance(result, AsymptoticMKResult)  # guaranteed uniform above
+                lines.append(
+                    f"{name}\t{result.dn}\t{result.ds}\t"
+                    f"{result.alpha_asymptotic:.6f}\t{result.ci_low:.6f}\t"
+                    f"{result.ci_high:.6f}\t{result.model_type}\t"
+                    f"{_omega_full_tsv_columns(result)}\t"
+                    f"{_omega_a_na_ci_tsv_columns(result)}\t"
+                    f"{result.ci_method}\t{result.sfs_mode}"
+                )
             return "\n".join(lines)
 
         elif isinstance(first_result, PolarizedMKResult):
@@ -331,34 +353,31 @@ def format_batch_results(
             header = base_header + "\tNI\talpha\tDoS\tLn\tLs\tomega"
             lines = [header]
             for i, (name, result) in enumerate(results):
-                if isinstance(result, PolarizedMKResult):
-                    ni_str = f"{result.ni_ingroup:.6f}" if result.ni_ingroup is not None else "NA"
-                    alpha_str = (
-                        f"{result.alpha_ingroup:.6f}" if result.alpha_ingroup is not None else "NA"
-                    )
-                    dos_str = (
-                        f"{result.dos_ingroup:.6f}" if result.dos_ingroup is not None else "NA"
-                    )
-                    base_row = (
-                        f"{name}\t{result.dn_ingroup}\t{result.ds_ingroup}\t"
-                        f"{result.pn_ingroup}\t{result.ps_ingroup}\t"
-                        f"{result.dn_outgroup}\t{result.ds_outgroup}\t"
-                        f"{result.p_value_ingroup:.6g}"
-                    )
-                    if adjusted_pvalues is not None:
-                        base_row += f"\t{adjusted_pvalues[i]:.6g}"
-                    lines.append(
-                        f"{base_row}\t{ni_str}\t{alpha_str}\t{dos_str}\t"
-                        f"{_omega_tsv_columns(result)}"
-                    )
+                assert isinstance(result, PolarizedMKResult)  # guaranteed uniform above
+                ni_str = f"{result.ni_ingroup:.6f}" if result.ni_ingroup is not None else "NA"
+                alpha_str = (
+                    f"{result.alpha_ingroup:.6f}" if result.alpha_ingroup is not None else "NA"
+                )
+                dos_str = f"{result.dos_ingroup:.6f}" if result.dos_ingroup is not None else "NA"
+                base_row = (
+                    f"{name}\t{result.dn_ingroup}\t{result.ds_ingroup}\t"
+                    f"{result.pn_ingroup}\t{result.ps_ingroup}\t"
+                    f"{result.dn_outgroup}\t{result.ds_outgroup}\t"
+                    f"{result.p_value_ingroup:.6g}"
+                )
+                if adjusted_pvalues is not None:
+                    base_row += f"\t{adjusted_pvalues[i]:.6g}"
+                lines.append(
+                    f"{base_row}\t{ni_str}\t{alpha_str}\t{dos_str}\t{_omega_tsv_columns(result)}"
+                )
             return "\n".join(lines)
 
         elif isinstance(first_result, ImputedMKResult):
             lines = ["gene\t" + _imputed_tsv_header(adjusted_pvalues is not None)]
             for i, (name, result) in enumerate(results):
-                if isinstance(result, ImputedMKResult):
-                    adjusted = adjusted_pvalues[i] if adjusted_pvalues is not None else None
-                    lines.append(f"{name}\t{_imputed_tsv_row(result, adjusted)}")
+                assert isinstance(result, ImputedMKResult)  # guaranteed uniform above
+                adjusted = adjusted_pvalues[i] if adjusted_pvalues is not None else None
+                lines.append(f"{name}\t{_imputed_tsv_row(result, adjusted)}")
             return "\n".join(lines)
 
         else:

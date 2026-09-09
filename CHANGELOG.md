@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Fixed
+- Batch TSV chose its column layout from the first result's type, then
+  silently dropped every row of a different type. A mixed-type batch
+  now raises a clear error instead (closes #69).
 - `--output -` (a bare dash for stdout) was rejected by the output-path
   check (closes #46).
 - A failed VCF open leaked one file descriptor; the htslib capture pipe
