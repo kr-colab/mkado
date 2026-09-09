@@ -375,8 +375,30 @@ def gff_invalid_len(tmp_path: Path) -> Path:
     return _write_gff3(tmp_path / "invalid.gff3", (GeneSpec("g_bad", "chr1", ((0, 10),)),))
 
 
+def _record_calls(
+    monkeypatch: pytest.MonkeyPatch, obj: object, name: str, calls: list[dict] | None = None
+) -> list[dict]:
+    """Wrap ``obj.name``, appending each call's kwargs to ``calls`` (a new list if not given)."""
+    real = getattr(obj, name)
+    if calls is None:
+        calls = []
+
+    def recording(*args, **kwargs):
+        calls.append(kwargs)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(obj, name, recording)
+    return calls
+
+
 @pytest.fixture
-def fitter_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
+def record_calls():
+    """Expose the call-recording wrapper to tests that need a one-off patch target."""
+    return _record_calls
+
+
+@pytest.fixture
+def fitter_calls(monkeypatch: pytest.MonkeyPatch, record_calls) -> list[dict]:
     """Record the keyword arguments of each asymptotic fit made in this process.
 
     Covers both the aggregated fitter (used by the VCF path for every gene,
@@ -387,16 +409,8 @@ def fitter_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
     import mkado.analysis.asymptotic as asymptotic
 
     calls: list[dict] = []
-
-    def _recorder(real):
-        def recording(*args, **kwargs):
-            calls.append(kwargs)
-            return real(*args, **kwargs)
-
-        return recording
-
     for name in ("asymptotic_mk_test_aggregated", "asymptotic_mk_test"):
-        monkeypatch.setattr(asymptotic, name, _recorder(getattr(asymptotic, name)))
+        record_calls(monkeypatch, asymptotic, name, calls)
     return calls
 
 

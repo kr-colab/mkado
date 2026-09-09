@@ -703,7 +703,7 @@ class TestFreqCutoffsOption:
         assert result.exit_code == 0
 
     def test_freq_cutoffs_forwarded_in_test_command(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, record_calls
     ) -> None:
         """cli.py imports asymptotic_mk_test by name, so patch it there directly."""
         import mkado.cli as cli_module
@@ -715,14 +715,7 @@ class TestFreqCutoffsOption:
             ">speciesB_1\nATGCTGGCAGCAGCAGCAGCAGCA\n"
         )
 
-        real = cli_module.asymptotic_mk_test
-        calls: list[dict] = []
-
-        def recording(*args, **kwargs):
-            calls.append(kwargs)
-            return real(*args, **kwargs)
-
-        monkeypatch.setattr(cli_module, "asymptotic_mk_test", recording)
+        calls = record_calls(monkeypatch, cli_module, "asymptotic_mk_test")
 
         result = runner.invoke(
             app,
