@@ -404,13 +404,13 @@ def _bootstrap_one_replicate(
     boot_ps = np.bincount(sample_bins[~sample_n], minlength=num_bins).astype(float)
     boot_pn, boot_ps = _apply_sfs_mode(boot_pn, boot_ps, sfs_mode)
 
-    # Per-bin alpha where boot_ps > 0 and inside the fitting window.
-    valid = (boot_ps > 0) & bin_in_window
+    # Per-bin alpha where boot_ps > 0 and inside the fitting window, falling
+    # back to the full range if cutoffs are too restrictive (mirrors
+    # _mask_to_frequency_cutoffs, the point-estimate path's equivalent).
+    ps_positive = boot_ps > 0
+    valid = _select_mask_with_fallback(ps_positive & bin_in_window, ps_positive)
     if valid.sum() < 3:
-        # Fall back to full range if cutoffs are too restrictive (mirror point-estimate path).
-        valid = boot_ps > 0
-        if valid.sum() < 3:
-            return None
+        return None
     ratio = (ds / dn) * (boot_pn[valid] / boot_ps[valid])
     boot_alphas = 1.0 - ratio
     boot_x = bin_centers[valid]
@@ -613,6 +613,19 @@ def _compute_aic(n: int, rss: float, k: int) -> float:
     return n * np.log(rss / n) + 2 * k
 
 
+def _select_mask_with_fallback(
+    candidate: np.ndarray, fallback: np.ndarray, min_points: int = 3
+) -> np.ndarray:
+    """Use `candidate` if it selects at least `min_points`, else `fallback`.
+
+    Both the point-estimate and bootstrap fits trim to the requested
+    frequency window when there's enough support to constrain a
+    3-parameter exponential fit, and silently widen back to the full range
+    otherwise, so a narrow --freq-cutoffs window doesn't starve the fit.
+    """
+    return candidate if candidate.sum() >= min_points else fallback
+
+
 def _mask_to_frequency_cutoffs(
     x_data: np.ndarray, y_data: np.ndarray, frequency_cutoffs: tuple[float, float]
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -625,12 +638,9 @@ def _mask_to_frequency_cutoffs(
     or a single gene.
     """
     low_cut, high_cut = frequency_cutoffs
-    mask = (x_data >= low_cut) & (x_data <= high_cut)
-    x_fit, y_fit = x_data[mask], y_data[mask]
-
-    if len(x_fit) < 3:
-        return x_data, y_data
-    return x_fit, y_fit
+    window_mask = (x_data >= low_cut) & (x_data <= high_cut)
+    mask = _select_mask_with_fallback(window_mask, np.ones_like(window_mask))
+    return x_data[mask], y_data[mask]
 
 
 def extract_polymorphism_data(
@@ -990,14 +1000,15 @@ def asymptotic_mk_test_aggregated(
     elif lin_success:
         use_exponential = False
     else:
-        # Both failed, use last value
+        # Both failed, use last value within the fit window (not the
+        # untrimmed data -- both attempted fits were against y_fit).
         result = AsymptoticMKResult(
             frequency_bins=list(bin_centers),
             alpha_by_freq=alpha_values,
             alpha_x_values=valid_centers,
-            alpha_asymptotic=y_data[-1],
-            ci_low=y_data[-1],
-            ci_high=y_data[-1],
+            alpha_asymptotic=y_fit[-1],
+            ci_low=y_fit[-1],
+            ci_high=y_fit[-1],
             dn=dn,
             ds=ds,
             num_genes=agg.num_genes,
@@ -1274,9 +1285,10 @@ def asymptotic_mk_test(
         alpha_asymp = float(a + b * np.exp(-c))
 
     except (RuntimeError, ValueError):
-        # Curve fitting failed, use last value
-        a, b, c = y_data[-1], 0.0, 1.0
-        alpha_asymp = y_data[-1]
+        # Curve fitting failed, use last value within the fit window (not the
+        # untrimmed data -- the attempted fit itself was against y_fit).
+        a, b, c = y_fit[-1], 0.0, 1.0
+        alpha_asymp = y_fit[-1]
 
     # Shares the case-resampling bootstrap with the aggregated path.
     # Replicates whose curve_fit fails are dropped (rather than imputed

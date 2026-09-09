@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import mkado.analysis.asymptotic as asymptotic_module
 from mkado.analysis.asymptotic import (
     AggregatedSFS,
     AsymptoticMKResult,
@@ -178,6 +179,83 @@ ATGGTGATGGTGATGGTG
 
         assert isinstance(result, AsymptoticMKResult)
         assert result.ci_low <= result.ci_high
+
+    def test_curve_fit_failure_falls_back_within_frequency_window(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A curve-fit failure must fall back to a point inside frequency_cutoffs.
+
+        The try block fits against the frequency-cutoffs-trimmed data; the
+        except block must use that same trimmed data, not the untrimmed
+        full range, or a fit failure silently returns a value from outside
+        the window the caller asked for.
+        """
+        # One nonsynonymous and one synonymous fixed difference gives dn=1, ds=1
+        # without needing any real ingroup polymorphism -- _apply_sfs_mode is
+        # faked below to fully control the per-bin alpha values instead.
+        ingroup_fa = tmp_path / "ingroup.fa"
+        ingroup_fa.write_text(">seq1\nATGCTC\n>seq2\nATGCTC\n>seq3\nATGCTC\n")
+        outgroup_fa = tmp_path / "outgroup.fa"
+        outgroup_fa.write_text(">out1\nGTGCTA\n")
+
+        # 5 bins, decreasing alpha; frequency_cutoffs=(0.0, 0.75) below keeps
+        # the first 4 (>=3, so _mask_to_frequency_cutoffs does not widen back
+        # to the full range) and drops the 5th, so y_fit[-1] (0.6) differs
+        # from y_data[-1] (0.2). (0.7 itself is excluded by <=0.7: the bin
+        # center is 0.7000000000000001 due to floating-point bin-edge math.)
+        fake_pn = np.array([1.0, 2.0, 3.0, 4.0, 8.0])
+        fake_ps = np.array([10.0, 10.0, 10.0, 10.0, 10.0])
+
+        def fake_apply_sfs_mode(
+            pn: np.ndarray, ps: np.ndarray, sfs_mode: str
+        ) -> tuple[np.ndarray, np.ndarray]:
+            return fake_pn, fake_ps
+
+        def raising_curve_fit(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("forced failure for test")
+
+        monkeypatch.setattr(asymptotic_module, "_apply_sfs_mode", fake_apply_sfs_mode)
+        monkeypatch.setattr(asymptotic_module.optimize, "curve_fit", raising_curve_fit)
+
+        result = asymptotic_mk_test(
+            ingroup_fa, outgroup_fa, num_bins=5, frequency_cutoffs=(0.0, 0.75)
+        )
+
+        assert result.alpha_asymptotic == pytest.approx(0.6)
+        assert result.alpha_asymptotic != pytest.approx(0.2)
+
+
+class TestSelectMaskWithFallback:
+    """Tests for the _select_mask_with_fallback helper shared by both fitters."""
+
+    def test_keeps_candidate_when_it_meets_the_minimum(self) -> None:
+        candidate = np.array([True, True, True, False])
+        fallback = np.array([True, True, True, True])
+
+        mask = asymptotic_module._select_mask_with_fallback(candidate, fallback)
+
+        np.testing.assert_array_equal(mask, candidate)
+
+    def test_uses_fallback_when_candidate_is_under_the_minimum(self) -> None:
+        candidate = np.array([True, False, False, False])
+        fallback = np.array([True, True, True, True])
+
+        mask = asymptotic_module._select_mask_with_fallback(candidate, fallback)
+
+        np.testing.assert_array_equal(mask, fallback)
+
+    def test_min_points_is_configurable(self) -> None:
+        candidate = np.array([True, True])
+        fallback = np.array([True, True, True])
+
+        assert (
+            asymptotic_module._select_mask_with_fallback(candidate, fallback, min_points=2)
+            is candidate
+        )
+        assert (
+            asymptotic_module._select_mask_with_fallback(candidate, fallback, min_points=3)
+            is fallback
+        )
 
 
 class TestPolymorphismData:
@@ -465,6 +543,43 @@ class TestAsymptoticMKTestAggregated:
         assert result.ds == 150  # 10 genes * 15 Ds each
         assert result.pn_total > 0
         assert result.ps_total > 0
+
+    def test_both_models_failing_falls_back_within_frequency_window(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When both curve fits fail, the fallback must use frequency_cutoffs-trimmed data.
+
+        Same bug class as the per-gene fitter's except-block fix, in the
+        sibling "both exponential and linear models failed" branch here.
+        """
+        num_bins = 5
+        bin_edges = np.linspace(0, 1, num_bins + 1)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+
+        # Decreasing alpha per bin (dn=ds=1, so alpha = 1 - pn/ps); frequency_cutoffs
+        # below keeps the first 4 bins (>=3, no widening) and drops the 5th, so
+        # y_fit[-1] (0.6) differs from y_data[-1] (0.2).
+        pn_counts = [1, 2, 3, 4, 8]
+        ps_counts = [10, 10, 10, 10, 10]
+        polymorphisms: list[tuple[float, str]] = []
+        for center, pn, ps in zip(bin_centers, pn_counts, ps_counts):
+            polymorphisms.extend([(float(center), "N")] * pn)
+            polymorphisms.extend([(float(center), "S")] * ps)
+        gene = PolymorphismData(polymorphisms=polymorphisms, dn=1, ds=1, gene_id="g1")
+
+        def raising_curve_fit(*args: object, **kwargs: object) -> None:
+            raise RuntimeError("forced failure for test")
+
+        monkeypatch.setattr(asymptotic_module.optimize, "curve_fit", raising_curve_fit)
+
+        result = asymptotic_mk_test_aggregated(
+            [gene], num_bins=num_bins, frequency_cutoffs=(0.0, 0.75)
+        )
+
+        assert result.alpha_asymptotic == pytest.approx(0.6)
+        assert result.alpha_asymptotic != pytest.approx(0.2)
+        assert result.ci_low == pytest.approx(0.6)
+        assert result.ci_high == pytest.approx(0.6)
 
     def test_aggregated_with_kreitman_data(self) -> None:
         """Test aggregated analysis with real data (single gene as sanity check)."""
