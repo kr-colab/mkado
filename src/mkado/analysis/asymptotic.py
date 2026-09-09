@@ -613,6 +613,26 @@ def _compute_aic(n: int, rss: float, k: int) -> float:
     return n * np.log(rss / n) + 2 * k
 
 
+def _mask_to_frequency_cutoffs(
+    x_data: np.ndarray, y_data: np.ndarray, frequency_cutoffs: tuple[float, float]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Restrict (x_data, y_data) to frequency_cutoffs for curve fitting.
+
+    Falls back to the full, untrimmed arrays when the cutoffs leave fewer
+    than 3 points, since a 3-parameter exponential fit needs at least that
+    many to be constrained. Shared by the aggregated and per-gene fitters
+    so both trim bins the same way, whether the input is many genes pooled
+    or a single gene.
+    """
+    low_cut, high_cut = frequency_cutoffs
+    mask = (x_data >= low_cut) & (x_data <= high_cut)
+    x_fit, y_fit = x_data[mask], y_data[mask]
+
+    if len(x_fit) < 3:
+        return x_data, y_data
+    return x_fit, y_fit
+
+
 def extract_polymorphism_data(
     ingroup: SequenceSet | str | Path,
     outgroup: SequenceSet | str | Path,
@@ -872,17 +892,7 @@ def asymptotic_mk_test_aggregated(
 
     x_data = np.array(valid_centers)
     y_data = np.array(alpha_values)
-
-    # Filter to frequency cutoffs for fitting
-    low_cut, high_cut = frequency_cutoffs
-    mask = (x_data >= low_cut) & (x_data <= high_cut)
-    x_fit = x_data[mask]
-    y_fit = y_data[mask]
-
-    if len(x_fit) < 3:
-        # Fall back to full range if cutoffs are too restrictive
-        x_fit = x_data
-        y_fit = y_data
+    x_fit, y_fit = _mask_to_frequency_cutoffs(x_data, y_data, frequency_cutoffs)
 
     # Try exponential fit first
     exp_success = False
@@ -1092,6 +1102,7 @@ def asymptotic_mk_test(
     genetic_code: GeneticCode | None = None,
     num_bins: int = 10,
     bootstrap_replicates: int = 100,
+    frequency_cutoffs: tuple[float, float] = (0.1, 0.9),
     pool_polymorphisms: bool = False,
     sfs_mode: str = "at",
     workers: int = 1,
@@ -1111,6 +1122,7 @@ def asymptotic_mk_test(
         genetic_code: Genetic code for translation (uses standard if None)
         num_bins: Number of frequency bins (default 10)
         bootstrap_replicates: Number of bootstrap replicates for CI (default 100)
+        frequency_cutoffs: (low, high) frequency range for fitting (default 0.1-0.9)
         pool_polymorphisms: If True, consider sites polymorphic in either
             population (libsequence convention). Frequencies are still
             calculated from ingroup only. If False (default), only consider
@@ -1238,18 +1250,19 @@ def asymptotic_mk_test(
     # Fit exponential model: α(x) = a + b * exp(-c * x)
     x_data = np.array(valid_centers)
     y_data = np.array(alpha_values)
+    x_fit, y_fit = _mask_to_frequency_cutoffs(x_data, y_data, frequency_cutoffs)
 
     try:
         # Initial guesses: a is asymptotic value, b is negative for increasing alpha
-        p0 = [y_data[-1], y_data[0] - y_data[-1], 5.0]
+        p0 = [y_fit[-1], y_fit[0] - y_fit[-1], 5.0]
 
         # Bounds: b can be negative (typical for increasing alpha with frequency)
         bounds = ([-2.0, -2.0, 0.001], [2.0, 2.0, 100.0])
 
         popt, _ = optimize.curve_fit(
             _exponential_model,
-            x_data,
-            y_data,
+            x_fit,
+            y_fit,
             p0=p0,
             bounds=bounds,
             maxfev=10000,
@@ -1279,7 +1292,7 @@ def asymptotic_mk_test(
         _exponential_model,
         [float(a), float(b), float(c)],
         bounds,
-        (0.0, 1.0),  # per-gene path has no frequency cutoff for fitting
+        frequency_cutoffs,
         alpha_asymp,
         n_replicates=bootstrap_replicates,
         seed=42,

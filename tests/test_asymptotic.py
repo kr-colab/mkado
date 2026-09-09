@@ -12,6 +12,7 @@ from mkado.analysis.asymptotic import (
     _compute_ci_monte_carlo,
     _exponential_model,
     _linear_model,
+    _mask_to_frequency_cutoffs,
     aggregate_polymorphism_data,
     asymptotic_mk_test,
     asymptotic_mk_test_aggregated,
@@ -145,6 +146,37 @@ ATGGTGATGGTGATGGTG
         assert result.ci_method == "bootstrap"
         # CI should always be a valid interval (low <= high), even when it
         # degenerates to the point estimate on small fixtures.
+        assert result.ci_low <= result.ci_high
+
+    def test_asymptotic_mk_test_accepts_frequency_cutoffs(self, tmp_path: Path) -> None:
+        """The single-gene entry point accepts frequency_cutoffs without crashing.
+
+        Correctness of the masking itself is covered by
+        TestMaskToFrequencyCutoffs; this only confirms the parameter reaches
+        the fit and the CI without breaking the pipeline.
+        """
+        ingroup_fa = tmp_path / "ingroup.fa"
+        ingroup_fa.write_text(""">seq1
+ATGATGATGATGATGATG
+>seq2
+ATGCTGATGATGATGATG
+>seq3
+ATGATGATGCTGATGATG
+>seq4
+ATGATGATGATGCTGATG
+>seq5
+ATGATGATGATGATGATG
+""")
+        outgroup_fa = tmp_path / "outgroup.fa"
+        outgroup_fa.write_text(""">out1
+ATGGTGATGGTGATGGTG
+""")
+
+        result = asymptotic_mk_test(
+            ingroup_fa, outgroup_fa, num_bins=5, frequency_cutoffs=(0.2, 0.8)
+        )
+
+        assert isinstance(result, AsymptoticMKResult)
         assert result.ci_low <= result.ci_high
 
 
@@ -330,6 +362,38 @@ class TestLinearModel:
         result = _linear_model(x, a=0.1, b=0.8)
 
         np.testing.assert_array_almost_equal(result, [0.1, 0.5, 0.9])
+
+
+class TestMaskToFrequencyCutoffs:
+    """Tests for the _mask_to_frequency_cutoffs helper shared by both fitters."""
+
+    def test_restricts_to_inclusive_range(self) -> None:
+        x_data = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
+        y_data = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
+
+        x_fit, y_fit = _mask_to_frequency_cutoffs(x_data, y_data, (0.3, 0.7))
+
+        np.testing.assert_array_equal(x_fit, [0.3, 0.5, 0.7])
+        np.testing.assert_array_equal(y_fit, [0.1, 0.2, 0.3])
+
+    def test_falls_back_to_full_range_when_too_few_points_survive(self) -> None:
+        x_data = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
+        y_data = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
+
+        # Only the single point at 0.5 falls in [0.45, 0.55]; that's < 3, so
+        # curve_fit couldn't be constrained -- fall back to the full arrays.
+        x_fit, y_fit = _mask_to_frequency_cutoffs(x_data, y_data, (0.45, 0.55))
+
+        np.testing.assert_array_equal(x_fit, x_data)
+        np.testing.assert_array_equal(y_fit, y_data)
+
+    def test_exact_three_points_is_kept_not_widened(self) -> None:
+        x_data = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
+        y_data = np.array([0.0, 0.1, 0.2, 0.3, 0.4])
+
+        x_fit, y_fit = _mask_to_frequency_cutoffs(x_data, y_data, (0.3, 0.7))
+
+        assert len(x_fit) == 3
 
 
 class TestMonteCarloCi:

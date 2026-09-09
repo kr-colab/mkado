@@ -651,6 +651,122 @@ class TestSfsModeOption:
         assert "above" in result.output
 
 
+class TestFreqCutoffsOption:
+    """Tests for the --freq-cutoffs flag on the FASTA path (issue #61)."""
+
+    def test_invalid_freq_cutoffs_rejected_in_test(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(">speciesA_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+        result = runner.invoke(
+            app,
+            [
+                "test",
+                str(fasta),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--asymptotic",
+                "--freq-cutoffs",
+                "0.1",
+            ],
+        )
+        assert result.exit_code == 1
+        assert "Invalid frequency cutoffs" in result.output
+
+    def test_freq_cutoffs_in_test_command_succeeds(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(
+            ">speciesA_1\nATGTTTGCAGCAGCAGCAGCAGCA\n"
+            ">speciesA_2\nATGTTCGCAGCAGCAGCAGCAGCA\n"
+            ">speciesA_3\nATGTTAGCAGCAGCAGCAGCAGCA\n"
+            ">speciesA_4\nATGTTTGCAGCAGCAGCAGCAGCA\n"
+            ">speciesA_5\nATGTTGGCAGCAGCAGCAGCAGCA\n"
+            ">speciesB_1\nATGCTGGCAGCAGCAGCAGCAGCA\n"
+        )
+        result = runner.invoke(
+            app,
+            [
+                "test",
+                str(fasta),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--asymptotic",
+                "--freq-cutoffs",
+                "0.2,0.8",
+                "--format",
+                "tsv",
+            ],
+        )
+        assert result.exit_code == 0
+
+    def test_freq_cutoffs_forwarded_in_test_command(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """cli.py imports asymptotic_mk_test by name, so patch it there directly."""
+        import mkado.cli as cli_module
+
+        fasta = tmp_path / "test.fa"
+        fasta.write_text(
+            ">speciesA_1\nATGTTTGCAGCAGCAGCAGCAGCA\n"
+            ">speciesA_2\nATGTTCGCAGCAGCAGCAGCAGCA\n"
+            ">speciesB_1\nATGCTGGCAGCAGCAGCAGCAGCA\n"
+        )
+
+        real = cli_module.asymptotic_mk_test
+        calls: list[dict] = []
+
+        def recording(*args, **kwargs):
+            calls.append(kwargs)
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(cli_module, "asymptotic_mk_test", recording)
+
+        result = runner.invoke(
+            app,
+            [
+                "test",
+                str(fasta),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--asymptotic",
+                "--freq-cutoffs",
+                "0.2,0.8",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert len(calls) == 1
+        assert calls[0]["frequency_cutoffs"] == (0.2, 0.8)
+
+    def test_batch_per_gene_honors_freq_cutoffs(self, tmp_path: Path, fitter_calls) -> None:
+        """Direct regression test for issue #61: FASTA per-gene fits must see the cutoffs."""
+        alignment_dir = _make_asymptotic_alignment_dir(tmp_path)
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--asymptotic",
+                "--per-gene",
+                "--workers",
+                "1",
+                "--freq-cutoffs",
+                "0.2,0.8",
+            ],
+        )
+        assert result.exit_code == 0
+        assert [call["frequency_cutoffs"] for call in fitter_calls] == [(0.2, 0.8)] * 3
+
+
 def _run_duplicate_name_batch(tmp_path: Path, output_format: str):
     """Run a batch over two files whose stems collide, so both become gene 'gene1'."""
     alignments = tmp_path / "alignments"

@@ -130,6 +130,15 @@ def validate_sfs_mode(sfs_mode: str) -> None:
         raise cli_error(f"Invalid --sfs-mode '{sfs_mode}'. Use 'at' or 'above'.")
 
 
+def parse_frequency_cutoffs(freq_cutoffs: str) -> tuple[float, float]:
+    """Parse a ``--freq-cutoffs 'low,high'`` string into a (low, high) tuple."""
+    try:
+        low, high = freq_cutoffs.split(",")
+        return (float(low), float(high))
+    except ValueError:
+        raise cli_error(f"Invalid frequency cutoffs '{freq_cutoffs}'. Use 'low,high'")
+
+
 def resolve_ci_replicates(bootstrap: int, ci_method: str) -> int:
     """Map ``--bootstrap`` to ``ci_replicates`` for the chosen CI method.
 
@@ -458,6 +467,10 @@ def test(
     ] = 100,
     ci_method: CIMethodOption = "monte-carlo",
     sfs_mode: SfsModeOption = "at",
+    freq_cutoffs: Annotated[
+        str,
+        typer.Option("--freq-cutoffs", help="Frequency range 'low,high' (asymptotic)"),
+    ] = "0.1,0.9",
     workers: Annotated[
         int,
         typer.Option(
@@ -539,6 +552,7 @@ def test(
 
         mkado test alignment.fa -i "dmel" -o "dsim"
         mkado test alignment.fa -i "dmel" -o "dsim" -a -b 20
+        mkado test alignment.fa -i "dmel" -o "dsim" -a --freq-cutoffs 0.2,0.8
         mkado test alignment.fa -i "dmel" -o "dsim" --polarize-match "dyak"
         mkado test ingroup.fa outgroup.fa
         mkado test ingroup.fa outgroup.fa -a
@@ -549,6 +563,8 @@ def test(
 
     validate_ci_method(ci_method)
     validate_sfs_mode(sfs_mode)
+
+    frequency_cutoffs = parse_frequency_cutoffs(freq_cutoffs)
 
     # Validate option compatibility
     if use_asymptotic and min_freq > 0.0:
@@ -635,6 +651,7 @@ def test(
                 pool_polymorphisms=pool_polymorphisms,
                 genetic_code=genetic_code,
                 sfs_mode=sfs_mode,
+                frequency_cutoffs=frequency_cutoffs,
                 workers=get_worker_count(workers, max(bootstrap, 1)),
             )
         elif use_imputed:
@@ -699,6 +716,7 @@ def test(
                 pool_polymorphisms=pool_polymorphisms,
                 genetic_code=genetic_code,
                 sfs_mode=sfs_mode,
+                frequency_cutoffs=frequency_cutoffs,
                 workers=get_worker_count(workers, max(bootstrap, 1)),
             )
         elif use_imputed:
@@ -990,12 +1008,7 @@ def batch(
     # Resolve imputed cutoff from --min-freq (default 0.15)
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
 
-    # Parse frequency cutoffs
-    try:
-        cutoff_parts = freq_cutoffs.split(",")
-        frequency_cutoffs = (float(cutoff_parts[0]), float(cutoff_parts[1]))
-    except (ValueError, IndexError):
-        raise cli_error(f"Invalid frequency cutoffs '{freq_cutoffs}'. Use 'low,high'")
+    frequency_cutoffs = parse_frequency_cutoffs(freq_cutoffs)
 
     is_aggregate = (use_asymptotic and aggregate) or alpha_tg or (use_imputed and aggregate)
 
@@ -1046,6 +1059,7 @@ def batch(
                 code_table=code_table_id,
                 ci_method=ci_method,
                 sfs_mode=sfs_mode,
+                frequency_cutoffs=frequency_cutoffs,
             )
             for f in alignment_files
         ]
@@ -1227,6 +1241,7 @@ def batch(
                     extract_only=is_aggregate,
                     code_table=code_table_id,
                     sfs_mode=sfs_mode,
+                    frequency_cutoffs=frequency_cutoffs,
                 )
             )
 
@@ -1594,12 +1609,7 @@ def vcf(
     # Resolve genetic code
     code_table_id = resolve_code_table_or_exit(code_table)
 
-    # Parse frequency cutoffs
-    try:
-        cutoff_parts = freq_cutoffs.split(",")
-        frequency_cutoffs = (float(cutoff_parts[0]), float(cutoff_parts[1]))
-    except (ValueError, IndexError):
-        raise cli_error(f"Invalid frequency cutoffs '{freq_cutoffs}'.")
+    frequency_cutoffs = parse_frequency_cutoffs(freq_cutoffs)
 
     # Parse GFF3
     from mkado.io.gff import parse_gff3

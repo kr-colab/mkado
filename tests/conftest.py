@@ -377,20 +377,26 @@ def gff_invalid_len(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def fitter_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
-    """Record the keyword arguments of each aggregated asymptotic fit made in this process.
+    """Record the keyword arguments of each asymptotic fit made in this process.
 
-    The workers import the fitter lazily, so patching the module attribute reaches them.
+    Covers both the aggregated fitter (used by the VCF path for every gene,
+    and by the FASTA aggregated batch mode) and the FASTA per-gene fitter.
+    The workers import the fitter lazily, so patching the module attribute
+    reaches them.
     """
     import mkado.analysis.asymptotic as asymptotic
 
-    real = asymptotic.asymptotic_mk_test_aggregated
     calls: list[dict] = []
 
-    def recording(*args, **kwargs):
-        calls.append(kwargs)
-        return real(*args, **kwargs)
+    def _recorder(real):
+        def recording(*args, **kwargs):
+            calls.append(kwargs)
+            return real(*args, **kwargs)
 
-    monkeypatch.setattr(asymptotic, "asymptotic_mk_test_aggregated", recording)
+        return recording
+
+    for name in ("asymptotic_mk_test_aggregated", "asymptotic_mk_test"):
+        monkeypatch.setattr(asymptotic, name, _recorder(getattr(asymptotic, name)))
     return calls
 
 
