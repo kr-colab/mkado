@@ -344,14 +344,8 @@ def test_batch_row_formats_keep_duplicate_gene_names(output_format: OutputFormat
 def two_mk_results() -> list[tuple[str, MKResult]]:
     """Two distinct records make row loss and name mixups visible."""
     return [
-        (
-            "geneA",
-            MKResult(dn=10, ds=5, pn=4, ps=8, p_value=0.01, ni=0.25, alpha=0.75, dos=0.2),
-        ),
-        (
-            "geneB",
-            MKResult(dn=6, ds=3, pn=2, ps=4, p_value=0.05, ni=0.25, alpha=0.75, dos=0.2),
-        ),
+        ("geneA", mk_test_from_counts(dn=10, ds=5, pn=4, ps=8)),
+        ("geneB", mk_test_from_counts(dn=8, ds=2, pn=3, ps=9)),
     ]
 
 
@@ -385,16 +379,22 @@ def test_batch_adjusted_pvalues_are_attached_to_matching_results(
         assert rows[1][adjusted_index] == "0.02"
         assert rows[2][adjusted_index] == "0.1"
     else:
-        assert "p-value (BH adj):     0.02" in output
-        assert "p-value (BH adj):     0.1" in output
+        blocks = {block.split(" ===", 1)[0]: block for block in output.split("=== ")[1:]}
+        assert "p-value (BH adj):     0.02" in blocks["geneA"]
+        assert "p-value (BH adj):     0.1" in blocks["geneB"]
 
 
+@pytest.mark.parametrize("output_format", list(OutputFormat))
 @pytest.mark.parametrize("adjusted_pvalues", [[], [0.01], [0.01, 0.02, 0.03]])
 def test_batch_rejects_adjusted_pvalue_length_mismatch(
-    two_mk_results: list[tuple[str, MKResult]], adjusted_pvalues: list[float]
+    two_mk_results: list[tuple[str, MKResult]],
+    adjusted_pvalues: list[float],
+    output_format: OutputFormat,
 ) -> None:
     with pytest.raises(ValueError, match="same length"):
-        format_batch_results(two_mk_results, adjusted_pvalues=adjusted_pvalues)
+        format_batch_results(
+            two_mk_results, output_format, adjusted_pvalues=adjusted_pvalues
+        )
 
 
 @pytest.mark.parametrize(

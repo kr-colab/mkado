@@ -103,6 +103,11 @@ def format_result(
 
     Returns:
         Formatted string representation
+
+    Raises:
+        ValueError: If ``adjusted_pvalues`` does not have one value per result,
+            or if the requested output format is unknown.
+        TypeError: If TSV output does not support the result type.
     """
     if format == OutputFormat.PRETTY:
         return str(result)
