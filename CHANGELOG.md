@@ -1,5 +1,56 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- `--output -` (a bare dash for stdout) was rejected by the output-path
+  check (closes #46).
+- A failed VCF open leaked one file descriptor; the htslib capture pipe
+  is now closed in every case (closes #45).
+- `--no-singletons` did not filter singletons on the VCF path; the
+  frequency check let the singleton itself through (closes #40).
+- VCF divergence counting compared the outgroup codon to the reference
+  instead of to the ingroup, miscounting sites where the ingroup was
+  fixed for ALT (closes #44).
+- `--freq-cutoffs` was not forwarded to per-gene asymptotic workers in
+  `vcf` mode (closes #42).
+- Batch TSV had no layout for imputed results and silently fell back to
+  JSON (closes #43).
+- Batch JSON silently dropped a gene when two results shared a name;
+  duplicate names are now rejected up front (closes #70).
+- CLI error messages had drifted: some exited without the "Error: "
+  prefix. All CLI errors now route through one helper (closes #72).
+- `batch` and `vcf` used different exit codes for an empty result set.
+  Both now exit 0 when a run simply produces no results, and 1 only
+  when genes errored (closes #75).
+- `mkado vcf --gene X` with `-a`, `--imputed`, or `--alpha-tg` silently
+  ran the standard MK test instead of the requested mode (closes #41).
+- `--no-singletons` did not filter singletons on the FASTA
+  `--polarize-match` or `--alpha-tg` paths, or wherever sample size did
+  not match the raw sequence count. All FASTA paths now filter by
+  derived-allele count, matching the VCF path (closes #55).
+- Pooled major-codon selection weighted each population's frequency
+  spectrum as a proportion, so a small population could outweigh a
+  large one. Sequences are now counted directly (closes #81).
+- Documented how a multi-position codon difference is resolved; the
+  rule was previously unstated (closes #88).
+- A multi-allelic codon collapsed two different derived bases into one
+  mutation. Each base is now counted separately; polymorphism counts
+  rise on affected genes (closes #87).
+- VCF divergence rules now match the FASTA path: a codon touched by an
+  ingroup polymorphism is excluded from divergence, and a heterozygous
+  outgroup call is treated as missing rather than resolved. Divergence
+  counts drop where this applies (closes #58).
+- `--freq-cutoffs` had no effect on the FASTA per-gene asymptotic
+  fitter; it always used the full frequency range (closes #61).
+- Imputed batch results showed a placeholder adjusted p-value of 1.0
+  instead of a real Benjamini-Hochberg correction; asymptotic per-gene
+  batches showed a fabricated adjusted-p-value line despite having no
+  p-value (closes #65).
+- A failed curve fit in the asymptotic fitters fell back to a value
+  outside the requested `--freq-cutoffs` window instead of the last
+  point inside it.
+
 ## [0.5.0] - 2026-05-01
 
 Round-1 revision feature release for the MKado applications note
