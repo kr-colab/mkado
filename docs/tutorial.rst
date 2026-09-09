@@ -368,7 +368,8 @@ Excludes singletons, meaning sites where the derived allele appears in exactly o
 
 This option defines the frequency range used for **curve fitting** in the asymptotic test — it does not exclude data.
 
-- **Applies to**: Aggregated asymptotic MK test (``mkado batch -a``)
+- **Applies to**: Asymptotic MK test (``mkado test -a``, ``mkado batch -a``,
+  ``mkado vcf -a``); aggregated and per-gene fits alike
 - **Default**: ``0.1,0.9``
 - **Purpose**: Avoid fitting to extreme frequency bins where data may be sparse or noisy
 - **How it works**:
@@ -381,6 +382,9 @@ This option defines the frequency range used for **curve fitting** in the asympt
 
    # Fit model using only bins between 15% and 85% frequency
    mkado batch alignments/ -i dmel -o dsim -a --freq-cutoffs 0.15,0.85
+
+   # Same cutoffs on a single alignment
+   mkado test alignment.fa -i dmel -o dsim -a --freq-cutoffs 0.15,0.85
 
 Key Differences
 ^^^^^^^^^^^^^^^

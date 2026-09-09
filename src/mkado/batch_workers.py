@@ -80,6 +80,10 @@ class BatchTask:
     """Asymptotic-MK SFS construction: "at" (per-bin) or "above" (cumulative).
     Ignored for non-asymptotic modes."""
 
+    frequency_cutoffs: tuple[float, float] = (0.1, 0.9)
+    """(low, high) frequency range for asymptotic curve fitting.
+    Ignored for non-asymptotic modes."""
+
 
 @dataclass
 class WorkerResult:
@@ -171,6 +175,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     pool_polymorphisms=task.pool_polymorphisms,
                     genetic_code=genetic_code,
                     sfs_mode=task.sfs_mode,
+                    frequency_cutoffs=task.frequency_cutoffs,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 
@@ -254,6 +259,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     pool_polymorphisms=task.pool_polymorphisms,
                     genetic_code=genetic_code,
                     sfs_mode=task.sfs_mode,
+                    frequency_cutoffs=task.frequency_cutoffs,
                 )
                 return WorkerResult(gene_id=gene_id, result=result)
 

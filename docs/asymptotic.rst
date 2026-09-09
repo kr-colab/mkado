@@ -154,10 +154,16 @@ For multi-gene analyses, aggregating data across genes provides more statistical
 Batch Analysis (Per-Gene)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
+Each gene fits its own curve, but ``--freq-cutoffs`` still restricts
+which bins go into that per-gene fit, the same as in aggregated mode.
+
 .. code-block:: bash
 
    # Separate asymptotic test for each gene
    mkado batch alignments/ -i ingroup -o outgroup -a --per-gene
+
+   # Per-gene fits, restricted to bins between 20% and 80% frequency
+   mkado batch alignments/ -i ingroup -o outgroup -a --per-gene --freq-cutoffs 0.2,0.8
 
 Confidence Interval Method
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -243,7 +249,9 @@ This plot helps assess:
 Frequency Cutoffs
 -----------------
 
-The ``--freq-cutoffs`` option controls which frequency bins are used for curve fitting:
+The ``--freq-cutoffs`` option controls which frequency bins are used for curve fitting.
+It applies the same way to ``mkado test -a``, aggregated ``mkado batch -a``, and
+per-gene ``mkado batch -a --per-gene`` (and the ``mkado vcf`` equivalents):
 
 .. code-block:: bash
 
@@ -252,6 +260,9 @@ The ``--freq-cutoffs`` option controls which frequency bins are used for curve f
 
    # Stricter cutoffs for noisy data
    mkado batch alignments/ -i sp1 -o sp2 -a --freq-cutoffs 0.2,0.8
+
+   # Same option on a single alignment
+   mkado test alignment.fa -i sp1 -o sp2 -a --freq-cutoffs 0.2,0.8
 
 This does **not** exclude polymorphisms from the total counts — it only affects which bins inform the curve fit. Extreme frequency bins often have sparse data and can destabilize the fit.
 
