@@ -232,9 +232,63 @@ def test_batch_tsv_rejects_unknown_result_type(alpha_tg_undefined: AlphaTGResult
         format_batch_results([("geneA", alpha_tg_undefined)], OutputFormat.TSV)
 
 
+@pytest.mark.parametrize(
+    "first_fixture,second_fixture",
+    [
+        ("mk_undefined", "asymptotic_undefined"),
+        ("asymptotic_undefined", "polarized_undefined"),
+        ("polarized_undefined", "imputed_undefined"),
+        ("imputed_undefined", "mk_undefined"),
+    ],
+)
+def test_batch_tsv_rejects_mixed_result_types(
+    first_fixture: str, second_fixture: str, request: pytest.FixtureRequest
+) -> None:
+    """A row whose type differs from the first row's is a caller error, not a dropped row."""
+    first = request.getfixturevalue(first_fixture)
+    second = request.getfixturevalue(second_fixture)
+    with pytest.raises(TypeError, match="geneA.*geneB") as exc_info:
+        format_batch_results([("geneA", first), ("geneB", second)], OutputFormat.TSV)
+    message = str(exc_info.value)
+    assert type(first).__name__ in message
+    assert type(second).__name__ in message
+
+
+def _defined_mk_result() -> MKResult:
+    """A representative non-degenerate MKResult, reused wherever the exact counts don't matter."""
+    return mk_test_from_counts(dn=10, ds=5, pn=4, ps=8)
+
+
+def _mixed_result_types() -> list[tuple[str, MKResult | AsymptoticMKResult]]:
+    """An MK/asymptotic/MK batch, none sharing the middle gene's type (issue #69's repro)."""
+    return [
+        ("geneA", _defined_mk_result()),
+        (
+            "geneB",
+            AsymptoticMKResult(alpha_asymptotic=0.0, ci_low=0.0, ci_high=0.0, dn=1, ds=2),
+        ),
+        ("geneC", mk_test_from_counts(dn=6, ds=3, pn=2, ps=4)),
+    ]
+
+
+def test_batch_json_preserves_mixed_result_shapes() -> None:
+    """JSON keys by gene name regardless of type, so a mixed batch is not rejected."""
+    out = format_batch_results(_mixed_result_types(), OutputFormat.JSON)
+    data = json.loads(out)
+    assert set(data.keys()) == {"geneA", "geneB", "geneC"}
+
+
+def test_batch_pretty_preserves_mixed_result_shapes() -> None:
+    """Pretty output renders each result with its own str(), so a mixed batch is not rejected."""
+    out = format_batch_results(_mixed_result_types(), OutputFormat.PRETTY)
+    assert "=== geneA ===" in out
+    assert "=== geneB ===" in out
+    assert "=== geneC ===" in out
+
+
 def _two_results_with_the_same_name() -> list[tuple[str, MKResult]]:
     return [
-        ("geneA", mk_test_from_counts(dn=10, ds=5, pn=4, ps=8)),
+        ("geneA", _defined_mk_result()),
         ("geneA", mk_test_from_counts(dn=1, ds=1, pn=1, ps=1)),
     ]
 
