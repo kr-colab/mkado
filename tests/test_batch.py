@@ -3,8 +3,16 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+from scipy.stats import false_discovery_control
+
+from mkado.analysis.alpha_tg import AlphaTGResult
+from mkado.analysis.asymptotic import AsymptoticMKResult
+from mkado.analysis.imputed import ImputedMKResult
+from mkado.analysis.mk_test import mk_test_from_counts
+from mkado.analysis.polarized import PolarizedMKResult
 from mkado.batch_workers import BatchTask, WorkerResult, process_gene
-from mkado.cli import get_worker_count, run_parallel_batch
+from mkado.cli import compute_adjusted_pvalues, get_worker_count, run_parallel_batch
 
 
 class TestGetWorkerCount:
@@ -481,3 +489,91 @@ class TestRunParallelBatchErrorFlag:
         results, warnings, had_error = run_parallel_batch([task], 1, "Testing")
         assert results == []
         assert had_error is True
+
+
+def _imputed_result(p_value: float) -> ImputedMKResult:
+    return ImputedMKResult(
+        alpha=0.5,
+        p_value=p_value,
+        pn_neutral=3.0,
+        pwd=1.0,
+        dn=10,
+        ds=5,
+        pn_total=4,
+        ps_total=8,
+        cutoff=0.15,
+    )
+
+
+def _asymptotic_result() -> AsymptoticMKResult:
+    return AsymptoticMKResult(
+        alpha_asymptotic=0.0,
+        ci_low=0.0,
+        ci_high=0.0,
+        dn=1,
+        ds=1,
+    )
+
+
+def _polarized_result(p_value_ingroup: float) -> PolarizedMKResult:
+    return PolarizedMKResult(
+        dn_ingroup=1,
+        ds_ingroup=1,
+        pn_ingroup=1,
+        ps_ingroup=1,
+        dn_outgroup=1,
+        ds_outgroup=1,
+        dn_unpolarized=1,
+        ds_unpolarized=1,
+        pn_unpolarized=1,
+        ps_unpolarized=1,
+        p_value_ingroup=p_value_ingroup,
+        ni_ingroup=None,
+        alpha_ingroup=None,
+        dos_ingroup=None,
+    )
+
+
+class TestComputeAdjustedPvalues:
+    """compute_adjusted_pvalues must not fake a p-value for types that lack one."""
+
+    def test_imputed_results_get_real_bh_correction(self) -> None:
+        results = [("geneA", _imputed_result(0.01)), ("geneB", _imputed_result(0.5))]
+        adjusted = compute_adjusted_pvalues(results)
+        assert adjusted != [1.0, 1.0]
+        expected = list(false_discovery_control([0.01, 0.5], method="bh"))
+        assert adjusted == expected
+
+    def test_asymptotic_results_return_none(self) -> None:
+        results = [("geneA", _asymptotic_result()), ("geneB", _asymptotic_result())]
+        assert compute_adjusted_pvalues(results) is None
+
+    def test_mk_results_still_adjusted(self) -> None:
+        results = [
+            ("geneA", mk_test_from_counts(dn=10, ds=5, pn=4, ps=8)),
+            ("geneB", mk_test_from_counts(dn=1, ds=1, pn=1, ps=1)),
+        ]
+        adjusted = compute_adjusted_pvalues(results)
+        expected_pvalues = [r.p_value for _, r in results]
+        assert adjusted == list(false_discovery_control(expected_pvalues, method="bh"))
+
+    def test_polarized_results_still_adjusted(self) -> None:
+        results = [("geneA", _polarized_result(0.02)), ("geneB", _polarized_result(0.5))]
+        adjusted = compute_adjusted_pvalues(results)
+        expected = list(false_discovery_control([0.02, 0.5], method="bh"))
+        assert adjusted == expected
+
+    def test_unknown_result_type_raises(self) -> None:
+        alpha_tg = AlphaTGResult(
+            alpha_tg=0.0,
+            ni_tg=0.0,
+            ci_low=0.0,
+            ci_high=0.0,
+            num_genes=0,
+            dn_total=0,
+            ds_total=0,
+            pn_total=0,
+            ps_total=0,
+        )
+        with pytest.raises(TypeError, match="Unknown result type"):
+            compute_adjusted_pvalues([("geneA", alpha_tg)])
