@@ -291,13 +291,7 @@ def _apply_sfs_mode(pn: np.ndarray, ps: np.ndarray, sfs_mode: str) -> tuple[np.n
 
 
 def _frequency_bin_edges(num_bins: int) -> np.ndarray:
-    """Bin edges 0, 1/num_bins, ..., 1, each the nearest double to k/num_bins.
-
-    ``np.linspace(0, 1, num_bins + 1)`` does not have this property for
-    several ``num_bins``/``k`` combinations (e.g. ``num_bins=20``, edge 3
-    comes back as 0.15000000000000002), which pushes a polymorphism at
-    exactly that frequency into the wrong bin.
-    """
+    """Bin edges 0, 1/num_bins, ..., 1; unlike linspace, exact for every k."""
     return np.arange(num_bins + 1) / num_bins
 
 
