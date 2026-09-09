@@ -85,21 +85,40 @@ class TestValidation:
             (["-f", "xml"], "Error: Invalid format 'xml'."),
             (["--ci-method", "jack"], "Error: Invalid --ci-method 'jack'."),
             (["--sfs-mode", "below"], "Error: Invalid --sfs-mode 'below'."),
-            (["-a", "--min-freq", "0.1"], "Error: --min-freq cannot be used with --asymptotic."),
-            (["-a", "--no-singletons"], "Error: --no-singletons cannot be used with --asymptotic."),
+            (
+                ["-a", "--min-freq", "0.1"],
+                "Error: --min-freq cannot be used with --asymptotic. "
+                "The asymptotic test uses --freq-cutoffs for frequency filtering.",
+            ),
+            (
+                ["-a", "--no-singletons"],
+                "Error: --no-singletons cannot be used with --asymptotic. "
+                "The asymptotic test uses --freq-cutoffs for frequency filtering.",
+            ),
             (["--imputed", "-a"], "Error: --imputed and --asymptotic are mutually exclusive."),
-            (["--alpha-tg", "-a"], "Error: --alpha-tg and --asymptotic are mutually exclusive."),
+            (
+                ["--alpha-tg", "-a"],
+                "Error: --alpha-tg and --asymptotic are mutually exclusive. "
+                "Choose one method for estimating alpha.",
+            ),
+            (
+                ["--imputed", "--alpha-tg", "-a"],
+                "Error: --alpha-tg and --asymptotic are mutually exclusive. "
+                "Choose one method for estimating alpha.",
+            ),
             (
                 ["--imputed", "--alpha-tg"],
                 "Error: --imputed and --alpha-tg are mutually exclusive.",
             ),
             (
                 ["--imputed", "--no-singletons"],
-                "Error: --no-singletons cannot be used with --imputed.",
+                "Error: --no-singletons cannot be used with --imputed. "
+                "The imputed test needs low-frequency variants.",
             ),
             (
                 ["--no-singletons", "--min-freq", "0.1"],
-                "Error: --no-singletons and --min-freq cannot be used together.",
+                "Error: --no-singletons and --min-freq cannot be used together. "
+                "--no-singletons filters by allele count instead.",
             ),
             (["--code-table", "99"], "Error: Unknown genetic code table 99."),
             (["--code-table", "martian"], "Error: Unknown genetic code 'martian'."),

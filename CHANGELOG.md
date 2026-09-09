@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- `test`, `batch`, and `vcf` each hand-wrote the same option-conflict
+  checks and the copies had drifted: `vcf` dropped the explanatory
+  clause from its messages, and checked `--alpha-tg`/`--imputed`
+  against `--asymptotic` in a different order than `batch`, so the same
+  flag combination could report a different conflict depending on the
+  command. All three now share one validator (closes #74).
 - Batch TSV chose its column layout from the first result's type, then
   silently dropped every row of a different type. A mixed-type batch
   now raises a clear error instead (closes #69).

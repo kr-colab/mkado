@@ -161,7 +161,7 @@ Two options control which polymorphisms enter the analysis:
 
 .. note::
 
-   ``--min-freq`` and ``--no-singletons`` cannot be used with ``--asymptotic`` or ``--imputed``. The asymptotic test uses ``--freq-cutoffs`` instead. See :doc:`tutorial` for the full explanation of frequency filtering options.
+   ``--min-freq`` and ``--no-singletons`` cannot be used with ``--asymptotic`` or ``--imputed``. The asymptotic test uses ``--freq-cutoffs`` for frequency filtering instead, and the imputed test needs the low-frequency variants these filters would remove. See :doc:`tutorial` for the full explanation of frequency filtering options.
 
 Additional Options
 ^^^^^^^^^^^^^^^^^^

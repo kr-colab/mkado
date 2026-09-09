@@ -129,6 +129,51 @@ def validate_sfs_mode(sfs_mode: str) -> None:
         raise cli_error(f"Invalid --sfs-mode '{sfs_mode}'. Use 'at' or 'above'.")
 
 
+def validate_option_compatibility(
+    *,
+    use_asymptotic: bool,
+    use_imputed: bool,
+    no_singletons: bool,
+    min_freq: float,
+    alpha_tg: bool = False,
+) -> None:
+    """Reject combinations of frequency-filter and alpha-method flags that conflict.
+
+    Shared by ``test``, ``batch``, and ``vcf`` so all three raise the same message in
+    the same precedence order. ``alpha_tg`` defaults to False since ``test`` has no
+    ``--alpha-tg`` flag.
+    """
+    if use_asymptotic and min_freq > 0.0:
+        raise cli_error(
+            "--min-freq cannot be used with --asymptotic. "
+            "The asymptotic test uses --freq-cutoffs for frequency filtering."
+        )
+    if alpha_tg and use_asymptotic:
+        raise cli_error(
+            "--alpha-tg and --asymptotic are mutually exclusive. "
+            "Choose one method for estimating alpha."
+        )
+    if use_asymptotic and no_singletons:
+        raise cli_error(
+            "--no-singletons cannot be used with --asymptotic. "
+            "The asymptotic test uses --freq-cutoffs for frequency filtering."
+        )
+    if use_imputed and use_asymptotic:
+        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
+    if use_imputed and alpha_tg:
+        raise cli_error("--imputed and --alpha-tg are mutually exclusive.")
+    if use_imputed and no_singletons:
+        raise cli_error(
+            "--no-singletons cannot be used with --imputed. "
+            "The imputed test needs low-frequency variants."
+        )
+    if no_singletons and min_freq > 0.0:
+        raise cli_error(
+            "--no-singletons and --min-freq cannot be used together. "
+            "--no-singletons filters by allele count instead."
+        )
+
+
 def parse_frequency_cutoffs(freq_cutoffs: str) -> tuple[float, float]:
     """Parse a ``--freq-cutoffs 'low,high'`` string into a (low, high) tuple."""
     try:
@@ -579,33 +624,12 @@ def test(
 
     frequency_cutoffs = parse_frequency_cutoffs(freq_cutoffs)
 
-    # Validate option compatibility
-    if use_asymptotic and min_freq > 0.0:
-        raise cli_error(
-            "--min-freq cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering."
-        )
-
-    if use_asymptotic and no_singletons:
-        raise cli_error(
-            "--no-singletons cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering."
-        )
-
-    if use_imputed and use_asymptotic:
-        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
-
-    if use_imputed and no_singletons:
-        raise cli_error(
-            "--no-singletons cannot be used with --imputed. "
-            "The imputed test needs low-frequency variants."
-        )
-
-    if no_singletons and min_freq > 0.0:
-        raise cli_error(
-            "--no-singletons and --min-freq cannot be used together. "
-            "--no-singletons filters by allele count instead."
-        )
+    validate_option_compatibility(
+        use_asymptotic=use_asymptotic,
+        use_imputed=use_imputed,
+        no_singletons=no_singletons,
+        min_freq=min_freq,
+    )
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
@@ -981,42 +1005,13 @@ def batch(
     # Resolve genetic code table
     code_table_id = resolve_code_table_or_exit(code_table)
 
-    # Validate option compatibility
-    if use_asymptotic and min_freq > 0.0:
-        raise cli_error(
-            "--min-freq cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering."
-        )
-
-    if alpha_tg and use_asymptotic:
-        raise cli_error(
-            "--alpha-tg and --asymptotic are mutually exclusive. "
-            "Choose one method for estimating alpha."
-        )
-
-    if use_asymptotic and no_singletons:
-        raise cli_error(
-            "--no-singletons cannot be used with --asymptotic. "
-            "The asymptotic test uses --freq-cutoffs for frequency filtering."
-        )
-
-    if use_imputed and use_asymptotic:
-        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
-
-    if use_imputed and alpha_tg:
-        raise cli_error("--imputed and --alpha-tg are mutually exclusive.")
-
-    if use_imputed and no_singletons:
-        raise cli_error(
-            "--no-singletons cannot be used with --imputed. "
-            "The imputed test needs low-frequency variants."
-        )
-
-    if no_singletons and min_freq > 0.0:
-        raise cli_error(
-            "--no-singletons and --min-freq cannot be used together. "
-            "--no-singletons filters by allele count instead."
-        )
+    validate_option_compatibility(
+        use_asymptotic=use_asymptotic,
+        use_imputed=use_imputed,
+        no_singletons=no_singletons,
+        min_freq=min_freq,
+        alpha_tg=alpha_tg,
+    )
 
     # Resolve imputed cutoff from --min-freq (default 0.15)
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
@@ -1595,27 +1590,13 @@ def vcf(
     if not outgroup_vcf.exists():
         raise cli_error(f"--outgroup-vcf file not found: {outgroup_vcf}")
 
-    # Validate option compatibility (same as batch command)
-    if use_asymptotic and min_freq > 0.0:
-        raise cli_error("--min-freq cannot be used with --asymptotic.")
-
-    if use_asymptotic and no_singletons:
-        raise cli_error("--no-singletons cannot be used with --asymptotic.")
-
-    if use_imputed and use_asymptotic:
-        raise cli_error("--imputed and --asymptotic are mutually exclusive.")
-
-    if alpha_tg and use_asymptotic:
-        raise cli_error("--alpha-tg and --asymptotic are mutually exclusive.")
-
-    if use_imputed and alpha_tg:
-        raise cli_error("--imputed and --alpha-tg are mutually exclusive.")
-
-    if use_imputed and no_singletons:
-        raise cli_error("--no-singletons cannot be used with --imputed.")
-
-    if no_singletons and min_freq > 0.0:
-        raise cli_error("--no-singletons and --min-freq cannot be used together.")
+    validate_option_compatibility(
+        use_asymptotic=use_asymptotic,
+        use_imputed=use_imputed,
+        no_singletons=no_singletons,
+        min_freq=min_freq,
+        alpha_tg=alpha_tg,
+    )
 
     imputed_cutoff = min_freq if (use_imputed and min_freq > 0.0) else 0.15
 
