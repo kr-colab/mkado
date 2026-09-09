@@ -1,5 +1,6 @@
 """Tests for asymptotic MK test."""
 
+from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +13,7 @@ from mkado.analysis.asymptotic import (
     PolymorphismData,
     _compute_ci_monte_carlo,
     _exponential_model,
+    _frequency_bin_edges,
     _linear_model,
     _mask_to_frequency_cutoffs,
     aggregate_polymorphism_data,
@@ -93,6 +95,35 @@ ATGGTGATGGTGATGGTG
         assert isinstance(result, AsymptoticMKResult)
         assert result.dn >= 0
         assert result.ds >= 0
+
+    def test_bin_centers_exact(self, tmp_path: Path) -> None:
+        """Bin centers must use the nearest double to k/num_bins (issue #84).
+
+        num_bins=5 has a center (index 3, covering [0.6, 0.8)) that linspace
+        computes one ULP off from the exact value 0.7.
+        """
+        ingroup_fa = tmp_path / "ingroup.fa"
+        ingroup_fa.write_text(""">seq1
+ATGATGATGATGATGATG
+>seq2
+ATGCTGATGATGATGATG
+>seq3
+ATGATGATGCTGATGATG
+>seq4
+ATGATGATGATGCTGATG
+>seq5
+ATGATGATGATGATGATG
+""")
+
+        outgroup_fa = tmp_path / "outgroup.fa"
+        outgroup_fa.write_text(""">out1
+ATGGTGATGGTGATGGTG
+""")
+
+        result = asymptotic_mk_test(ingroup_fa, outgroup_fa, num_bins=5)
+
+        assert result.frequency_bins[3] == float(Fraction(7, 10))
+        assert result.frequency_bins[3] != np.linspace(0, 1, 6)[3:5].mean()
 
     def test_asymptotic_mk_test_insufficient_data(self, tmp_path: Path) -> None:
         """Test asymptotic MK test with insufficient data."""
@@ -361,8 +392,41 @@ ATGGTGATGGTGATGGTG
         assert data.ds == mk_result.ds
 
 
+class TestFrequencyBinEdges:
+    """Tests for _frequency_bin_edges: edges must be the nearest double to k/num_bins."""
+
+    def test_diverges_from_linspace_on_reported_case(self) -> None:
+        """num_bins=20, k=3: linspace gives 0.15000000000000002, not 0.15 (issue #84)."""
+        edges = _frequency_bin_edges(20)
+
+        assert edges[3] != np.linspace(0, 1, 21)[3]
+
+    @pytest.mark.parametrize("num_bins", [3, 5, 10, 20])
+    def test_edges_are_nearest_double_to_k_over_num_bins(self, num_bins: int) -> None:
+        edges = _frequency_bin_edges(num_bins)
+
+        for k in range(num_bins + 1):
+            assert edges[k] == float(Fraction(k, num_bins))
+
+
 class TestAggregatePolymorphismData:
     """Tests for aggregate_polymorphism_data function."""
+
+    def test_bins_exact_boundary_correctly(self) -> None:
+        """A polymorphism at exactly 3/20 must land in bin 3, not bin 2 (issue #84)."""
+        gene_data = [
+            PolymorphismData(
+                polymorphisms=[(3 / 20, "N")],
+                dn=1,
+                ds=1,
+                gene_id="gene1",
+            )
+        ]
+
+        agg = aggregate_polymorphism_data(gene_data, num_bins=20)
+
+        assert agg.pn_counts[3] == 1
+        assert agg.pn_counts[2] == 0
 
     def test_aggregate_single_gene(self) -> None:
         """Test aggregation with a single gene."""

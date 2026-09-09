@@ -290,6 +290,11 @@ def _apply_sfs_mode(pn: np.ndarray, ps: np.ndarray, sfs_mode: str) -> tuple[np.n
     return pn, ps
 
 
+def _frequency_bin_edges(num_bins: int) -> np.ndarray:
+    """Bin edges 0, 1/num_bins, ..., 1; unlike linspace, exact for every k."""
+    return np.arange(num_bins + 1) / num_bins
+
+
 def _exponential_model(x: np.ndarray, a: float, b: float, c: float) -> np.ndarray:
     """Exponential model: α(x) = a + b * exp(-c * x)
 
@@ -770,7 +775,7 @@ def aggregate_polymorphism_data(
     ln_total, ls_total = sum_site_totals(gene_data)
 
     # Create frequency bins
-    bin_edges = np.linspace(0, 1, num_bins + 1)
+    bin_edges = _frequency_bin_edges(num_bins)
 
     # Vectorize: collect all (freq, type) pairs into two parallel arrays, then
     # compute bin indices in one searchsorted and aggregate counts via bincount.
@@ -1201,7 +1206,7 @@ def asymptotic_mk_test(
                 poly_data.append((derived_freq, "S"))
 
     # Create frequency bins
-    bin_edges = np.linspace(0, 1, num_bins + 1)
+    bin_edges = _frequency_bin_edges(num_bins)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
     # Bin polymorphisms by derived allele frequency
