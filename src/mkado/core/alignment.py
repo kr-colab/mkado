@@ -18,6 +18,23 @@ def _count_path(path: list[tuple[str, int]]) -> tuple[int, int]:
     return (nonsyn, len(path) - nonsyn)
 
 
+def passes_frequency_filter(
+    state: tuple[float, int] | None, min_frequency: float, no_singletons: bool
+) -> bool:
+    """Decide whether a polymorphism's (frequency, count) state clears the filters.
+
+    ``SequenceSet.derived_state`` and ``AlignedPair.minor_allele_state`` both
+    return this same (frequency, count) shape, so every counting loop that
+    filters on one or the other can share this one accept/reject rule.
+    """
+    if state is None:
+        return False
+    freq, count = state
+    if no_singletons and count == 1:
+        return False
+    return freq >= min_frequency
+
+
 @dataclass
 class AlignedPair:
     """Represents a pair of aligned sequence sets (ingroup and outgroup)."""
@@ -67,6 +84,29 @@ class AlignedPair:
         for codon, count in outgroup_counts.items():
             combined[codon] = combined.get(codon, 0) + count
         return combined
+
+    def minor_allele_state(self, codon_index: int) -> tuple[float, int] | None:
+        """Frequency and copy count of the minor allele(s), pooled across both groups.
+
+        Pooled mode has no ancestral state to compute a derived frequency from, so
+        filtering there folds every non-major codon together instead. Ties for the
+        major codon break alphabetically, the same as ``_classify_against_major``,
+        so the result does not depend on sequence order in the file.
+
+        Args:
+            codon_index: Zero-based codon index.
+
+        Returns:
+            Tuple of (minor frequency, minor count), or None when fewer than two
+            alleles are present.
+        """
+        counts = self.combined_codon_counts(codon_index)
+        if len(counts) < 2:
+            return None
+        total = sum(counts.values())
+        major_codon = min(counts, key=lambda c: (-counts[c], c))
+        minor_count = total - counts[major_codon]
+        return minor_count / total, minor_count
 
     def combined_codon_set_clean(self, codon_index: int) -> set[str]:
         """Get all clean unique codons at a position from both groups.

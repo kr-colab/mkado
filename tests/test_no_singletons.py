@@ -1,8 +1,10 @@
 """--no-singletons on the FASTA analysis paths.
 
-A singleton is one copy of the derived allele, whatever the sample size, whether some
-sequences are missing data at that codon, and whether polymorphisms are pooled. Each
-path is checked against all three, because a frequency threshold cannot express them.
+A singleton is one copy of the derived allele, whatever the sample size and whether
+some sequences are missing data at that codon. Pooled mode has no ancestral state, so
+there it means one copy of the minor allele over the combined ingroup+outgroup sample
+instead. Each path is checked against these, because a frequency threshold cannot
+express them.
 """
 
 from __future__ import annotations
@@ -91,23 +93,61 @@ class TestStandard:
         ingroup, outgroup = singleton
         assert _standard(ingroup, outgroup, pool_polymorphisms=True, no_singletons=True) == (0, 0)
 
-    def test_pooled_outgroup_only_site_is_not_a_singleton(self, tmp_path, write_alignment):
-        """The ingroup is invariant here, so it contributes no derived copies at all.
+    def test_pooled_outgroup_singleton_is_filtered(self, tmp_path, write_alignment):
+        """Pooled mode has no ancestral state, so filtering folds ingroup and outgroup
 
-        Counting zero copies is not counting one, and the outgroup carries three.
+        together and counts the minor allele. The ingroup here is invariant and the
+        outgroup carries one derived copy out of four, for a pooled total of one minor
+        copy in seven -- a singleton, even though it is private to the outgroup.
         """
         ingroup = write_alignment(tmp_path / "in.fa", {f"i{i}": ANCESTRAL for i in range(1, 4)})
         outgroup = write_alignment(
             tmp_path / "out.fa",
             {"o1": DERIVED, "o2": ANCESTRAL, "o3": ANCESTRAL, "o4": ANCESTRAL},
         )
-        kept = _standard(ingroup, outgroup, pool_polymorphisms=True)
-        assert _standard(ingroup, outgroup, pool_polymorphisms=True, no_singletons=True) == kept
+        assert _standard(ingroup, outgroup, pool_polymorphisms=True) == (0, 1)
+        assert _standard(ingroup, outgroup, pool_polymorphisms=True, no_singletons=True) == (0, 0)
+
+    def test_pooled_ingroup_and_outgroup_singletons_filtered_alike(self, tmp_path, write_alignment):
+        """A singleton must be filtered the same way regardless of which group carries it."""
+        ingroup_carries = write_alignment(
+            tmp_path / "in1.fa", {f"i{i}": ANCESTRAL for i in range(1, 4)} | {"i4": DERIVED}
+        )
+        outgroup_plain = write_alignment(
+            tmp_path / "out1.fa", {f"o{i}": ANCESTRAL for i in range(1, 5)}
+        )
+        outgroup_carries = write_alignment(
+            tmp_path / "out2.fa", {f"o{i}": ANCESTRAL for i in range(1, 4)} | {"o4": DERIVED}
+        )
+        ingroup_plain = write_alignment(
+            tmp_path / "in2.fa", {f"i{i}": ANCESTRAL for i in range(1, 5)}
+        )
+
+        from_ingroup = _standard(
+            ingroup_carries, outgroup_plain, pool_polymorphisms=True, no_singletons=True
+        )
+        from_outgroup = _standard(
+            ingroup_plain, outgroup_carries, pool_polymorphisms=True, no_singletons=True
+        )
+        assert from_ingroup == (0, 0)
+        assert from_outgroup == (0, 0)
 
     def test_site_at_min_frequency_is_kept(self, singleton):
         """Only sites below the minimum are dropped, as the option's documentation says."""
         assert _standard(*singleton, min_frequency=0.2) == (0, 1)
         assert _standard(*singleton, min_frequency=0.3) == (0, 0)
+
+    def test_pooled_site_at_min_frequency_is_kept(self, tmp_path, write_alignment):
+        """Pooled --min-freq filters on the folded minor-allele frequency.
+
+        The ingroup singleton (3 ancestral, 1 derived) plus one outgroup ancestral
+        copy pools to one minor copy in five (0.2). The ingroup alone is polymorphic
+        here so the site is a genuine pooled polymorphism, not a fixed difference.
+        """
+        ingroup = write_alignment(tmp_path / "in.fa", singleton_alignment(4))
+        outgroup = write_alignment(tmp_path / "out.fa", {"outgroup_1": ANCESTRAL})
+        assert _standard(ingroup, outgroup, pool_polymorphisms=True, min_frequency=0.2) == (0, 1)
+        assert _standard(ingroup, outgroup, pool_polymorphisms=True, min_frequency=0.3) == (0, 0)
 
 
 class TestPolarized:
@@ -122,6 +162,29 @@ class TestPolarized:
     def test_site_at_min_frequency_is_kept(self, singleton):
         ingroup, outgroup = singleton
         assert _polarized(ingroup, outgroup, outgroup, min_frequency=0.2) == (0, 1)
+
+    def test_singleton_kept_by_default_when_pooling(self, singleton):
+        ingroup, outgroup = singleton
+        assert _polarized(ingroup, outgroup, outgroup, pool_polymorphisms=True) == (0, 1)
+
+    def test_singleton_removed_when_pooling(self, singleton):
+        """Pooled mode filters too, the same as the standard test's pooled branch."""
+        ingroup, outgroup = singleton
+        result = _polarized(
+            ingroup, outgroup, outgroup, pool_polymorphisms=True, no_singletons=True
+        )
+        assert result == (0, 0)
+
+    def test_pooled_site_at_min_frequency_is_kept(self, tmp_path, write_alignment):
+        """The ingroup singleton plus one outgroup ancestral copy = one minor copy in five."""
+        ingroup = write_alignment(tmp_path / "in.fa", singleton_alignment(4))
+        outgroup = write_alignment(tmp_path / "out.fa", {"outgroup_1": ANCESTRAL})
+        kept = _polarized(ingroup, outgroup, outgroup, pool_polymorphisms=True, min_frequency=0.2)
+        assert kept == (0, 1)
+        dropped = _polarized(
+            ingroup, outgroup, outgroup, pool_polymorphisms=True, min_frequency=0.3
+        )
+        assert dropped == (0, 0)
 
 
 class TestExtractedForAlphaTg:

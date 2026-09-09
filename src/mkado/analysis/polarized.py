@@ -13,7 +13,7 @@ from mkado.analysis.statistics import (
     neutrality_index,
     omega_decomposition,
 )
-from mkado.core.alignment import PolarizedAlignedPair
+from mkado.core.alignment import PolarizedAlignedPair, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import SequenceSet
 
@@ -33,7 +33,10 @@ class PolarizedMKResult:
 
     Pn and Ps count derived alleles segregating in the ingroup (subject to
     ``min_frequency`` filtering, identical to the standard MK test) and
-    are split by lineage assignment.
+    are split by lineage assignment. In pooled mode there is no ancestral
+    state to assign a lineage or a derived allele from, so filtering there
+    uses the folded minor-allele frequency over the combined ingroup+outgroup
+    sample instead, and lineage assignment does not apply.
     """
 
     dn_ingroup: int
@@ -155,11 +158,14 @@ def polarized_mk_test(
         genetic_code: Genetic code for translation (uses standard if None)
         pool_polymorphisms: If True, count polymorphisms from both ingroup
             and outgroup1 (libsequence convention). If False (default), count
-            only ingroup polymorphisms (DnaSP/original MK convention).
-        min_frequency: Minimum derived allele frequency for a polymorphism
-            to be counted (default 0.0, i.e., include all polymorphisms).
-            Useful for filtering out rare variants that may be slightly
-            deleterious.
+            only ingroup polymorphisms (DnaSP/original MK convention). Pooled
+            mode has no ancestral state, so ``min_frequency``/``no_singletons``
+            filter on the folded minor-allele frequency over the combined
+            sample rather than a derived-allele frequency.
+        min_frequency: Minimum derived (or, in pooled mode, minor) allele
+            frequency for a polymorphism to be counted (default 0.0, i.e.,
+            include all polymorphisms). Useful for filtering out rare variants
+            that may be slightly deleterious.
 
     Returns:
         PolarizedMKResult containing test statistics
@@ -222,6 +228,13 @@ def polarized_mk_test(
         # lineage to attribute shared polymorphisms to
         poly_sites = pair.polymorphic_sites_pooled()
         for codon_idx in poly_sites:
+            # Pooled mode has no ancestral state, so filtering folds ingroup and
+            # outgroup together and uses the minor allele instead of the derived one.
+            if min_frequency > 0 or no_singletons:
+                state = pair.minor_allele_state(codon_idx)
+                if not passes_frequency_filter(state, min_frequency, no_singletons):
+                    continue
+
             result = pair.classify_polymorphism_pooled(codon_idx)
             if result is not None:
                 nonsyn, syn = result
@@ -249,12 +262,7 @@ def polarized_mk_test(
             # the ancestral state here, as it does for the polarization itself.
             if min_frequency > 0 or no_singletons:
                 state = ingroup.derived_state(outgroup2, codon_idx)
-                if state is None:
-                    continue
-                derived_freq, derived_count = state
-                if no_singletons and derived_count == 1:
-                    continue
-                if derived_freq < min_frequency:
+                if not passes_frequency_filter(state, min_frequency, no_singletons):
                     continue
 
             nonsyn, syn = result

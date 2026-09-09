@@ -325,7 +325,7 @@ This option **excludes** rare polymorphisms below a frequency threshold from the
 
 - **Applies to**: Standard MK test, Polarized MK test, α_TG estimator
 - **Purpose**: Filter out singletons or very rare variants that may be sequencing errors or very recent mutations
-- **How it works**: Polymorphisms with derived allele frequency < ``min_freq`` are not counted
+- **How it works**: Polymorphisms with derived allele frequency < ``min_freq`` are not counted. With ``--pool-polymorphisms`` there is no ancestral state, so this is the minor allele frequency over the combined ingroup+outgroup sample instead
 
 .. code-block:: bash
 
@@ -345,8 +345,8 @@ This option **excludes** rare polymorphisms below a frequency threshold from the
 Excludes singletons, meaning sites where the derived allele appears in exactly one sequence.
 
 - **Applies to**: Standard MK test, Polarized MK test, α_TG estimator
-- **How it works**: Counts the sequences that differ from the ancestral codon and drops the site when that count is one
-- **Sample size**: Not used. Counting the derived copies keeps the rule the same whatever the sample size, whether some sequences are missing data at that codon, and whether ``--pool-polymorphisms`` is set
+- **How it works**: Counts the sequences that differ from the ancestral codon and drops the site when that count is one. With ``--pool-polymorphisms`` there is no ancestral state, so this counts the minor allele over the combined ingroup+outgroup sample instead
+- **Sample size**: Not used. Counting the copies keeps the rule the same whatever the sample size, whether some sequences are missing data at that codon, and whether ``--pool-polymorphisms`` is set
 
 .. code-block:: bash
 
