@@ -352,6 +352,17 @@ class TestAggregateModes:
         assert row.startswith("15\t3\t10\t16\t0.821429\t0.178571\t")
         assert row.split("\t")[8] == "17"
 
+    def test_alpha_tg_with_per_gene_warns(self, genome, gff_all):
+        """--alpha-tg always aggregates; --per-gene alongside it should warn, not silently no-op."""
+        result = invoke(genome, gff_all, "--alpha-tg", "--per-gene", *FAST)
+        assert result.exit_code == 0
+        assert (
+            "Warning: --alpha-tg always aggregates across genes; --per-gene is ignored"
+            in result.output
+        )
+        header, row = header_and_row(result.stdout)
+        assert header.startswith(ALPHA_TG_HEADER)
+
     def test_asymptotic_per_gene_table(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "-a", "--per-gene", "--bootstrap", "2")
         assert result.exit_code == 0
@@ -397,6 +408,20 @@ class TestPlots:
         assert result.exit_code == 0
         assert "Could not generate volcano plot:" in result.output
         assert not plot.exists()
+
+    def test_volcano_plot_propagates_non_value_error(self, genome, gff_chr1, tmp_path, monkeypatch):
+        """A non-ValueError from create_volcano_plot must not be swallowed."""
+        import mkado.io.plotting as plotting
+
+        def boom(*args, **kwargs):
+            raise TypeError("boom")
+
+        monkeypatch.setattr(plotting, "create_volcano_plot", boom)
+
+        plot = tmp_path / "volcano.png"
+        result = invoke(genome, gff_chr1, "--volcano", str(plot))
+        assert "Could not generate volcano plot" not in result.output
+        assert isinstance(result.exception, TypeError)
 
     def test_asymptotic_plot_without_bins(self, genome, gff_tiny, tmp_path):
         plot = tmp_path / "asymptotic.png"
