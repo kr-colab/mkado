@@ -75,6 +75,56 @@ ATGGTGATGATGATGATG
         # Should succeed
         assert result.exit_code == 0
 
+    def test_batch_alpha_tg_single_gene_warns_and_reports_na(self, tmp_path: Path) -> None:
+        """A one-file directory gives --alpha-tg a single gene: CI is undefined.
+
+        Dn, Ds, Pn, and Ps are all nonzero here so NI_TG is defined and the
+        run reaches the gene-resampling bootstrap rather than the earlier
+        "cannot compute" path (zero denominator).
+        """
+        alignment_dir = tmp_path / "alignments"
+        alignment_dir.mkdir()
+        fasta = alignment_dir / "gene0.fa"
+        fasta.write_text(""">speciesA_1
+AAATTTCCAGGA
+>speciesA_2
+AAATTTCCAGGA
+>speciesA_3
+AAATTTACAGGA
+>speciesA_4
+AAATTTCCAGGC
+>speciesB_1
+GAATTCCCAGGA
+""")
+
+        result = runner.invoke(
+            app,
+            [
+                "batch",
+                str(alignment_dir),
+                "-i",
+                "speciesA",
+                "-o",
+                "speciesB",
+                "--alpha-tg",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Warning: alpha_TG confidence interval requires at least 2 genes" in result.output
+        header, values = result.output.strip().split("\n")[-2:]
+        assert header.split("\t")[:8] == [
+            "Dn",
+            "Ds",
+            "Pn",
+            "Ps",
+            "alpha_TG",
+            "NI_TG",
+            "CI_low",
+            "CI_high",
+        ]
+        assert values.split("\t")[6:8] == ["NA", "NA"]
+
     def test_alpha_tg_with_asymptotic_error(self, tmp_path: Path) -> None:
         """Test that --alpha-tg and --asymptotic cannot be used together."""
         alignment_dir = tmp_path / "alignments"

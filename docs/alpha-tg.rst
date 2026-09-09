@@ -92,6 +92,17 @@ The output includes:
   has no parametric Monte Carlo analog, so the global ``--ci-method``
   flag has no effect when ``--alpha-tg`` is set.
 
+.. note::
+
+   With a single gene (``num_genes`` = 1), ``CI_low``, ``CI_high``, and the
+   ``omega``/``omega_a``/``omega_na`` CI columns are reported as ``NA``.
+   The gene-resampling bootstrap has only one gene to redraw, so every
+   replicate is identical and no interval can be estimated. This applies
+   to a ``batch`` run over a one-file directory or a narrow ``--pattern``
+   just as much as to a single ``--gene``. ``alpha_TG``, ``NI_TG``, and
+   ``omega`` remain valid point estimates in this case, since the weighted
+   estimator over one stratum reduces to the plain one.
+
 Example output (TSV format, abbreviated):
 
 .. code-block:: text

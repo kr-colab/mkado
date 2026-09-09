@@ -208,7 +208,8 @@ def _format_tsv(
         )
         values = (
             f"{result.dn_total}\t{result.ds_total}\t{result.pn_total}\t{result.ps_total}\t"
-            f"{result.alpha_tg:.6f}\t{result.ni_tg:.6f}\t{result.ci_low:.6f}\t{result.ci_high:.6f}\t"
+            f"{result.alpha_tg:.6f}\t{result.ni_tg:.6f}\t"
+            f"{_fmt_optional(result.ci_low)}\t{_fmt_optional(result.ci_high)}\t"
             f"{result.num_genes}\t"
             f"{_omega_full_tsv_columns(result)}\t"
             f"{_fmt_optional(result.omega_ci_low)}\t{_fmt_optional(result.omega_ci_high)}\t"
