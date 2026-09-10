@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+- `mkado vcf` ran to completion on a VCF it could not query. An unindexed
+  or uncompressed ingroup gave every gene zero polymorphism, an unindexed
+  outgroup gave the reference base at every outgroup position, and the
+  run exited 0 with a full table while htslib printed one error per
+  query. Both VCFs are now checked with a region query before any gene
+  runs, and a query that fails mid-run raises `VcfQueryError`, which the
+  worker reports as a per-gene error. The command also warns at start-up
+  when the annotation uses a contig that a VCF's header never mentions,
+  since every site there reads as the reference base (closes #59).
+
 ## [0.6.0] - 2026-09-10
 
 Bug-fix release. No options were added or removed. The thirty fixes below

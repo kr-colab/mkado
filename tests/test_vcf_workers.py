@@ -184,6 +184,23 @@ class TestProcessVcfGene:
         assert "Error processing g_nochrom:" in wr.error
         assert "chrZ" in wr.error
 
+    def test_error_unindexed_outgroup(self, genome):
+        """A query that cannot run is an error, not an outgroup fixed for the reference."""
+        plain = genome.outgroup_vcf.with_suffix("")
+        wr = process_vcf_gene(make_task(genome, "g_plus", outgroup_vcf_path=plain))
+        assert wr.result is None
+        assert wr.error is not None
+        assert wr.error.startswith("Error processing g_plus:")
+        assert "index" in wr.error
+
+    def test_error_unindexed_ingroup_through_chunk(self, genome):
+        """The chunk worker opens the handle once and still reports the failed query."""
+        plain = genome.ingroup_vcf.with_suffix("")
+        wr = _via_chunk(make_task(genome, "g_plus", vcf_path=plain))
+        assert wr.result is None
+        assert wr.error is not None
+        assert "index" in wr.error
+
 
 class TestWarningString:
     @pytest.mark.parametrize(

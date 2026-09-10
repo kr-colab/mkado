@@ -13,7 +13,7 @@ Required Input Files
 ``--vcf`` : Ingroup VCF
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-A multi-sample population VCF file. Bgzipped and tabix-indexed is recommended for performance, but uncompressed VCF also works.
+A multi-sample population VCF file. It must be bgzipped and indexed with ``tabix`` or ``bcftools index``. MKado reads each gene through the index, so an uncompressed or unindexed VCF cannot be queried, and the command stops before running any gene.
 
 .. code-block:: bash
 
@@ -26,7 +26,9 @@ A multi-sample population VCF file. Bgzipped and tabix-indexed is recommended fo
 
 A single-sample VCF of the outgroup species, called against the **same reference genome** as the ingroup VCF. This is used to determine divergence (Dn/Ds) and to polarize polymorphisms.
 
-Positions with no record in the outgroup VCF, with a missing genotype, or with a heterozygous genotype are taken as the reference base. A heterozygous call cannot resolve a single outgroup allele, so it is treated the same as a missing one. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence.
+The outgroup VCF must be bgzipped and indexed like the ingroup VCF.
+
+Positions with no record in the outgroup VCF, with a missing genotype, or with a heterozygous genotype are taken as the reference base. A heterozygous call cannot resolve a single outgroup allele, so it is treated the same as a missing one. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence. If the annotation uses a contig that either VCF's header never mentions, MKado warns at start-up, because every site on that contig will read as the reference base.
 
 ``--ref`` : Reference FASTA
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^

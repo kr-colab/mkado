@@ -12,11 +12,13 @@ import pytest
 from mkado.core.cds import CdsRegion
 from mkado.core.codons import GeneticCode
 from mkado.io.vcf import (
+    VcfQueryError,
     _complement_base,
     _open_vcf,
     _reconstruct_codon_with_sub,
     _ref_base_fetcher,
     extract_gene_data,
+    probe_vcf,
 )
 
 OUTGROUP = ["outgroup"]
@@ -563,19 +565,49 @@ class TestHandles:
 
 
 class TestQueryFailures:
-    def test_unindexed_ingroup_logged_and_empty(self, genome, ingroup_vcf_plain, caplog):
-        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
-            poly, _ = _extract(genome, "g_plus", vcf_path=ingroup_vcf_plain)
-        assert poly.polymorphisms == []
-        assert any("ingroup VCF query failed for g_plus" in r.message for r in caplog.records)
+    """A query that cannot run raises. It is not an empty result."""
 
-    def test_unindexed_outgroup_logged_and_treated_as_reference(
-        self, genome, outgroup_vcf_plain, caplog
-    ):
+    def test_unindexed_ingroup_raises(self, genome, ingroup_vcf_plain):
+        with pytest.raises(VcfQueryError, match="index"):
+            _extract(genome, "g_plus", vcf_path=ingroup_vcf_plain)
+
+    def test_unindexed_outgroup_raises(self, genome, outgroup_vcf_plain):
+        with pytest.raises(VcfQueryError, match="index"):
+            _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_plain)
+
+
+class TestProbeVcf:
+    """probe_vcf proves a file answers region queries and reports its contigs."""
+
+    def test_indexed_vcf_reports_its_contigs(self, genome):
+        assert probe_vcf(genome.ingroup_vcf) == ["chr1", "chr2", "chrZ"]
+
+    def test_plain_vcf_has_no_index_and_the_message_says_how_to_fix_it(self, ingroup_vcf_plain):
+        with pytest.raises(VcfQueryError, match=r"has no usable index.*tabix"):
+            probe_vcf(ingroup_vcf_plain)
+
+    def test_bgzipped_vcf_without_its_index(self, genome, tmp_path):
+        copy = tmp_path / "noindex.vcf.gz"
+        copy.write_bytes(genome.ingroup_vcf.read_bytes())
+        with pytest.raises(VcfQueryError, match="has no usable index"):
+            probe_vcf(copy)
+
+    def test_header_without_contig_lines_still_proves_the_index(self, tmp_path, write_vcf):
+        """With no contig lines the header names nothing to query, and the proof must still run."""
+        plain = write_vcf(tmp_path / "nocontig", [], contigs={}).with_suffix("")
+        with pytest.raises(VcfQueryError, match="has no usable index"):
+            probe_vcf(plain)
+
+    def test_unreadable_file(self, not_a_vcf):
+        with pytest.raises(VcfQueryError, match="cannot be opened"):
+            probe_vcf(not_a_vcf)
+
+    def test_htslib_index_error_goes_to_the_logger(self, ingroup_vcf_plain, caplog):
+        """htslib's own complaint is captured at DEBUG instead of leaking to the terminal."""
         with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
-            poly, _ = _extract(genome, "g_plus", outgroup_vcf_path=outgroup_vcf_plain)
-        assert (poly.dn, poly.ds) == (1, 0)
-        assert any("outgroup VCF query failed for g_plus" in r.message for r in caplog.records)
+            with pytest.raises(VcfQueryError):
+                probe_vcf(ingroup_vcf_plain)
+        assert any(r.message.startswith("htslib:") and "index" in r.message for r in caplog.records)
 
 
 class TestSingletons:
