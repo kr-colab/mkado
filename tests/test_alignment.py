@@ -107,8 +107,8 @@ class TestStopBlockedPairs:
     that table. The pair is still real (both are ordinary sense codons), so
     it is worth counting even though it stays dropped from Dn/Ds/Pn/Ps.
 
-    Issue #94: a blocked comparison drops only that allele, never the whole
-    site, regardless of how many alleles segregate at the codon.
+    A blocked comparison drops only that allele, never the whole site,
+    regardless of how many alleles segregate at the codon.
     """
 
     def test_new_pair_starts_at_zero(self):
