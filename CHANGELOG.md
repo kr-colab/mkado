@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-10
+
+Bug-fix release. No options were added or removed. The thirty fixes below
+came out of a coverage push that took the test suite from 311 to 718 tests
+and line coverage from 68 to 95 percent, and out of the bug reports filed
+along the way. Several fixes change reported numbers: a multi-allelic
+codon now counts each of its mutations, VCF divergence follows the FASTA
+rules, pooled polymorphisms filter on the combined minor-allele frequency,
+and singleton filtering reaches every path. Two fixes remove run-to-run
+drift: polarized fixed differences no longer follow the hash seed, and
+separate-files batch pairing no longer follows the directory listing
+order. Lint and the test suite now run on every pull request.
+
 ### Fixed
 - In separate-files mode, `batch` paired an ingroup file with a second
   outgroup, or with an outgroup found through `--outgroup-pattern`, by the
@@ -362,7 +375,8 @@ of the Typer shell-completion options on the umbrella command.
 
 - Initial release
 
-[Unreleased]: https://github.com/kr-colab/mkado/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/kr-colab/mkado/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/kr-colab/mkado/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kr-colab/mkado/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kr-colab/mkado/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kr-colab/mkado/compare/v0.2.0...v0.3.0
