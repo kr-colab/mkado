@@ -3,6 +3,7 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
+import importlib.metadata
 import os
 import sys
 
@@ -13,7 +14,11 @@ sys.path.insert(0, os.path.abspath("../src"))
 project = "MKado"
 copyright = "2025, Andrew Kern"
 author = "Andrew Kern"
-release = "0.1.0"
+# Read the Docs installs the package before building, so the docs carry the
+# released version without a second copy of it here. Sphinx reads a
+# module-level name called ``version`` as its own setting, so the function is
+# reached through the module rather than imported by name.
+release = importlib.metadata.version("mkado")
 
 # -- General configuration ---------------------------------------------------
 extensions = [
