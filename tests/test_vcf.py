@@ -486,6 +486,30 @@ class TestOutgroupParsing:
         poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
         assert (poly.dn, poly.ds) == (0, 0)
 
+    def test_stop_blocked_pair_skipped_and_counted(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """AAA (Lys) to TGG (Trp) has no stop-free ordering under vertebrate mito.
+
+        The pair is still dropped from Dn/Ds (issue #90's chosen fix keeps that
+        behavior), but GeneStats now counts how often it happens.
+        """
+        ingroup = write_vcf(tmp_path / "blocked_in", [])
+        outgroup = write_vcf(
+            tmp_path / "blocked_out",
+            [
+                "chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t1/1",
+                "chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1",
+                "chr1\t9\t.\tA\tG\t30\tPASS\t.\tGT\t1/1",
+            ],
+            samples=OUTGROUP,
+        )
+        poly, stats = extract_gene_data(
+            ingroup, outgroup, simple_cds, synthetic_ref, genetic_code=GeneticCode(table_id=2)
+        )
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.stop_blocked_pairs == 1
+
 
 class TestPartiallyPolymorphicCodon:
     def test_whole_codon_discarded_when_ingroup_polymorphic(

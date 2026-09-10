@@ -67,6 +67,12 @@ class MKResult:
     the per-gene Smith & Eyre-Walker alpha is too noisy to give a useful
     rate decomposition. See ``docs/omega.rst`` for the rationale.
     """
+    stop_blocked_pairs: int = 0
+    """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps.
+
+    Diagnostic only — not part of the reported statistics. See
+    ``docs/omega.rst`` and ``GeneticCode.get_path``.
+    """
 
     def __str__(self) -> str:
         ni_str = f"{self.ni:.4f}" if self.ni is not None else "NA"
@@ -226,6 +232,7 @@ def mk_test(
         ln=ln,
         ls=ls,
         omega=omega,
+        stop_blocked_pairs=pair.stop_blocked_pairs,
     )
 
 

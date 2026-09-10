@@ -38,6 +38,8 @@ class PolymorphismData:
     """Total non-synonymous sites (Nei-Gojobori) over analyzed codons."""
     ls: float | None = None
     """Total synonymous sites (Nei-Gojobori) over analyzed codons."""
+    stop_blocked_pairs: int = 0
+    """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
 
 
 def sum_site_totals(
@@ -74,6 +76,8 @@ class AggregatedSFS:
     """Total synonymous polymorphisms (raw count, mode-invariant)."""
     sfs_mode: str = "at"
     """SFS construction mode used to build ``pn_counts``/``ps_counts``."""
+    stop_blocked_pairs_total: int = 0
+    """Sum of per-gene stop-blocked codon pairs (see ``PolymorphismData``)."""
 
 
 @dataclass
@@ -138,6 +142,8 @@ class AsymptoticMKResult:
     sfs_mode: str = "at"
     """SFS construction mode: ``"at"`` (Messer & Petrov 2013, count per bin) or
     ``"above"`` (Uricchio et al. 2019, inclusive right-tail cumulative count)."""
+    stop_blocked_pairs: int = 0
+    """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
 
     # Dn, Ds, Ln, Ls are constants under the asymptotic Monte Carlo procedure,
     # so omega has no sampling distribution. The CIs on omega_a and omega_na
@@ -746,6 +752,7 @@ def extract_polymorphism_data(
         gene_id=gene_id,
         ln=ln,
         ls=ls,
+        stop_blocked_pairs=pair.stop_blocked_pairs,
     )
 
 
@@ -773,6 +780,7 @@ def aggregate_polymorphism_data(
     dn_total = sum(g.dn for g in gene_data)
     ds_total = sum(g.ds for g in gene_data)
     ln_total, ls_total = sum_site_totals(gene_data)
+    stop_blocked_pairs_total = sum(g.stop_blocked_pairs for g in gene_data)
 
     # Create frequency bins
     bin_edges = _frequency_bin_edges(num_bins)
@@ -816,6 +824,7 @@ def aggregate_polymorphism_data(
         pn_total=pn_total,
         ps_total=ps_total,
         sfs_mode=sfs_mode,
+        stop_blocked_pairs_total=stop_blocked_pairs_total,
     )
 
 
@@ -902,6 +911,7 @@ def asymptotic_mk_test_aggregated(
             ps_total=ps_total,
             ci_method=ci_method,
             sfs_mode=sfs_mode,
+            stop_blocked_pairs=agg.stop_blocked_pairs_total,
         )
         return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1021,6 +1031,7 @@ def asymptotic_mk_test_aggregated(
             ps_total=ps_total,
             ci_method=ci_method,
             sfs_mode=sfs_mode,
+            stop_blocked_pairs=agg.stop_blocked_pairs_total,
         )
         return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1086,6 +1097,7 @@ def asymptotic_mk_test_aggregated(
             ps_total=ps_total,
             ci_method=ci_method,
             sfs_mode=sfs_mode,
+            stop_blocked_pairs=agg.stop_blocked_pairs_total,
         )
     else:
         a_lin, b_lin = lin_popt
@@ -1107,6 +1119,7 @@ def asymptotic_mk_test_aggregated(
             ps_total=ps_total,
             ci_method=ci_method,
             sfs_mode=sfs_mode,
+            stop_blocked_pairs=agg.stop_blocked_pairs_total,
         )
     return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1260,6 +1273,7 @@ def asymptotic_mk_test(
             ds=ds,
             ci_method="bootstrap",
             sfs_mode=sfs_mode,
+            stop_blocked_pairs=pair.stop_blocked_pairs,
         )
         return _attach_omega(result, ln_total, ls_total)
 
@@ -1332,5 +1346,6 @@ def asymptotic_mk_test(
         ds=ds,
         ci_method="bootstrap",
         sfs_mode=sfs_mode,
+        stop_blocked_pairs=pair.stop_blocked_pairs,
     )
     return _attach_omega(result, ln_total, ls_total)

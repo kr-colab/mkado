@@ -105,6 +105,26 @@ class WorkerResult:
     """Warning message if there were issues."""
 
 
+def _stop_blocked_warning(gene_id: str, result: Any) -> str | None:
+    """Warn when a result carries codon pairs dropped for having no stop-free path.
+
+    Every per-gene result type declares this diagnostic field (default 0), so
+    one check here covers standard, asymptotic, imputed, polarized, and
+    extract-only (PolymorphismData) results alike.
+    """
+    n = result.stop_blocked_pairs
+    if not n:
+        return None
+    return f"{gene_id}: {n} codon pair(s) had no stop-free path and were dropped"
+
+
+def _worker_result(gene_id: str, result: Any) -> WorkerResult:
+    """A successful WorkerResult, flagging a stop-blocked-pairs warning if any."""
+    return WorkerResult(
+        gene_id=gene_id, result=result, warning=_stop_blocked_warning(gene_id, result)
+    )
+
+
 def process_gene(task: BatchTask) -> WorkerResult:
     """Process a single gene - pure function for multiprocessing.
 
@@ -162,7 +182,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     no_singletons=task.no_singletons,
                     genetic_code=genetic_code,
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Asymptotic mode
             if task.use_asymptotic:
@@ -177,7 +197,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     sfs_mode=task.sfs_mode,
                     frequency_cutoffs=task.frequency_cutoffs,
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Imputed mode
             if task.use_imputed:
@@ -192,7 +212,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                 result = imputed_mk_test(
                     poly_data, cutoff=task.imputed_cutoff, n_bootstrap=task.bootstrap
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Polarized mode
             if task.polarize_match:
@@ -212,7 +232,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     no_singletons=task.no_singletons,
                     genetic_code=genetic_code,
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Standard MK test
             result = mk_test(
@@ -224,7 +244,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                 no_singletons=task.no_singletons,
                 genetic_code=genetic_code,
             )
-            return WorkerResult(gene_id=gene_id, result=result)
+            return _worker_result(gene_id, result)
 
         else:
             # Separate files mode
@@ -246,7 +266,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     no_singletons=task.no_singletons,
                     genetic_code=genetic_code,
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Asymptotic mode
             if task.use_asymptotic:
@@ -261,7 +281,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     sfs_mode=task.sfs_mode,
                     frequency_cutoffs=task.frequency_cutoffs,
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Imputed mode
             if task.use_imputed:
@@ -276,7 +296,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                 result = imputed_mk_test(
                     poly_data, cutoff=task.imputed_cutoff, n_bootstrap=task.bootstrap
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Polarized mode
             if task.outgroup2_file is not None:
@@ -290,7 +310,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                     no_singletons=task.no_singletons,
                     genetic_code=genetic_code,
                 )
-                return WorkerResult(gene_id=gene_id, result=result)
+                return _worker_result(gene_id, result)
 
             # Standard MK test
             result = mk_test(
@@ -302,7 +322,7 @@ def process_gene(task: BatchTask) -> WorkerResult:
                 no_singletons=task.no_singletons,
                 genetic_code=genetic_code,
             )
-            return WorkerResult(gene_id=gene_id, result=result)
+            return _worker_result(gene_id, result)
 
     except Exception as e:
         return WorkerResult(

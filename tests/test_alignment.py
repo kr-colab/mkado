@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from mkado.core.alignment import AlignedPair
-from mkado.core.codons import DEFAULT_CODE
+from mkado.core.alignment import AlignedPair, PolarizedAlignedPair
+from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import Sequence, SequenceSet
+
+VERTEBRATE_MITO = GeneticCode(table_id=2)
 
 
 def sequence_set(codons: list[str]) -> SequenceSet:
@@ -16,6 +18,14 @@ def pair(ingroup: list[str], outgroup: list[str]) -> AlignedPair:
         ingroup=sequence_set(ingroup),
         outgroup=sequence_set(outgroup),
         genetic_code=DEFAULT_CODE,
+    )
+
+
+def pair_mito(ingroup: list[str], outgroup: list[str]) -> AlignedPair:
+    return AlignedPair(
+        ingroup=sequence_set(ingroup),
+        outgroup=sequence_set(outgroup),
+        genetic_code=VERTEBRATE_MITO,
     )
 
 
@@ -86,3 +96,77 @@ class TestMultiAllelicCodons:
         mutations in total rather than four.
         """
         assert pair(["AAA"] * 3 + ["ACC", "ACG"], ["AAA"]).classify_polymorphism(0) == (1, 2)
+
+
+class TestStopBlockedPairs:
+    """Issue #90: a codon pair with no stop-free ordering is dropped, but counted.
+
+    Under the vertebrate mitochondrial code (table 2), AAA/AAG (Lys) and
+    TGA/TGG (Trp) differ at all three positions, and every one of the six
+    orderings between them passes through AGA, AGG, or TAA -- all stops in
+    that table. The pair is still real (both are ordinary sense codons), so
+    it is worth counting even though it stays dropped from Dn/Ds/Pn/Ps.
+    """
+
+    def test_new_pair_starts_at_zero(self):
+        assert pair_mito(["AAA"], ["TGG"]).stop_blocked_pairs == 0
+
+    def test_classify_fixed_difference_counts_the_drop(self):
+        result = pair_mito(["AAA"], ["TGG"])
+        assert result.classify_fixed_difference(0) is None
+        assert result.stop_blocked_pairs == 1
+
+    def test_identical_codons_do_not_count(self):
+        result = pair_mito(["AAA"], ["AAA"])
+        assert result.classify_fixed_difference(0) is None
+        assert result.stop_blocked_pairs == 0
+
+    def test_missing_clean_codon_does_not_count(self):
+        result = pair_mito(["NNN"], ["TGG"])
+        assert result.classify_fixed_difference(0) is None
+        assert result.stop_blocked_pairs == 0
+
+    def test_counter_accumulates_across_codons(self):
+        # One individual per group, two codons each: AAA/TGG and AAG/TGA are
+        # both blocked pairs under table 2.
+        result = AlignedPair(
+            ingroup=SequenceSet(sequences=[Sequence(name="i1", sequence="AAAAAG")]),
+            outgroup=SequenceSet(sequences=[Sequence(name="o1", sequence="TGGTGA")]),
+            genetic_code=VERTEBRATE_MITO,
+        )
+        result.classify_fixed_difference(0)
+        result.classify_fixed_difference(1)
+        assert result.stop_blocked_pairs == 2
+
+    def test_classify_against_major_single_other_counts_the_drop(self):
+        result = pair_mito(["AAA", "TGG"], ["AAA"])
+        assert result.classify_polymorphism(0) is None
+        assert result.stop_blocked_pairs == 1
+
+    def test_classify_against_major_multi_other_counts_only_the_blocked_one(self):
+        # Major is AAA (Lys); TGG (Trp) is blocked, AAC (Asn) is a plain
+        # single-position replacement.
+        ingroup = ["AAA"] * 3 + ["TGG", "AAC"]
+        result = pair_mito(ingroup, ["AAA"])
+        nonsyn, syn = result.classify_polymorphism(0)
+        assert (nonsyn, syn) == (1, 0)  # only AAC's replacement is counted
+        assert result.stop_blocked_pairs == 1
+
+
+class TestPolarizedStopBlockedPairs:
+    """The same counter on PolarizedAlignedPair.polarize_fixed_difference."""
+
+    def _pair(self, ingroup: str, outgroup1: str, outgroup2: str) -> PolarizedAlignedPair:
+        return PolarizedAlignedPair(
+            ingroup=sequence_set([ingroup]),
+            outgroup=sequence_set([outgroup1]),
+            outgroup2=sequence_set([outgroup2]),
+            genetic_code=VERTEBRATE_MITO,
+        )
+
+    def test_blocked_polarized_difference_counts_the_drop(self):
+        # Outgroup1 and outgroup2 agree on TGG, so it is ancestral and the
+        # ingroup's AAA is derived -- a blocked pair on the ingroup lineage.
+        pair = self._pair(ingroup="AAA", outgroup1="TGG", outgroup2="TGG")
+        assert pair.polarize_fixed_difference(0) is None
+        assert pair.stop_blocked_pairs == 1
