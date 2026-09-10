@@ -257,25 +257,20 @@ def _collect_gene_data(
     worker_results: list[WorkerResult],
     mode_label: str,
 ) -> list:
-    """Collect non-None results and report how many genes contributed.
+    """Unpack the per-gene results and report how many genes contributed.
+
+    ``run_parallel_batch`` keeps only results that carry data, so every entry
+    here counts.
 
     Args:
         worker_results: List of WorkerResult from parallel processing.
         mode_label: Label for the stderr message (e.g., "aggregated asymptotic").
 
     Returns:
-        List of non-None result objects.
+        List of result objects.
     """
-    gene_data = [r.result for r in worker_results if r.result is not None]
-    n_dropped = len(worker_results) - len(gene_data)
-    if n_dropped > 0:
-        typer.echo(
-            f"Using {len(gene_data)}/{len(worker_results)} genes for {mode_label} "
-            f"({n_dropped} returned no data)",
-            err=True,
-        )
-    else:
-        typer.echo(f"Using {len(gene_data)} genes for {mode_label}", err=True)
+    gene_data = [r.result for r in worker_results]
+    typer.echo(f"Using {len(gene_data)} genes for {mode_label}", err=True)
     return gene_data
 
 
@@ -469,6 +464,23 @@ def run_parallel_batch(
                     progress.advance(task_id)
 
     return results, warnings, had_error
+
+
+def find_partner_file(ingroup_file: Path, candidates: list[Path]) -> Path | None:
+    """Pick the candidate that belongs to the same gene as an ingroup file.
+
+    The gene name is the ingroup stem without its ``_ingroup`` or ``_in``
+    marker. A candidate belongs to the gene when its stem is that name
+    followed by ``_``: a bare prefix would let ``g1`` claim ``g10``'s file.
+    The first qualifying candidate wins, so the caller passes them sorted and
+    the filesystem's listing order does not decide between two that qualify.
+    """
+    stem = ingroup_file.stem
+    gene = stem.removesuffix("_ingroup") if stem.endswith("_ingroup") else stem.removesuffix("_in")
+    for candidate in candidates:
+        if candidate.stem.startswith(gene + "_"):
+            return candidate
+    return None
 
 
 def find_alignment_files(input_dir: Path) -> list[Path]:
@@ -1272,6 +1284,11 @@ def batch(
         typer.echo(f"Found {len(ingroup_files)} ingroup files", err=True)
         warn_duplicate_stems(ingroup_files)
 
+        # Listed and sorted once: a directory of thousands of genes must not be
+        # scanned again for every ingroup file.
+        outgroup_candidates = sorted(input_dir.glob(outgroup_pattern))
+        outgroup2_candidates = sorted(input_dir.glob(polarize_pattern)) if polarize_pattern else []
+
         def find_outgroup_file(ingroup_file: Path) -> Path | None:
             base_name = ingroup_file.stem
             if "_ingroup" in base_name:
@@ -1282,23 +1299,9 @@ def batch(
                 outgroup_name = base_name + "_outgroup.fa"
 
             outgroup_file_path = input_dir / outgroup_name
-            if not outgroup_file_path.exists():
-                potential_matches = list(input_dir.glob(outgroup_pattern))
-                prefix = base_name.split("_")[0]
-                matches = [f for f in potential_matches if f.stem.startswith(prefix)]
-                if matches:
-                    return matches[0]
-                return None
-            return outgroup_file_path
-
-        def find_outgroup2_file(ingroup_file: Path) -> Path | None:
-            if not polarize_pattern:
-                return None
-            base_name = ingroup_file.stem
-            potential_matches = list(input_dir.glob(polarize_pattern))
-            prefix = base_name.split("_")[0]
-            matches = [f for f in potential_matches if f.stem.startswith(prefix)]
-            return matches[0] if matches else None
+            if outgroup_file_path.exists():
+                return outgroup_file_path
+            return find_partner_file(ingroup_file, outgroup_candidates)
 
         num_workers = get_worker_count(workers, len(ingroup_files))
 
@@ -1312,7 +1315,7 @@ def batch(
 
             outgroup2_file: Path | None = None
             if polarize_pattern:
-                outgroup2_file = find_outgroup2_file(ingroup_file)
+                outgroup2_file = find_partner_file(ingroup_file, outgroup2_candidates)
                 if outgroup2_file is None:
                     pre_warnings.append(f"Warning: No second outgroup for {ingroup_file.name}")
                     continue

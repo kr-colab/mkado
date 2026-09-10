@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- In separate-files mode, `batch` paired an ingroup file with a second
+  outgroup, or with an outgroup found through `--outgroup-pattern`, by the
+  first `_`-separated token of its name, taking the first match from an
+  unsorted glob. Gene `g1` could take `g10`'s file, and `Adh_dmel` could
+  take `Adh_dsim`'s, depending on the order the filesystem listed the
+  directory. A partner now has to carry the whole gene name, which is the
+  ingroup stem without its `_ingroup` or `_in` marker, followed by `_`, and
+  candidates are tried in sorted order (closes #117).
 - `polarized_mk_test` read the second outgroup's codon at a fixed difference
   with `next(iter(set))`, so when outgroup2 was polymorphic there the
   lineage followed Python's hash seed: the same alignment reported the

@@ -7,12 +7,13 @@ import pytest
 from scipy.stats import false_discovery_control
 
 from mkado.analysis.alpha_tg import AlphaTGResult
-from mkado.analysis.asymptotic import AsymptoticMKResult
+from mkado.analysis.asymptotic import AsymptoticMKResult, PolymorphismData
 from mkado.analysis.imputed import ImputedMKResult
 from mkado.analysis.mk_test import mk_test_from_counts
 from mkado.analysis.polarized import PolarizedMKResult
 from mkado.batch_workers import BatchTask, WorkerResult, process_gene
 from mkado.cli import compute_adjusted_pvalues, get_worker_count, run_parallel_batch
+from tests.builders import TwoGeneDirs
 
 
 class TestGetWorkerCount:
@@ -257,6 +258,93 @@ ATGGTGATGATGATGATG
         # Result should be AsymptoticMKResult
         assert hasattr(result.result, "alpha_asymptotic")
 
+    def test_combined_mode_imputed(self, two_genes: TwoGeneDirs) -> None:
+        """Combined-file imputed mode returns an ImputedMKResult."""
+        task = BatchTask(
+            file_path=two_genes.combined / "g1.fa",
+            ingroup_match="speciesA",
+            outgroup_match="speciesB",
+            use_imputed=True,
+            bootstrap=10,
+        )
+        result = process_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, ImputedMKResult)
+
+    def test_combined_mode_polarized(self, two_genes: TwoGeneDirs) -> None:
+        """Combined-file polarized mode reads the second outgroup by name pattern."""
+        task = BatchTask(
+            file_path=two_genes.combined / "g1.fa",
+            ingroup_match="speciesA",
+            outgroup_match="speciesB",
+            polarize_match="speciesC",
+        )
+        result = process_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, PolarizedMKResult)
+        assert (result.result.dn_outgroup, result.result.ds_outgroup) == (1, 1)
+
+    def test_combined_mode_no_outgroup2(self, two_genes: TwoGeneDirs) -> None:
+        """A polarize pattern that matches nothing is a warning, not an error."""
+        task = BatchTask(
+            file_path=two_genes.combined / "g1.fa",
+            ingroup_match="speciesA",
+            outgroup_match="speciesB",
+            polarize_match="speciesZ",
+        )
+        result = process_gene(task)
+        assert result.result is None
+        assert result.warning == "No outgroup2 sequences in g1.fa"
+
+    def test_separate_files_extract_only(self, two_genes: TwoGeneDirs) -> None:
+        """Separate-files extract-only mode returns the gene's PolymorphismData."""
+        task = BatchTask(
+            file_path=two_genes.separate / "g1_ingroup.fa",
+            outgroup_file=two_genes.separate / "g1_outgroup.fa",
+            extract_only=True,
+        )
+        result = process_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, PolymorphismData)
+        assert (result.result.dn, result.result.ds) == (1, 1)
+
+    def test_separate_files_asymptotic(self, two_genes: TwoGeneDirs) -> None:
+        """Separate-files asymptotic mode returns an AsymptoticMKResult."""
+        task = BatchTask(
+            file_path=two_genes.separate / "g1_ingroup.fa",
+            outgroup_file=two_genes.separate / "g1_outgroup.fa",
+            use_asymptotic=True,
+            bins=3,
+            bootstrap=5,
+        )
+        result = process_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, AsymptoticMKResult)
+
+    def test_separate_files_imputed(self, two_genes: TwoGeneDirs) -> None:
+        """Separate-files imputed mode returns an ImputedMKResult."""
+        task = BatchTask(
+            file_path=two_genes.separate / "g1_ingroup.fa",
+            outgroup_file=two_genes.separate / "g1_outgroup.fa",
+            use_imputed=True,
+            bootstrap=10,
+        )
+        result = process_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, ImputedMKResult)
+
+    def test_separate_files_polarized(self, two_genes: TwoGeneDirs) -> None:
+        """A second outgroup file switches separate-files mode to the polarized test."""
+        task = BatchTask(
+            file_path=two_genes.separate / "g1_ingroup.fa",
+            outgroup_file=two_genes.separate / "g1_outgroup.fa",
+            outgroup2_file=two_genes.separate / "g1_outgroup2.fa",
+        )
+        result = process_gene(task)
+        assert result.error is None
+        assert isinstance(result.result, PolarizedMKResult)
+        assert (result.result.dn_outgroup, result.result.ds_outgroup) == (1, 1)
+
 
 class TestRunParallelBatch:
     """Tests for the run_parallel_batch function."""
@@ -320,6 +408,28 @@ ATGGTGATG
         assert len(warnings) == 0
         gene_ids = {r.gene_id for r in results}
         assert gene_ids == {"gene0", "gene1", "gene2", "gene3", "gene4"}
+
+    def test_parallel_mode_collects_warnings_and_errors(self, tmp_path: Path) -> None:
+        """A worker's warning and error reach the caller from the parallel path too."""
+        for i in range(10):
+            (tmp_path / f"gene{i}.fa").write_text(
+                f">gene{i}_speciesA_1\nATGATGATG\n>gene{i}_speciesA_2\nATGCTGATG\n"
+                f">gene{i}_speciesB_1\nATGGTGATG\n"
+            )
+        (tmp_path / "unmatched.fa").write_text(">other_1\nATGATGATG\n>speciesB_1\nATGGTGATG\n")
+        files = [tmp_path / f"gene{i}.fa" for i in range(10)]
+        files += [tmp_path / "unmatched.fa", tmp_path / "missing.fa"]
+        tasks = [
+            BatchTask(file_path=f, ingroup_match="speciesA", outgroup_match="speciesB")
+            for f in files
+        ]
+
+        results, warnings, had_error = run_parallel_batch(tasks, 2, "Testing parallel")
+
+        assert len(results) == 10
+        assert had_error is True
+        assert "Warning: No ingroup sequences in unmatched.fa" in warnings
+        assert any(w.startswith("Error processing missing.fa") for w in warnings)
 
     def test_handles_warnings(self, tmp_path: Path) -> None:
         """Test that warnings are collected properly."""
