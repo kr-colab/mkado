@@ -117,6 +117,10 @@
 - A failed curve fit in the asymptotic fitters fell back to a value
   outside the requested `--freq-cutoffs` window instead of the last
   point inside it.
+- `format_batch_results` accepted an `adjusted_pvalues` list of the wrong
+  length: a short list raised an `IndexError` from inside a format branch
+  and a long list was silently truncated. It now raises a `ValueError`
+  before formatting anything (#116).
 
 ## [0.5.0] - 2026-05-01
 
@@ -358,6 +362,8 @@ of the Typer shell-completion options on the umbrella command.
 
 - Initial release
 
+[Unreleased]: https://github.com/kr-colab/mkado/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/kr-colab/mkado/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kr-colab/mkado/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/kr-colab/mkado/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/kr-colab/mkado/compare/v0.1.2...v0.2.0
