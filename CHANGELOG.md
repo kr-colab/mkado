@@ -3,6 +3,10 @@
 ## [Unreleased]
 
 ### Fixed
+- `g_test` computed its p-value as `1 - cdf`, which rounds to exactly zero
+  once the G statistic passes about 75. It now uses the chi-square survival
+  function, so a strongly significant table reports its real p-value
+  instead of zero (closes #35).
 - `classify_polymorphism`/`classify_polymorphism_pooled` dropped an entire
   codon when it had exactly two alleles and the only comparison was
   stop-blocked, but only dropped the blocked allele when three or more
