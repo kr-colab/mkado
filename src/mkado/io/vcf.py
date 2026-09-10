@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import os
+import re
+import tempfile
 import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -19,28 +21,58 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# An htslib log line: a level letter, the function that spoke, then the message
+# to the end of the line. Matched wherever it starts, since another writer may
+# have left the line unterminated just before it.
+_HTSLIB_LINE = re.compile(rb"\[[EWIDT]::\w+\] [^\n]*\n?")
+
+_capturing = False
+
 
 @contextmanager
 def _htslib_stderr_to_log() -> Iterator[None]:
     """Route what htslib writes to file descriptor 2 through the logger at DEBUG.
 
-    htslib writes warnings (e.g., "FORMAT 'GT' not defined in header") and index
-    errors directly to fd 2, bypassing Python's warning system. Inside this
-    block fd 2 is a pipe, drained into the logger afterwards.
+    htslib writes straight to fd 2, bypassing Python's warning system, both
+    while a file is opened and while a region query parses a record, so a
+    caller that wants the query-time messages holds this around the whole
+    extraction. Inside the block fd 2 is a temporary file, which has no size
+    ceiling where a pipe would block the writer once full. The redirect is
+    process-wide, so a progress bar redraw from another thread lands in the
+    file too: on exit, htslib's lines go to the logger and every other byte is
+    written back to fd 2, delayed by the block. A block entered inside another
+    is a no-op, so nested captures drain once, at the outer level.
     """
-    r_fd, w_fd = os.pipe()
-    orig_fd = os.dup(2)
-    os.dup2(w_fd, 2)
-    os.close(w_fd)
-    try:
+    global _capturing
+    if _capturing:
         yield
+        return
+    _capturing = True
+    try:
+        with tempfile.TemporaryFile() as capture:
+            orig_fd = os.dup(2)
+            os.dup2(capture.fileno(), 2)
+            try:
+                yield
+            finally:
+                os.dup2(orig_fd, 2)
+                os.close(orig_fd)
+                capture.seek(0)
+                _drain(capture.read())
     finally:
-        # Restore fd 2 before draining: read() only returns once the pipe's last writer is gone.
-        os.dup2(orig_fd, 2)
-        os.close(orig_fd)
-        with os.fdopen(r_fd) as f:
-            for line in f.read().strip().splitlines():
-                logger.debug("htslib: %s", line)
+        _capturing = False
+
+
+def _drain(data: bytes) -> None:
+    """Log htslib's lines wherever they start and write everything else back to fd 2."""
+    end = 0
+    for match in _HTSLIB_LINE.finditer(data):
+        if match.start() > end:
+            os.write(2, data[end : match.start()])
+        logger.debug("htslib: %s", match.group().decode(errors="replace").rstrip("\r\n"))
+        end = match.end()
+    if end < len(data):
+        os.write(2, data[end:])
 
 
 def _open_vcf(path: str | Path) -> object:

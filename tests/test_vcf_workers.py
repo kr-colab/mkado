@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import pickle
 from pathlib import Path
 
@@ -200,6 +201,17 @@ class TestProcessVcfGene:
         assert wr.result is None
         assert wr.error is not None
         assert "index" in wr.error
+
+
+class TestHtslibCapture:
+    """A warning htslib raises while parsing a record reaches the logger from either worker."""
+
+    @pytest.mark.parametrize("run", [process_vcf_gene, _via_chunk], ids=["per_gene", "chunk"])
+    def test_query_warning_reaches_the_logger(self, genome, ingroup_vcf_xq, run, caplog):
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            wr = run(make_task(genome, "g_plus", vcf_path=ingroup_vcf_xq))
+        assert wr.error is None
+        assert any(r.message.startswith("htslib:") and "XQ" in r.message for r in caplog.records)
 
 
 class TestWarningString:

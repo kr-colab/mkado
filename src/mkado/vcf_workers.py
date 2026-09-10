@@ -81,7 +81,7 @@ def _process_single_gene(
     """Process a single gene using pre-opened file handles."""
     from mkado.core.cds import CdsRegion
     from mkado.core.codons import GeneticCode
-    from mkado.io.vcf import extract_gene_data
+    from mkado.io.vcf import _htslib_stderr_to_log, extract_gene_data
 
     try:
         cds = CdsRegion(
@@ -95,18 +95,20 @@ def _process_single_gene(
 
         genetic_code = GeneticCode(table_id=task.code_table) if task.code_table != 1 else None
 
-        poly_data, stats = extract_gene_data(
-            vcf_path=task.vcf_path,
-            outgroup_vcf_path=task.outgroup_vcf_path,
-            cds=cds,
-            ref_fasta_path=task.ref_fasta_path,
-            genetic_code=genetic_code,
-            min_frequency=task.min_freq,
-            no_singletons=task.no_singletons,
-            ingroup_vcf=ingroup_vcf,
-            outgroup_vcf=outgroup_vcf,
-            ref_fasta=ref_fasta,
-        )
+        # htslib also speaks during the region queries; see _htslib_stderr_to_log.
+        with _htslib_stderr_to_log():
+            poly_data, stats = extract_gene_data(
+                vcf_path=task.vcf_path,
+                outgroup_vcf_path=task.outgroup_vcf_path,
+                cds=cds,
+                ref_fasta_path=task.ref_fasta_path,
+                genetic_code=genetic_code,
+                min_frequency=task.min_freq,
+                no_singletons=task.no_singletons,
+                ingroup_vcf=ingroup_vcf,
+                outgroup_vcf=outgroup_vcf,
+                ref_fasta=ref_fasta,
+            )
 
         # Build warning if many sites skipped
         warning = _skip_warning(task.gene_id, stats)
@@ -209,7 +211,7 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
     """
     from mkado.core.cds import CdsRegion
     from mkado.core.codons import GeneticCode
-    from mkado.io.vcf import extract_gene_data
+    from mkado.io.vcf import _htslib_stderr_to_log, extract_gene_data
 
     try:
         # Reconstruct CdsRegion from task fields
@@ -224,15 +226,17 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
 
         genetic_code = GeneticCode(table_id=task.code_table) if task.code_table != 1 else None
 
-        poly_data, stats = extract_gene_data(
-            vcf_path=task.vcf_path,
-            outgroup_vcf_path=task.outgroup_vcf_path,
-            cds=cds,
-            ref_fasta_path=task.ref_fasta_path,
-            genetic_code=genetic_code,
-            min_frequency=task.min_freq,
-            no_singletons=task.no_singletons,
-        )
+        # htslib also speaks during the region queries; see _htslib_stderr_to_log.
+        with _htslib_stderr_to_log():
+            poly_data, stats = extract_gene_data(
+                vcf_path=task.vcf_path,
+                outgroup_vcf_path=task.outgroup_vcf_path,
+                cds=cds,
+                ref_fasta_path=task.ref_fasta_path,
+                genetic_code=genetic_code,
+                min_frequency=task.min_freq,
+                no_singletons=task.no_singletons,
+            )
 
         # Build warning if many sites skipped
         warning = _skip_warning(task.gene_id, stats)

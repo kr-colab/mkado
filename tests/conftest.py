@@ -342,6 +342,17 @@ def outgroup_vcf_chr1_only(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def ingroup_vcf_xq(tmp_path: Path) -> Path:
+    """One ingroup record carrying a FORMAT tag the header never declares.
+
+    htslib reports the tag while parsing the record, inside a region query,
+    not while opening the file.
+    """
+    record = "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT:XQ\t0/1:1\t0/0:1\t0/0:1\t0/0:1"
+    return _write_vcf(tmp_path / "ingroup_xq", [record])
+
+
+@pytest.fixture
 def outgroup_vcf_sites_only(tmp_path: Path) -> Path:
     """An outgroup VCF with no FORMAT or sample columns."""
     return _write_vcf(tmp_path / "outgroup_sites", ["chr1\t12\t.\tC\tT\t30\tPASS\t."], samples=[])
