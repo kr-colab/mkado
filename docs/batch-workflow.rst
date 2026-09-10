@@ -27,7 +27,7 @@ Tests that estimate a single α across many genes (asymptotic MK, imputed MK, Ta
 
 - ``--per-gene``: run a separate test on each gene and report one α per gene. Useful when you want gene-by-gene point estimates (with the caveat that per-gene asymptotic estimates are noisy).
 
-The standard MK test is naturally per-gene and ignores ``--aggregate``; ``mkado batch`` always reports one row per gene for the standard test, plus aggregated counts in the summary.
+The standard MK test is naturally per-gene and ignores ``--aggregate``; ``mkado batch`` always reports one row per gene for the standard test.
 
 .. code-block:: bash
 
@@ -180,25 +180,27 @@ Use the ``-w`` option to control parallelization:
 Output Formats
 --------------
 
-Pretty Print (Default)
-^^^^^^^^^^^^^^^^^^^^^^
+Tab-Separated Values (Default)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Human-readable table format:
-
-.. code-block:: bash
-
-   mkado batch alignments/ -i species1 -o species2
-
-Tab-Separated Values
-^^^^^^^^^^^^^^^^^^^^
-
-For downstream analysis:
+One row per gene, for downstream analysis:
 
 .. code-block:: bash
 
-   mkado batch alignments/ -i species1 -o species2 -f tsv > results.tsv
+   mkado batch alignments/ -i species1 -o species2 > results.tsv
 
-Columns: ``gene``, ``Dn``, ``Ds``, ``Pn``, ``Ps``, ``p_value``, ``p_value_adjusted``, ``NI``, ``alpha``, ``DoS``
+Columns for the standard MK test: ``gene``, ``Dn``, ``Ds``, ``Pn``, ``Ps``, ``p_value``,
+``p_value_adjusted``, ``NI``, ``alpha``, ``DoS``, ``Ln``, ``Ls``, ``omega``. The
+asymptotic, imputed, and polarized tests each have their own column layout.
+
+Pretty Print
+^^^^^^^^^^^^
+
+One human-readable block per gene:
+
+.. code-block:: bash
+
+   mkado batch alignments/ -i species1 -o species2 -f pretty
 
 JSON
 ^^^^
@@ -224,14 +226,15 @@ The adjusted p-values are reported alongside the raw Fisher's exact test p-value
 - **p_value**: Raw p-value from Fisher's exact test for each gene
 - **p_value_adjusted**: BH-adjusted p-value accounting for multiple comparisons
 
-Example output (TSV format):
+Example output (TSV format), three of the 401 genes in ``examples/anopheles_batch``
+run with ``-i gamb -o afun``:
 
 .. code-block:: text
 
-   gene        Dn  Ds  Pn  Ps  p_value      p_value_adjusted  NI        alpha
-   AGAP000150  12  28  17  18  0.15342      0.288347          2.203704  -1.203704
-   AGAP000432  12  59  15  14  0.000904438  0.00556577        5.267857  -4.267857
-   AGAP001364  2   19  3   19  1            1                 1.500000  -0.500000
+   gene        Dn  Ds  Pn  Ps  p_value      p_value_adjusted  NI        alpha      DoS        Ln          Ls          omega
+   AGAP000150  12  28  17  18  0.15342      0.288347          2.203704  -1.203704  -0.185714  263.611111  81.388889   0.132320
+   AGAP000432  12  59  15  14  0.000904438  0.00556577        5.267857  -4.267857  -0.348227  316.416667  106.583333  0.068511
+   AGAP001364  2   19  3   19  1            1                 1.500000  -0.500000  -0.041126  198.750000  65.250000   0.034558
 
 Use ``p_value_adjusted`` when interpreting significance across multiple genes to control for false discoveries.
 
