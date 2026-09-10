@@ -81,6 +81,11 @@ class PolarizedMKResult:
     per-gene polarized alpha is too noisy to give a useful rate
     decomposition. See ``docs/omega.rst`` for the rationale.
     """
+    stop_blocked_pairs: int = 0
+    """Codon pairs with no stop-free mutational ordering, dropped from the counts.
+
+    Diagnostic only — not part of the reported statistics.
+    """
 
     def __str__(self) -> str:
         ni_str = f"{self.ni_ingroup:.4f}" if self.ni_ingroup is not None else "NA"
@@ -295,4 +300,5 @@ def polarized_mk_test(
         ln=ln,
         ls=ls,
         omega=omega,
+        stop_blocked_pairs=pair.stop_blocked_pairs,
     )

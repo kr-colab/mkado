@@ -87,6 +87,25 @@ ATGGTGATG
         assert result.warning is None
         assert result.result is not None
 
+    def test_stop_blocked_pair_warning(self, tmp_path: Path) -> None:
+        """Issue #90: a stop-blocked codon pair surfaces as a WorkerResult warning."""
+        alignment = tmp_path / "gene1.fa"
+        alignment.write_text(">gene1_speciesA_1\nAAA\n>gene1_speciesB_1\nTGG\n")
+
+        task = BatchTask(
+            file_path=alignment,
+            ingroup_match="speciesA",
+            outgroup_match="speciesB",
+            code_table=2,  # vertebrate mitochondrial
+        )
+
+        result = process_gene(task)
+
+        assert result.error is None
+        assert result.result is not None
+        assert result.warning is not None
+        assert "stop-free path" in result.warning
+
     def test_combined_mode_no_ingroup(self, tmp_path: Path) -> None:
         """Test process_gene returns warning when no ingroup matches."""
         alignment = tmp_path / "gene1.fa"

@@ -187,18 +187,20 @@ class TestProcessVcfGene:
 
 class TestWarningString:
     @pytest.mark.parametrize(
-        ("indels", "multi", "expected"),
+        ("indels", "multi", "stop_blocked", "expected"),
         [
-            (3, 0, "g: skipped 3 indels"),
-            (0, 2, "g: skipped 2 multi-allelic"),
-            (3, 2, "g: skipped 3 indels, 2 multi-allelic"),
-            (0, 0, None),
+            (3, 0, 0, "g: skipped 3 indels"),
+            (0, 2, 0, "g: skipped 2 multi-allelic"),
+            (3, 2, 0, "g: skipped 3 indels, 2 multi-allelic"),
+            (0, 0, 4, "g: skipped 4 stop-blocked codon pairs"),
+            (3, 2, 4, "g: skipped 3 indels, 2 multi-allelic, 4 stop-blocked codon pairs"),
+            (0, 0, 0, None),
         ],
     )
-    def test_warning_text(self, genome, monkeypatch, indels, multi, expected):
+    def test_warning_text(self, genome, monkeypatch, indels, multi, stop_blocked, expected):
         def fake_extract(*args, **kwargs):
             data = PolymorphismData(polymorphisms=[], dn=0, ds=0, gene_id="g")
-            return data, GeneStats(indels, multi, 0)
+            return data, GeneStats(indels, multi, 0, stop_blocked)
 
         monkeypatch.setattr("mkado.io.vcf.extract_gene_data", fake_extract)
         task = make_task(genome, "g_plus", gene_id="g", extract_only=True)

@@ -78,6 +78,8 @@ class ImputedMKResult:
     """Upper 95% bootstrap CI for ``alpha``."""
     ci_method: str | None = None
     """``"bootstrap"`` when CI was computed, ``None`` when ``n_bootstrap=0``."""
+    stop_blocked_pairs: int = 0
+    """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
 
     # omega_a/omega_na CIs are pure arithmetic transforms of the alpha CI scaled
     # by the (constant) point-estimate omega; mirrors AsymptoticMKResult.
@@ -365,6 +367,7 @@ def imputed_mk_test(
         ls,
         ln,
     )
+    result.stop_blocked_pairs = gene_data.stop_blocked_pairs
     if n_bootstrap > 0:
         ci = _bootstrap_imputed_alpha(
             gene_data.polymorphisms,
@@ -410,11 +413,13 @@ def imputed_mk_test_multi(
     all_polymorphisms: list[tuple[float, str]] = []
     dn_total = 0
     ds_total = 0
+    stop_blocked_total = 0
 
     for g in gene_data:
         all_polymorphisms.extend(g.polymorphisms)
         dn_total += g.dn
         ds_total += g.ds
+        stop_blocked_total += g.stop_blocked_pairs
 
     ln_agg, ls_agg = sum_site_totals(gene_data)
     ls = num_synonymous_sites if num_synonymous_sites is not None else ls_agg
@@ -428,6 +433,7 @@ def imputed_mk_test_multi(
         ls,
         ln,
     )
+    result.stop_blocked_pairs = stop_blocked_total
     if n_bootstrap > 0:
         ci = _bootstrap_imputed_alpha(
             all_polymorphisms,

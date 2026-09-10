@@ -43,6 +43,10 @@ class AlignedPair:
     outgroup: SequenceSet
     genetic_code: GeneticCode = field(default_factory=lambda: DEFAULT_CODE)
 
+    stop_blocked_pairs: int = field(default=0, init=False, repr=False)
+    """Codon pairs where every mutational ordering passed through a stop codon
+    and were dropped from the counts. See GeneticCode.get_path."""
+
     def __post_init__(self) -> None:
         if self.ingroup.num_codons != self.outgroup.num_codons:
             raise ValueError(
@@ -223,6 +227,14 @@ class AlignedPair:
         ln = (3.0 * used) - ls
         return (ln, ls)
 
+    def _get_path(self, codon1: str, codon2: str) -> list[tuple[str, int]] | None:
+        """Look up a mutational path, counting and reporting a stop-blocked pair as None."""
+        path = self.genetic_code.get_path(codon1, codon2)
+        if not path:
+            self.stop_blocked_pairs += 1
+            return None
+        return path
+
     def classify_fixed_difference(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a fixed difference as synonymous/non-synonymous.
 
@@ -250,8 +262,8 @@ class AlignedPair:
         if in_codon == out_codon:
             return None
 
-        path = self.genetic_code.get_path(in_codon, out_codon)
-        if not path:
+        path = self._get_path(in_codon, out_codon)
+        if path is None:
             return None
 
         return _count_path(path)
@@ -282,9 +294,9 @@ class AlignedPair:
         major_codon, *others = sorted(counts, key=lambda c: (-counts[c], c))
 
         if len(others) == 1:
-            path = self.genetic_code.get_path(major_codon, others[0])
             # No stop-free ordering exists, so the pair cannot be classified.
-            if not path:
+            path = self._get_path(major_codon, others[0])
+            if path is None:
                 return None
             return _count_path(path)
 
@@ -292,7 +304,10 @@ class AlignedPair:
         total_syn = 0
         counted: set[tuple[int, str]] = set()
         for codon in others:
-            for change_type, pos in self.genetic_code.get_path(major_codon, codon):
+            path = self._get_path(major_codon, codon)
+            if path is None:
+                continue
+            for change_type, pos in path:
                 mutation = (pos, codon[pos])
                 if mutation in counted:
                     continue
@@ -384,8 +399,8 @@ class PolarizedAlignedPair(AlignedPair):
         if ancestral == derived:
             return None
 
-        path = self.genetic_code.get_path(ancestral, derived)
-        if not path:
+        path = self._get_path(ancestral, derived)
+        if path is None:
             return None
 
         return (lineage, _count_path(path))

@@ -4,8 +4,27 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mkado.batch_workers import WorkerResult
+
+if TYPE_CHECKING:
+    from mkado.io.vcf import GeneStats
+
+
+def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
+    """Build a "skipped N indels, M multi-allelic, ..." warning, or None if nothing was skipped."""
+    skipped = stats.skipped_indels + stats.skipped_multiallelic + stats.stop_blocked_pairs
+    if skipped == 0:
+        return None
+    parts = []
+    if stats.skipped_indels > 0:
+        parts.append(f"{stats.skipped_indels} indels")
+    if stats.skipped_multiallelic > 0:
+        parts.append(f"{stats.skipped_multiallelic} multi-allelic")
+    if stats.stop_blocked_pairs > 0:
+        parts.append(f"{stats.stop_blocked_pairs} stop-blocked codon pairs")
+    return f"{gene_id}: skipped {', '.join(parts)}"
 
 
 @dataclass
@@ -90,15 +109,7 @@ def _process_single_gene(
         )
 
         # Build warning if many sites skipped
-        warning = None
-        skipped = stats.skipped_indels + stats.skipped_multiallelic
-        if skipped > 0:
-            parts = []
-            if stats.skipped_indels > 0:
-                parts.append(f"{stats.skipped_indels} indels")
-            if stats.skipped_multiallelic > 0:
-                parts.append(f"{stats.skipped_multiallelic} multi-allelic")
-            warning = f"{task.gene_id}: skipped {', '.join(parts)}"
+        warning = _skip_warning(task.gene_id, stats)
 
         # If extract_only, return PolymorphismData directly
         if task.extract_only:
@@ -224,15 +235,7 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
         )
 
         # Build warning if many sites skipped
-        warning = None
-        skipped = stats.skipped_indels + stats.skipped_multiallelic
-        if skipped > 0:
-            parts = []
-            if stats.skipped_indels > 0:
-                parts.append(f"{stats.skipped_indels} indels")
-            if stats.skipped_multiallelic > 0:
-                parts.append(f"{stats.skipped_multiallelic} multi-allelic")
-            warning = f"{task.gene_id}: skipped {', '.join(parts)}"
+        warning = _skip_warning(task.gene_id, stats)
 
         # If extract_only, return PolymorphismData directly
         if task.extract_only:

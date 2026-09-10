@@ -74,6 +74,8 @@ class GeneStats:
     skipped_indels: int = 0
     skipped_multiallelic: int = 0
     skipped_missing: int = 0
+    stop_blocked_pairs: int = 0
+    """Fixed differences with no stop-free mutational ordering, dropped from Dn/Ds."""
 
 
 def _ref_base_fetcher(fasta_file: object) -> callable:
@@ -408,7 +410,11 @@ def extract_gene_data(
             if code.translate(in_codon) == "*" or code.translate(out_codon) == "*":
                 continue
             # get_path handles codons that differ at more than one position.
-            for change_type, _position in code.get_path(in_codon, out_codon):
+            path = code.get_path(in_codon, out_codon)
+            if not path:
+                stats.stop_blocked_pairs += 1
+                continue
+            for change_type, _position in path:
                 if change_type == "R":
                     dn += 1
                 elif change_type == "S":

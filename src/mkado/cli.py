@@ -26,7 +26,7 @@ from mkado.analysis.asymptotic import (
 )
 from mkado.analysis.mk_test import mk_test
 from mkado.analysis.polarized import polarized_mk_test
-from mkado.batch_workers import BatchTask, WorkerResult, process_gene
+from mkado.batch_workers import BatchTask, WorkerResult, _stop_blocked_warning, process_gene
 from mkado.io.output import OutputFormat, format_batch_results, format_result
 from scipy.stats import false_discovery_control
 
@@ -857,6 +857,10 @@ def test(
                 no_singletons=no_singletons,
                 genetic_code=genetic_code,
             )
+
+    stop_blocked_warning = _stop_blocked_warning(fasta.stem, result)
+    if stop_blocked_warning:
+        typer.echo(f"Warning: {stop_blocked_warning}", err=True)
 
     write_output(format_result(result, fmt), output)
 
