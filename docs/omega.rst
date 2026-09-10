@@ -108,10 +108,13 @@ base through different intermediate codons that classify differently.
 
 .. warning::
 
-   When every ordering is blocked by a stop codon the pair is dropped from the
-   counts rather than classified. Under the vertebrate mitochondrial code this
-   silently discards four ordinary sense-codon pairs, AAA and AAG against TGA
-   and TGG, all of them Lys against Trp replacements.
+   When every ordering between two codons is blocked by a stop codon, that
+   comparison is dropped from the counts rather than classified. Under the
+   vertebrate mitochondrial code this affects four ordinary sense-codon
+   pairs, AAA and AAG against TGA and TGG, all of them Lys against Trp
+   replacements. Each drop is counted and reported as a warning rather than
+   passing silently. At a codon with more than two alleles, only the
+   blocked allele is dropped; the rest of the codon is still classified.
 
 When ω_a / ω_na are reported (and when they are not)
 -----------------------------------------------------
