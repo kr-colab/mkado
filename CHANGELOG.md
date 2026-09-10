@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ### Fixed
+- `polarized_mk_test` read the second outgroup's codon at a fixed difference
+  with `next(iter(set))`, so when outgroup2 was polymorphic there the
+  lineage followed Python's hash seed: the same alignment reported the
+  difference on the ingroup lineage, on the outgroup lineage, or as
+  unpolarized from one run to the next. The second outgroup is now read by
+  membership. It names the ancestral codon when it carries exactly one of
+  the two codons, and the difference is unpolarized when it carries both or
+  neither (closes #114).
 - `g_test` computed its p-value as `1 - cdf`, which rounds to exactly zero
   once the G statistic passes about 75. It now uses the chi-square survival
   function, so a strongly significant table reports its real p-value

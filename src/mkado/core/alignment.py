@@ -352,7 +352,11 @@ class PolarizedAlignedPair(AlignedPair):
     def polarize_fixed_difference(self, codon_index: int) -> tuple[str, tuple[int, int]] | None:
         """Polarize a fixed difference to determine which lineage changed.
 
-        Uses the second outgroup to determine the ancestral state.
+        The second outgroup names the ancestral codon. It may be polymorphic at
+        the site, so it is read by membership: if it carries the first
+        outgroup's codon, the ingroup changed; if it carries the ingroup's
+        codon, the first outgroup changed; if it carries both or neither, the
+        lineage cannot be chosen.
 
         Args:
             codon_index: Zero-based codon index
@@ -361,37 +365,22 @@ class PolarizedAlignedPair(AlignedPair):
             Tuple of (lineage, (nonsyn, syn)) where lineage is 'ingroup' or
             'outgroup', or None if cannot be polarized
         """
-        if self.outgroup2 is None:
+        if self.outgroup2 is None or not self.is_fixed_between(codon_index):
             return None
 
-        in_codons = self.ingroup.codon_set_clean(codon_index)
-        out_codons = self.outgroup.codon_set_clean(codon_index)
+        (in_codon,) = self.ingroup.codon_set_clean(codon_index)
+        (out_codon,) = self.outgroup.codon_set_clean(codon_index)
         out2_codons = self.outgroup2.codon_set_clean(codon_index)
 
-        if not in_codons or not out_codons or not out2_codons:
+        out_is_ancestral = out_codon in out2_codons
+        in_is_ancestral = in_codon in out2_codons
+        if out_is_ancestral == in_is_ancestral:
             return None
 
-        in_codon = next(iter(in_codons))
-        out_codon = next(iter(out_codons))
-        out2_codon = next(iter(out2_codons))
-
-        # Determine ancestral state
-        if out_codon == out2_codon:
-            # Outgroup agrees - ingroup changed
-            ancestral = out_codon
-            derived = in_codon
-            lineage = "ingroup"
-        elif in_codon == out2_codon:
-            # Ingroup matches outgroup2 - outgroup1 changed
-            ancestral = in_codon
-            derived = out_codon
-            lineage = "outgroup"
+        if out_is_ancestral:
+            ancestral, derived, lineage = out_codon, in_codon, "ingroup"
         else:
-            # Cannot polarize
-            return None
-
-        if ancestral == derived:
-            return None
+            ancestral, derived, lineage = in_codon, out_codon, "outgroup"
 
         path = self._get_path(ancestral, derived)
         if path is None:

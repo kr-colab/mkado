@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
+import pytest
+
 from mkado.core.alignment import AlignedPair, PolarizedAlignedPair
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import Sequence, SequenceSet
+from tests.builders import sequence_set
 
 VERTEBRATE_MITO = GeneticCode(table_id=2)
-
-
-def sequence_set(codons: list[str]) -> SequenceSet:
-    return SequenceSet(sequences=[Sequence(name=f"s{i}", sequence=c) for i, c in enumerate(codons)])
 
 
 def pair(ingroup: list[str], outgroup: list[str]) -> AlignedPair:
@@ -26,6 +25,20 @@ def pair_mito(ingroup: list[str], outgroup: list[str]) -> AlignedPair:
         ingroup=sequence_set(ingroup),
         outgroup=sequence_set(outgroup),
         genetic_code=VERTEBRATE_MITO,
+    )
+
+
+def polarized_pair(
+    ingroup: list[str],
+    outgroup1: list[str],
+    outgroup2: list[str],
+    genetic_code: GeneticCode = DEFAULT_CODE,
+) -> PolarizedAlignedPair:
+    return PolarizedAlignedPair(
+        ingroup=sequence_set(ingroup),
+        outgroup=sequence_set(outgroup1),
+        outgroup2=sequence_set(outgroup2),
+        genetic_code=genetic_code,
     )
 
 
@@ -169,17 +182,115 @@ class TestStopBlockedPairs:
 class TestPolarizedStopBlockedPairs:
     """The same counter on PolarizedAlignedPair.polarize_fixed_difference."""
 
-    def _pair(self, ingroup: str, outgroup1: str, outgroup2: str) -> PolarizedAlignedPair:
-        return PolarizedAlignedPair(
-            ingroup=sequence_set([ingroup]),
-            outgroup=sequence_set([outgroup1]),
-            outgroup2=sequence_set([outgroup2]),
-            genetic_code=VERTEBRATE_MITO,
-        )
-
     def test_blocked_polarized_difference_counts_the_drop(self):
         # Outgroup1 and outgroup2 agree on TGG, so it is ancestral and the
         # ingroup's AAA is derived -- a blocked pair on the ingroup lineage.
-        pair = self._pair(ingroup="AAA", outgroup1="TGG", outgroup2="TGG")
+        pair = polarized_pair(["AAA"], ["TGG"], ["TGG"], genetic_code=VERTEBRATE_MITO)
         assert pair.polarize_fixed_difference(0) is None
         assert pair.stop_blocked_pairs == 1
+
+
+class TestPolarizeFixedDifference:
+    """Which lineage a fixed difference belongs to, given the second outgroup.
+
+    Codon 0 differs between the ingroup and outgroup1 in every case. AAA and
+    AAG are both Lys, so a change between them is synonymous. AAC is Asn.
+    """
+
+    def test_outgroups_agree_so_the_ingroup_changed(self):
+        result = polarized_pair(["AAC"], ["AAA"], ["AAA"]).polarize_fixed_difference(0)
+        assert result == ("ingroup", (1, 0))
+
+    def test_ingroup_matches_outgroup2_so_outgroup1_changed(self):
+        result = polarized_pair(["AAA"], ["AAG"], ["AAA"]).polarize_fixed_difference(0)
+        assert result == ("outgroup", (0, 1))
+
+    def test_all_three_differ_is_unpolarizable(self):
+        assert polarized_pair(["AAA"], ["AAG"], ["AAT"]).polarize_fixed_difference(0) is None
+
+    def test_no_second_outgroup(self):
+        pair = PolarizedAlignedPair(ingroup=sequence_set(["AAA"]), outgroup=sequence_set(["AAG"]))
+        assert pair.polarize_fixed_difference(0) is None
+
+    @pytest.mark.parametrize(
+        "ingroup, outgroup1, outgroup2",
+        [(["---"], ["AAG"], ["AAA"]), (["AAA"], ["NNN"], ["AAA"]), (["AAA"], ["AAG"], ["---"])],
+    )
+    def test_missing_data_in_any_group_is_unpolarizable(self, ingroup, outgroup1, outgroup2):
+        assert polarized_pair(ingroup, outgroup1, outgroup2).polarize_fixed_difference(0) is None
+
+    def test_identical_codons_are_not_a_difference(self):
+        assert polarized_pair(["AAA"], ["AAA"], ["AAA"]).polarize_fixed_difference(0) is None
+
+    def test_polymorphic_outgroup2_carrying_the_outgroup1_codon(self):
+        # Outgroup2 also segregates a third codon. It still carries outgroup1's
+        # codon and not the ingroup's, so the ingroup changed.
+        pair = polarized_pair(["AAG"], ["AAA"], ["AAA", "AAT"])
+        assert pair.polarize_fixed_difference(0) == ("ingroup", (0, 1))
+
+    def test_polymorphic_outgroup2_carrying_the_ingroup_codon(self):
+        pair = polarized_pair(["AAG"], ["AAA"], ["AAG", "AAT"])
+        assert pair.polarize_fixed_difference(0) == ("outgroup", (0, 1))
+
+    def test_outgroup2_carrying_both_codons_is_unpolarizable(self):
+        pair = polarized_pair(["AAG"], ["AAA"], ["AAA", "AAG"])
+        assert pair.polarize_fixed_difference(0) is None
+
+    @pytest.mark.parametrize(
+        "ingroup, outgroup1",
+        [(["AAA", "AAG"], ["AAC"]), (["AAA"], ["AAC", "AAG"])],
+    )
+    def test_polymorphic_ingroup_or_outgroup1_is_not_a_fixed_difference(self, ingroup, outgroup1):
+        assert polarized_pair(ingroup, outgroup1, ["AAC"]).polarize_fixed_difference(0) is None
+
+
+class TestPolarizeIngroupPolymorphism:
+    """Whether an ingroup polymorphism can be attributed to the ingroup lineage.
+
+    The ingroup segregates AAA and AAG (both Lys) at codon 0, so a counted
+    polymorphism is one synonymous change.
+    """
+
+    INGROUP = ["AAA", "AAA", "AAG"]
+
+    def test_outgroups_share_the_ancestral_codon(self):
+        pair = polarized_pair(self.INGROUP, ["AAA"], ["AAA"])
+        assert pair.polarize_ingroup_polymorphism(0) == (0, 1)
+
+    def test_outgroup2_alone_shares_a_codon_with_the_ingroup(self):
+        # Outgroup1 carries a third codon, so outgroup2 alone fixes the ancestral state.
+        pair = polarized_pair(self.INGROUP, ["AAC"], ["AAA"])
+        assert pair.polarize_ingroup_polymorphism(0) == (0, 1)
+
+    def test_outgroup1_without_data_still_polarizes_through_outgroup2(self):
+        pair = polarized_pair(self.INGROUP, ["---"], ["AAA"])
+        assert pair.polarize_ingroup_polymorphism(0) == (0, 1)
+
+    def test_outgroups_share_a_codon_absent_from_the_ingroup(self):
+        # The shared codon is ancestral, so every ingroup allele is derived and
+        # the polymorphism still counts on the ingroup lineage.
+        pair = polarized_pair(self.INGROUP, ["AAC"], ["AAC"])
+        assert pair.polarize_ingroup_polymorphism(0) == (0, 1)
+
+    def test_ancestral_polymorphism_is_not_counted(self):
+        # Outgroup2 carries every ingroup allele, so the polymorphism predates the split.
+        pair = polarized_pair(self.INGROUP, ["AAA"], ["AAA", "AAG"])
+        assert pair.polarize_ingroup_polymorphism(0) is None
+
+    def test_no_shared_codon_is_unpolarizable(self):
+        pair = polarized_pair(self.INGROUP, ["AAC"], ["AAT"])
+        assert pair.polarize_ingroup_polymorphism(0) is None
+
+    def test_monomorphic_ingroup(self):
+        pair = polarized_pair(["AAA", "AAA"], ["AAG"], ["AAG"])
+        assert pair.polarize_ingroup_polymorphism(0) is None
+
+    def test_outgroup2_without_data(self):
+        pair = polarized_pair(self.INGROUP, ["AAA"], ["---"])
+        assert pair.polarize_ingroup_polymorphism(0) is None
+
+    def test_no_second_outgroup(self):
+        pair = PolarizedAlignedPair(
+            ingroup=sequence_set(self.INGROUP), outgroup=sequence_set(["AAA"])
+        )
+        assert pair.polarize_ingroup_polymorphism(0) is None

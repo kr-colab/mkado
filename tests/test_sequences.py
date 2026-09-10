@@ -5,23 +5,14 @@ import pickle
 import numpy as np
 import pytest
 
-from mkado.core.codons import DEFAULT_CODE, GeneticCode
+from mkado.core.codons import GeneticCode
 from mkado.core.sequences import Sequence, SequenceSet
+from tests.builders import sequence_set
 
 VERTEBRATE_MITO = GeneticCode(table_id=2)
 
 # Three codons per sequence. Codon 1 is polymorphic and one sequence has a gap there.
 ALIGNMENT = ["ATGAAACCC", "ATGAAGCCC", "ATG---CCC"]
-
-
-def sequence_set(
-    seqs: list[str], reading_frame: int = 1, genetic_code: GeneticCode = DEFAULT_CODE
-) -> SequenceSet:
-    return SequenceSet(
-        sequences=[Sequence(name=f"s{i}", sequence=s) for i, s in enumerate(seqs)],
-        reading_frame=reading_frame,
-        genetic_code=genetic_code,
-    )
 
 
 class TestSequence:
