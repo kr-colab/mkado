@@ -9,6 +9,27 @@
   alleles were present. Both now drop just the blocked allele, so
   classification no longer depends on how many alleles happen to segregate
   at a codon (closes #94).
+- A codon pair where every mutational ordering passed through a stop codon
+  was dropped from Dn/Ds/Pn/Ps with no signal, indistinguishable from an
+  identical-codon pair. Under the vertebrate mitochondrial code this
+  silently dropped four ordinary Lys/Trp pairs. The pair still drops from
+  the counts, but each drop is now counted and surfaces as a warning, the
+  same way skipped indels and multi-allelic sites already do (closes #90).
+- Asymptotic MK frequency bin edges came from `np.linspace`, which does not
+  always return the double nearest `k / num_bins` -- with the default 20
+  bins, edge 3 came back as `0.15000000000000002` instead of `0.15`,
+  misclassifying a polymorphism at exactly that frequency. Bin edges are
+  now computed exactly (closes #84).
+- Pooled-polymorphism frequency filtering was unreliable: `polarized_mk_test`'s
+  pooled branch applied no filter at all, and `mk_test`'s pooled branch
+  filtered on ingroup-only derived counts, missing outgroup-private
+  singletons. Pooled mode now filters on the minor-allele frequency across
+  both groups (closes #83).
+- `alpha_tg_from_gene_data` reported a zero-width confidence interval for a
+  single gene, or when every bootstrap replicate failed, indistinguishable
+  from a genuinely tight CI. Both cases now report `ci_low`/`ci_high` as
+  undefined (`NA` in pretty/TSV, `null` in JSON) instead, with `batch` and
+  `vcf` emitting a warning (closes #79).
 - `--imputed` combined with a polarize flag silently ran an unpolarized
   imputed test instead of erroring, unlike `--asymptotic` which already
   rejected the combination (with wording that had itself drifted
