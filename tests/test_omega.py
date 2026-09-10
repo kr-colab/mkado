@@ -20,12 +20,7 @@ from mkado.analysis.mk_test import mk_test, mk_test_from_counts
 from mkado.analysis.polarized import polarized_mk_test
 from mkado.analysis.statistics import omega_decomposition
 from mkado.core.alignment import AlignedPair
-from mkado.core.sequences import Sequence, SequenceSet
-
-
-def _seqset(*seqs: tuple[str, str]) -> SequenceSet:
-    return SequenceSet(sequences=[Sequence(name=n, sequence=s) for n, s in seqs])
-
+from tests.builders import sequence_set
 
 # ---------------------------------------------------------------------------
 # Site counting on AlignedPair
@@ -38,8 +33,8 @@ class TestCountTotalSites:
     def test_methionine_only(self) -> None:
         # ATG (Met) has no synonymous sites under the standard code.
         # Two ATG codons -> Ls = 0, Ln = 6
-        ingroup = _seqset(("i1", "ATGATG"))
-        outgroup = _seqset(("o1", "ATGATG"))
+        ingroup = sequence_set(["ATGATG"])
+        outgroup = sequence_set(["ATGATG"])
         pair = AlignedPair(ingroup=ingroup, outgroup=outgroup)
 
         ln, ls = pair.count_total_sites()
@@ -49,8 +44,8 @@ class TestCountTotalSites:
     def test_phenylalanine_codon(self) -> None:
         # TTT (Phe): site 3 has 1/3 synonymous (only TTC -> Phe). Other sites
         # are zero. So Ls(TTT) = 1/3.
-        ingroup = _seqset(("i1", "TTT"))
-        outgroup = _seqset(("o1", "TTT"))
+        ingroup = sequence_set(["TTT"])
+        outgroup = sequence_set(["TTT"])
         pair = AlignedPair(ingroup=ingroup, outgroup=outgroup)
 
         ln, ls = pair.count_total_sites()
@@ -59,8 +54,8 @@ class TestCountTotalSites:
 
     def test_skips_codons_with_no_clean_codons(self) -> None:
         # First codon is fully ambiguous in both groups -> not counted.
-        ingroup = _seqset(("i1", "NNNATG"))
-        outgroup = _seqset(("o1", "NNNATG"))
+        ingroup = sequence_set(["NNNATG"])
+        outgroup = sequence_set(["NNNATG"])
         pair = AlignedPair(ingroup=ingroup, outgroup=outgroup)
 
         ln, ls = pair.count_total_sites()
@@ -70,8 +65,8 @@ class TestCountTotalSites:
 
     def test_averages_across_groups(self) -> None:
         # Ingroup ATG, outgroup TTT -> averaged Ls = (0 + 1/3) / 2
-        ingroup = _seqset(("i1", "ATG"))
-        outgroup = _seqset(("o1", "TTT"))
+        ingroup = sequence_set(["ATG"])
+        outgroup = sequence_set(["TTT"])
         pair = AlignedPair(ingroup=ingroup, outgroup=outgroup)
 
         ln, ls = pair.count_total_sites()
