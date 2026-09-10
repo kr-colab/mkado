@@ -293,19 +293,13 @@ class AlignedPair:
 
         major_codon, *others = sorted(counts, key=lambda c: (-counts[c], c))
 
-        if len(others) == 1:
-            # No stop-free ordering exists, so the pair cannot be classified.
-            path = self._get_path(major_codon, others[0])
-            if path is None:
-                return None
-            return _count_path(path)
-
         total_nonsyn = 0
         total_syn = 0
         counted: set[tuple[int, str]] = set()
         for codon in others:
             path = self._get_path(major_codon, codon)
             if path is None:
+                # No stop-free ordering exists; this allele is dropped, not the site.
                 continue
             for change_type, pos in path:
                 mutation = (pos, codon[pos])

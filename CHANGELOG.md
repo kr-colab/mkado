@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- `classify_polymorphism`/`classify_polymorphism_pooled` dropped an entire
+  codon when it had exactly two alleles and the only comparison was
+  stop-blocked, but only dropped the blocked allele when three or more
+  alleles were present. Both now drop just the blocked allele, so
+  classification no longer depends on how many alleles happen to segregate
+  at a codon (closes #94).
 - A codon pair where every mutational ordering passed through a stop codon
   was dropped from Dn/Ds/Pn/Ps with no signal, indistinguishable from an
   identical-codon pair. Under the vertebrate mitochondrial code this
