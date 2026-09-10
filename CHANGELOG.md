@@ -3,6 +3,13 @@
 ## [Unreleased]
 
 ### Fixed
+- `--verbose` governed only the htslib warnings raised while a VCF was
+  opened. Those raised while a record is parsed, such as a FORMAT tag the
+  header never declares, are emitted inside the region query and went
+  straight to the terminal in every mode. The capture now spans each
+  gene's extraction, and anything else written to stderr inside that
+  window, such as a progress bar redraw, is passed back through instead of
+  being logged as htslib output (closes #52).
 - `mkado vcf` ran to completion on a VCF it could not query. An unindexed
   or uncompressed ingroup gave every gene zero polymorphism, an unindexed
   outgroup gave the reference base at every outgroup position, and the

@@ -14,6 +14,7 @@ from mkado.core.codons import GeneticCode
 from mkado.io.vcf import (
     VcfQueryError,
     _complement_base,
+    _htslib_stderr_to_log,
     _open_vcf,
     _reconstruct_codon_with_sub,
     _ref_base_fetcher,
@@ -368,18 +369,73 @@ class TestHtslibWarningCapture:
         assert not [r for r in caplog.records if r.message.startswith("htslib:")]
 
     @needs_procfs
-    def test_failed_open_closes_pipe(self, not_a_vcf):
-        """The capture pipe must not leak a descriptor when htslib rejects the file."""
+    def test_failed_open_closes_the_capture(self, not_a_vcf):
+        """The capture must not leak a descriptor when htslib rejects the file."""
         before = _open_fd_count()
         with pytest.raises(OSError):
             _open_vcf(not_a_vcf)
         assert _open_fd_count() == before
 
     @needs_procfs
-    def test_successful_open_closes_pipe(self, genome):
+    def test_successful_open_closes_the_capture(self, genome):
         before = _open_fd_count()
         _open_vcf(genome.ingroup_vcf).close()
         assert _open_fd_count() == before
+
+    def test_query_warning_arises_inside_the_query(
+        self, synthetic_ref, simple_cds, ingroup_vcf_xq, caplog
+    ):
+        """The undeclared tag is reported when a record is parsed, inside the region
+        query, not at open. That is why the workers hold the capture around the
+        extraction rather than around the open alone."""
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            vcf = _open_vcf(ingroup_vcf_xq)
+            assert not [r for r in caplog.records if "XQ" in r.message]
+            with _htslib_stderr_to_log():
+                extract_gene_data(ingroup_vcf_xq, None, simple_cds, synthetic_ref, ingroup_vcf=vcf)
+            vcf.close()
+        htslib = [r.message for r in caplog.records if r.message.startswith("htslib:")]
+        assert any("XQ" in message for message in htslib)
+
+    def test_capture_has_no_size_ceiling(self, caplog):
+        """A hundred kilobytes of htslib lines written inside the capture must all reach the logger."""
+        line = b"[W::test] " + b"x" * 89 + b"\n"
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            with _htslib_stderr_to_log():
+                for _ in range(1000):
+                    os.write(2, line)
+        assert sum(1 for r in caplog.records if r.message.startswith("htslib:")) == 1000
+
+    def test_other_output_in_the_window_is_passed_back_through(self, capfd, caplog):
+        """A progress bar redraw that lands in the window goes back to the terminal, not the log."""
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            with _htslib_stderr_to_log():
+                os.write(2, b"\x1b[2K progress 40%\n")
+                os.write(2, b"[W::vcf_parse] an htslib line\n")
+        assert capfd.readouterr().err == "\x1b[2K progress 40%\n"
+        assert [r.message for r in caplog.records] == ["htslib: [W::vcf_parse] an htslib line"]
+
+    def test_htslib_line_after_an_unterminated_redraw_is_still_logged(self, capfd, caplog):
+        """A redraw with no newline does not swallow the htslib line written right after it."""
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            with _htslib_stderr_to_log():
+                os.write(2, b"\x1b[2K progress 40%")
+                os.write(2, b"[W::vcf_parse] an htslib line\n")
+        assert capfd.readouterr().err == "\x1b[2K progress 40%"
+        assert [r.message for r in caplog.records] == ["htslib: [W::vcf_parse] an htslib line"]
+
+    def test_nested_capture_drains_once_at_the_outer_level(self, caplog):
+        """An open inside a captured extraction must not start a second capture."""
+        with caplog.at_level(logging.DEBUG, logger="mkado.io.vcf"):
+            with _htslib_stderr_to_log():
+                with _htslib_stderr_to_log():
+                    os.write(2, b"[W::inner] one\n")
+                assert not caplog.records
+                os.write(2, b"[W::outer] two\n")
+        assert [r.message for r in caplog.records] == [
+            "htslib: [W::inner] one",
+            "htslib: [W::outer] two",
+        ]
 
 
 class TestIngroupFiltering:
