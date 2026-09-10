@@ -106,6 +106,9 @@ class TestStopBlockedPairs:
     orderings between them passes through AGA, AGG, or TAA -- all stops in
     that table. The pair is still real (both are ordinary sense codons), so
     it is worth counting even though it stays dropped from Dn/Ds/Pn/Ps.
+
+    A blocked comparison drops only that allele, never the whole site,
+    regardless of how many alleles segregate at the codon.
     """
 
     def test_new_pair_starts_at_zero(self):
@@ -139,8 +142,10 @@ class TestStopBlockedPairs:
         assert result.stop_blocked_pairs == 2
 
     def test_classify_against_major_single_other_counts_the_drop(self):
+        # A blocked allele is dropped, not the whole site, so this matches
+        # the multi-allele case below rather than returning None.
         result = pair_mito(["AAA", "TGG"], ["AAA"])
-        assert result.classify_polymorphism(0) is None
+        assert result.classify_polymorphism(0) == (0, 0)
         assert result.stop_blocked_pairs == 1
 
     def test_classify_against_major_multi_other_counts_only_the_blocked_one(self):
@@ -151,6 +156,14 @@ class TestStopBlockedPairs:
         nonsyn, syn = result.classify_polymorphism(0)
         assert (nonsyn, syn) == (1, 0)  # only AAC's replacement is counted
         assert result.stop_blocked_pairs == 1
+
+    def test_classify_against_major_all_others_blocked_returns_zero(self):
+        # Major is AAA (Lys); both TGA and TGG (Trp) are blocked, so every
+        # comparison drops, matching the single-blocked-other case above.
+        ingroup = ["AAA"] * 3 + ["TGA", "TGG"]
+        result = pair_mito(ingroup, ["AAA"])
+        assert result.classify_polymorphism(0) == (0, 0)
+        assert result.stop_blocked_pairs == 2
 
 
 class TestPolarizedStopBlockedPairs:
