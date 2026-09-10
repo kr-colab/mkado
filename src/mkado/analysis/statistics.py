@@ -147,8 +147,9 @@ def g_test(dn: int, ds: int, pn: int, ps: int) -> float:
                 if expected > 0:
                     g_stat += 2 * obs * math.log(obs / expected)
 
-    # G-test statistic follows chi-square with df=1
-    p_value = 1 - stats.chi2.cdf(g_stat, df=1)
+    # G-test statistic follows chi-square with df=1. The survival function
+    # keeps precision in the far tail, where 1 - cdf rounds to zero.
+    p_value = stats.chi2.sf(g_stat, df=1)
     return float(p_value)
 
 
