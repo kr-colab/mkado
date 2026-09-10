@@ -105,8 +105,7 @@ def format_result(
         Formatted string representation
 
     Raises:
-        ValueError: If ``adjusted_pvalues`` does not have one value per result,
-            or if the requested output format is unknown.
+        ValueError: If the requested output format is unknown.
         TypeError: If TSV output does not support the result type.
     """
     if format == OutputFormat.PRETTY:
@@ -257,6 +256,13 @@ def format_batch_results(
 
     Returns:
         Formatted string representation
+
+    Raises:
+        ValueError: If ``adjusted_pvalues`` does not have one value per result,
+            if JSON output meets a duplicate gene name, or if the requested
+            output format is unknown.
+        TypeError: If TSV output meets a result type with no batch layout, or
+            a batch that mixes result types.
     """
     if adjusted_pvalues is not None and len(adjusted_pvalues) != len(results):
         raise ValueError("adjusted_pvalues must have the same length as results")

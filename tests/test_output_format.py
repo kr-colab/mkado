@@ -344,7 +344,7 @@ def test_batch_row_formats_keep_duplicate_gene_names(output_format: OutputFormat
 def two_mk_results() -> list[tuple[str, MKResult]]:
     """Two distinct records make row loss and name mixups visible."""
     return [
-        ("geneA", mk_test_from_counts(dn=10, ds=5, pn=4, ps=8)),
+        ("geneA", _defined_mk_result()),
         ("geneB", mk_test_from_counts(dn=8, ds=2, pn=3, ps=9)),
     ]
 
@@ -392,9 +392,7 @@ def test_batch_rejects_adjusted_pvalue_length_mismatch(
     output_format: OutputFormat,
 ) -> None:
     with pytest.raises(ValueError, match="same length"):
-        format_batch_results(
-            two_mk_results, output_format, adjusted_pvalues=adjusted_pvalues
-        )
+        format_batch_results(two_mk_results, output_format, adjusted_pvalues=adjusted_pvalues)
 
 
 @pytest.mark.parametrize(
@@ -405,11 +403,12 @@ def test_batch_empty_results(output_format: OutputFormat, expected: str) -> None
     assert format_batch_results([], output_format) == expected
 
 
-def test_batch_json_preserves_mixed_result_shapes(
+def test_batch_json_renders_each_type_with_its_own_shape(
     mk_undefined: MKResult,
     polarized_undefined: PolarizedMKResult,
     asymptotic_undefined: AsymptoticMKResult,
 ) -> None:
+    """Each gene's object follows its own result type's ``to_dict`` layout."""
     output = format_batch_results(
         [
             ("standard", mk_undefined),
@@ -422,3 +421,88 @@ def test_batch_json_preserves_mixed_result_shapes(
     assert parsed["standard"]["dn"] == 0
     assert parsed["polarized"]["ingroup"]["dn"] == 0
     assert parsed["asymptotic"]["alpha_asymptotic"] == 0.0
+
+
+def _defined_polarized_result() -> PolarizedMKResult:
+    """A polarized result with every ratio defined, so each TSV column has a known value."""
+    return PolarizedMKResult(
+        dn_ingroup=10,
+        ds_ingroup=5,
+        pn_ingroup=4,
+        ps_ingroup=8,
+        dn_outgroup=2,
+        ds_outgroup=3,
+        dn_unpolarized=1,
+        ds_unpolarized=1,
+        pn_unpolarized=0,
+        ps_unpolarized=2,
+        p_value_ingroup=0.1283,
+        ni_ingroup=0.25,
+        alpha_ingroup=0.75,
+        dos_ingroup=1 / 3,
+        ln=200.0,
+        ls=100.0,
+        omega=1.0,
+    )
+
+
+def test_batch_tsv_polarized(polarized_undefined: PolarizedMKResult) -> None:
+    """Batch TSV gives a polarized result one row: ingroup-lineage counts, outgroup Dn and Ds."""
+    out = format_batch_results(
+        [("geneA", _defined_polarized_result()), ("geneB", polarized_undefined)],
+        OutputFormat.TSV,
+    )
+    header, row_a, row_b = (line.split("\t") for line in out.splitlines())
+    assert header == [
+        "gene",
+        "Dn_ingroup",
+        "Ds_ingroup",
+        "Pn_ingroup",
+        "Ps_ingroup",
+        "Dn_outgroup",
+        "Ds_outgroup",
+        "p_value",
+        "NI",
+        "alpha",
+        "DoS",
+        "Ln",
+        "Ls",
+        "omega",
+    ]
+    assert row_a[:8] == ["geneA", "10", "5", "4", "8", "2", "3", "0.1283"]
+    assert row_a[8:] == ["0.250000", "0.750000", "0.333333", "200.000000", "100.000000", "1.000000"]
+    assert row_b[:8] == ["geneB", "0", "0", "0", "0", "0", "0", "1"]
+    assert row_b[8:] == ["NA"] * 6
+
+
+def test_batch_tsv_polarized_with_adjusted_pvalues(
+    polarized_undefined: PolarizedMKResult,
+) -> None:
+    """The adjusted p-value column sits directly after p_value."""
+    out = format_batch_results(
+        [("geneA", _defined_polarized_result()), ("geneB", polarized_undefined)],
+        OutputFormat.TSV,
+        adjusted_pvalues=[0.02, 0.9],
+    )
+    header, row_a, row_b = (line.split("\t") for line in out.splitlines())
+    assert header[7:9] == ["p_value", "p_value_adjusted"]
+    assert row_a[7:9] == ["0.1283", "0.02"]
+    assert row_b[7:9] == ["1", "0.9"]
+
+
+def test_format_result_rejects_unknown_format() -> None:
+    """A format outside the enum is an error, not a fallback to pretty output."""
+    with pytest.raises(ValueError, match="Unknown format"):
+        format_result(_defined_mk_result(), "xml")  # type: ignore[arg-type]
+
+
+def test_batch_rejects_unknown_format() -> None:
+    """A format outside the enum is an error, not a fallback to pretty output."""
+    with pytest.raises(ValueError, match="Unknown format"):
+        format_batch_results([("geneA", _defined_mk_result())], "xml")  # type: ignore[arg-type]
+
+
+def test_tsv_rejects_result_without_a_layout() -> None:
+    """A result type with no TSV layout is an error, not a silent format change."""
+    with pytest.raises(TypeError, match="Unknown result type"):
+        format_result(object(), OutputFormat.TSV)  # type: ignore[arg-type]
