@@ -154,6 +154,35 @@ class TestValidation:
         assert result.exit_code == 2
         assert "looks like a flag" in result.output
 
+    @pytest.mark.parametrize(
+        ("option", "field"), [("--vcf", "ingroup_vcf"), ("--outgroup-vcf", "outgroup_vcf")]
+    )
+    def test_unindexed_vcf_is_rejected_before_any_gene_runs(self, genome, gff_chr1, option, field):
+        """An uncompressed or unindexed VCF cannot answer region queries, so the run stops."""
+        plain = getattr(genome, field).with_suffix("")
+        result = invoke(dataclasses.replace(genome, **{field: plain}), gff_chr1)
+        assert result.exit_code == 1
+        assert f"Error: {option}: {plain} has no usable index." in result.output
+        assert "tabix" in result.output
+        assert result.stdout.strip() == ""
+
+    @pytest.mark.parametrize(
+        ("option", "field"), [("--vcf", "ingroup_vcf"), ("--outgroup-vcf", "outgroup_vcf")]
+    )
+    def test_contig_absent_from_a_vcf_warns_and_runs(self, genome, gff_all, option, field, request):
+        """A contig the annotation uses but a VCF never mentions is named at start-up."""
+        chr1_only = request.getfixturevalue(f"{field}_chr1_only")
+        dataset = dataclasses.replace(genome, **{field: chr1_only})
+        result = invoke(dataset, gff_all)
+        assert result.exit_code == 0
+        assert f"Warning: {option} lists no contig named chr2" in result.output
+        assert "tiny00" in rows(result.stdout)
+
+    def test_complete_vcfs_do_not_warn_about_contigs(self, genome, gff_all):
+        result = invoke(genome, gff_all)
+        assert result.exit_code == 0
+        assert "lists no contig" not in result.output
+
 
 class TestGeneSelection:
     def test_single_gene(self, genome, gff_chr1):
@@ -246,10 +275,11 @@ class TestPerGeneOutput:
         assert "No results to display" in result.output
 
     def test_vcf_with_invalid_content(self, genome, gff_chr1, not_a_vcf):
+        """A file that is not a VCF is rejected up front, before any gene runs."""
         result = invoke(dataclasses.replace(genome, ingroup_vcf=not_a_vcf), gff_chr1)
         assert result.exit_code == 1
-        assert "Error processing g_plus:" in result.output
-        assert "No results to display" in result.output
+        assert f"Error: --vcf: {not_a_vcf} cannot be opened" in result.output
+        assert result.stdout.strip() == ""
 
 
 class TestSingleGeneModes:
@@ -452,21 +482,18 @@ class TestOptions:
         assert result.exit_code == 0
         assert rows(result.stdout)["g_plus"] == (1, 1, 2, 0)
 
-    def test_verbose_enables_debug_logging(self, genome, gff_chr1, ingroup_vcf_plain, caplog):
-        """An unindexed VCF makes every region query fail; --verbose surfaces the reason."""
-        caplog.handler.setLevel(logging.DEBUG)
-        dataset = dataclasses.replace(genome, ingroup_vcf=ingroup_vcf_plain)
-        result = invoke(dataset, gff_chr1, "--gene", "g_plus", "--verbose")
+    def test_verbose_enables_debug_logging(self, genome, gff_chr1):
+        """--verbose lowers the VCF and plotting loggers to DEBUG so htslib's remarks surface."""
+        result = invoke(genome, gff_chr1, "--gene", "g_plus", "--verbose")
         assert result.exit_code == 0
-        messages = [r.message for r in caplog.records if r.name == "mkado.io.vcf"]
-        assert any("ingroup VCF query failed for g_plus" in m for m in messages)
+        for name in _MKADO_LOGGERS:
+            assert logging.getLogger(name).level == logging.DEBUG
 
-    def test_without_verbose_no_debug_logging(self, genome, gff_chr1, ingroup_vcf_plain, caplog):
-        caplog.handler.setLevel(logging.DEBUG)
-        dataset = dataclasses.replace(genome, ingroup_vcf=ingroup_vcf_plain)
-        result = invoke(dataset, gff_chr1, "--gene", "g_plus")
+    def test_without_verbose_no_debug_logging(self, genome, gff_chr1):
+        result = invoke(genome, gff_chr1, "--gene", "g_plus")
         assert result.exit_code == 0
-        assert not [r for r in caplog.records if r.name == "mkado.io.vcf"]
+        for name in _MKADO_LOGGERS:
+            assert logging.getLogger(name).level != logging.DEBUG
 
     def test_bgzipped_reference(self, genome, gff_chr1, bgzipped_ref):
         result = invoke(dataclasses.replace(genome, ref_fasta=bgzipped_ref), gff_chr1)
@@ -489,8 +516,9 @@ class TestParallel:
         assert "Error processing g_nochrom:" in result.output
         assert len(rows(result.stdout)) == 17
 
-    def test_chunk_failure_reports_every_gene(self, genome, gff_all, not_a_vcf):
-        dataset = dataclasses.replace(genome, ingroup_vcf=not_a_vcf)
+    def test_every_gene_failing_in_parallel_reports_each(self, genome, gff_all, ref_without_genes):
+        """A failure the start-up checks cannot see is still reported per gene from every chunk."""
+        dataset = dataclasses.replace(genome, ref_fasta=ref_without_genes)
         result = invoke(dataset, gff_all, workers="2")
         assert result.exit_code == 1
         assert "Error processing g_plus:" in result.output

@@ -49,12 +49,14 @@ CONTIGS = {"chr1": len(CHR1_SEQ), "chr2": len(CHR2_SEQ), "chrZ": 50}
 INGROUP_SAMPLES = ["s1", "s2", "s3", "s4"]
 OUTGROUP_SAMPLES = ["outgroup"]
 
-_VCF_PREAMBLE = [
-    "##fileformat=VCFv4.2",
-    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
-    '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
-    *(f"##contig=<ID={name},length={length}>" for name, length in CONTIGS.items()),
-]
+
+def _vcf_preamble(contigs: dict[str, int]) -> list[str]:
+    return [
+        "##fileformat=VCFv4.2",
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">',
+        '##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">',
+        *(f"##contig=<ID={name},length={length}>" for name, length in contigs.items()),
+    ]
 
 
 def _write_vcf(
@@ -63,18 +65,20 @@ def _write_vcf(
     *,
     samples: list[str] = INGROUP_SAMPLES,
     extra_header: list[str] = (),
+    contigs: dict[str, int] = CONTIGS,
 ) -> Path:
     """Write a VCF, then bgzip and tabix-index it.
 
     With no samples the FORMAT column is omitted, which gives a sites-only VCF.
-    ``extra_header`` lines go after the standard preamble. The filename is
-    built from ``path_stem.name`` so stems that contain a dot are not mangled.
-    The uncompressed file stays beside the compressed one.
+    ``extra_header`` lines go after the standard preamble, whose contig lines
+    come from ``contigs``. The filename is built from ``path_stem.name`` so stems
+    that contain a dot are not mangled. The uncompressed file stays beside the
+    compressed one.
     """
     columns = ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO"]
     if samples:
         columns += ["FORMAT", *samples]
-    lines = [*_VCF_PREAMBLE, *extra_header, "\t".join(columns), *records]
+    lines = [*_vcf_preamble(contigs), *extra_header, "\t".join(columns), *records]
 
     vcf_path = path_stem.parent / (path_stem.name + ".vcf")
     vcf_path.write_text("\n".join(lines) + "\n")
@@ -317,6 +321,26 @@ def outgroup_vcf_plain(genome: VcfDataset) -> Path:
     return genome.outgroup_vcf.with_suffix("")
 
 
+def _chr1_only(path_stem: Path, records: list[str], samples: list[str]) -> Path:
+    """A VCF whose header and records cover chr1 alone."""
+    return _write_vcf(
+        path_stem,
+        [r for r in records if r.startswith("chr1\t")],
+        samples=samples,
+        contigs={"chr1": CONTIGS["chr1"]},
+    )
+
+
+@pytest.fixture
+def ingroup_vcf_chr1_only(tmp_path: Path) -> Path:
+    return _chr1_only(tmp_path / "ingroup_chr1", INGROUP_RECORDS, INGROUP_SAMPLES)
+
+
+@pytest.fixture
+def outgroup_vcf_chr1_only(tmp_path: Path) -> Path:
+    return _chr1_only(tmp_path / "outgroup_chr1", OUTGROUP_RECORDS, OUTGROUP_SAMPLES)
+
+
 @pytest.fixture
 def outgroup_vcf_sites_only(tmp_path: Path) -> Path:
     """An outgroup VCF with no FORMAT or sample columns."""
@@ -337,6 +361,15 @@ def bgzipped_ref(tmp_path: Path, genome: VcfDataset) -> Path:
     pysam.tabix_compress(str(genome.ref_fasta), str(gz), force=True)
     pysam.faidx(str(gz))
     return gz
+
+
+@pytest.fixture
+def ref_without_genes(tmp_path: Path) -> Path:
+    """An indexed reference that carries none of the annotation's contigs, so every gene fails."""
+    ref = tmp_path / "other.fa"
+    ref.write_text(">chrQ\nACGTACGTACGT\n")
+    pysam.faidx(str(ref))
+    return ref
 
 
 @pytest.fixture

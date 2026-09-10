@@ -274,6 +274,28 @@ def _collect_gene_data(
     return gene_data
 
 
+def warn_missing_contigs(annotation_contigs: set[str], vcf_contigs: dict[str, set[str]]) -> None:
+    """Name the contigs the annotation uses that a VCF's header never mentions.
+
+    A region query on such a contig returns nothing, and the extraction reads
+    nothing as the reference base at every site: no polymorphism from the
+    ingroup, no difference from the outgroup. That is right for a variants-only
+    file with coverage there and wrong for a file that was never called there,
+    and only the user can tell which. The header is a best-effort signal: most
+    callers list every reference contig whether or not any record lands on it,
+    so this catches the file that never mentions the contig, not the file that
+    mentions it and holds nothing there.
+    """
+    for option, contigs in vcf_contigs.items():
+        missing = sorted(annotation_contigs - contigs)
+        if missing:
+            typer.echo(
+                f"Warning: {option} lists no contig named {', '.join(missing)}: "
+                "every site there reads as the reference base",
+                err=True,
+            )
+
+
 def warn_duplicate_stems(files: list[Path]) -> None:
     """Warn when input files share a stem, because the stem becomes the gene name."""
     by_stem: dict[str, list[Path]] = {}
@@ -1669,6 +1691,19 @@ def vcf(
     if not outgroup_vcf.exists():
         raise cli_error(f"--outgroup-vcf file not found: {outgroup_vcf}")
 
+    # Every gene is read through a region query, so a VCF that cannot answer one
+    # stops the run here instead of failing once per gene. The query itself
+    # still raises, which covers a failure that appears mid-run and callers of
+    # the extraction that never pass through this command.
+    from mkado.io.vcf import VcfQueryError, probe_vcf
+
+    vcf_contigs: dict[str, set[str]] = {}
+    for path, name in [(vcf_file, "--vcf"), (outgroup_vcf, "--outgroup-vcf")]:
+        try:
+            vcf_contigs[name] = set(probe_vcf(path))
+        except VcfQueryError as e:
+            raise cli_error(f"{name}: {e}") from e
+
     validate_option_compatibility(
         use_asymptotic=use_asymptotic,
         use_imputed=use_imputed,
@@ -1707,6 +1742,7 @@ def vcf(
         raise cli_error("No valid CDS regions found in GFF3")
 
     typer.echo(f"Found {len(cds_regions)} genes in annotation", err=True)
+    warn_missing_contigs({cds.chrom for cds in cds_regions}, vcf_contigs)
 
     # Build tasks
     from mkado.vcf_workers import VcfBatchChunk, VcfBatchTask, process_vcf_chunk, process_vcf_gene

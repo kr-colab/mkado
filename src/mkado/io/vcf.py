@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -14,27 +15,25 @@ from mkado.core.cds import CdsRegion, _COMPLEMENT
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 
 if TYPE_CHECKING:
-    pass
+    from collections.abc import Iterator
 
 logger = logging.getLogger(__name__)
 
 
-def _open_vcf(path: str | Path) -> object:
-    """Open a cyvcf2.VCF, capturing htslib stderr warnings via the Python logger.
+@contextmanager
+def _htslib_stderr_to_log() -> Iterator[None]:
+    """Route what htslib writes to file descriptor 2 through the logger at DEBUG.
 
-    htslib writes warnings (e.g., "FORMAT 'GT' not defined in header") directly
-    to file descriptor 2, bypassing Python's warning system. This function
-    redirects fd 2 to a pipe during the open, then routes any captured output
-    through the Python logger at DEBUG level.
+    htslib writes warnings (e.g., "FORMAT 'GT' not defined in header") and index
+    errors directly to fd 2, bypassing Python's warning system. Inside this
+    block fd 2 is a pipe, drained into the logger afterwards.
     """
-    import cyvcf2
-
     r_fd, w_fd = os.pipe()
     orig_fd = os.dup(2)
     os.dup2(w_fd, 2)
     os.close(w_fd)
     try:
-        return cyvcf2.VCF(str(path))
+        yield
     finally:
         # Restore fd 2 before draining: read() only returns once the pipe's last writer is gone.
         os.dup2(orig_fd, 2)
@@ -42,6 +41,61 @@ def _open_vcf(path: str | Path) -> object:
         with os.fdopen(r_fd) as f:
             for line in f.read().strip().splitlines():
                 logger.debug("htslib: %s", line)
+
+
+def _open_vcf(path: str | Path) -> object:
+    """Open a cyvcf2.VCF, capturing htslib stderr warnings via the Python logger."""
+    import cyvcf2
+
+    with _htslib_stderr_to_log():
+        return cyvcf2.VCF(str(path))
+
+
+class VcfQueryError(RuntimeError):
+    """A VCF could not be opened or could not answer a region query."""
+
+
+def _query_region(vcf: object, region: str) -> list:
+    """Return the records in a region, raising when the file cannot be queried.
+
+    A contig the file does not carry returns nothing with a Python warning,
+    which is a legitimate empty result, so that warning is silenced. The query
+    itself raises only when the index is unusable, and an unanswered query must
+    not pass as "no variants here".
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        try:
+            return list(vcf(region))
+        except Exception as exc:
+            raise VcfQueryError(f"region query {region} failed: {exc}") from exc
+
+
+def probe_vcf(path: str | Path) -> list[str]:
+    """Open a VCF, prove it answers a region query, and return its header contigs.
+
+    Raises:
+        VcfQueryError: If the file cannot be opened, or has no usable index.
+    """
+    try:
+        vcf = _open_vcf(path)
+    except Exception as exc:
+        raise VcfQueryError(f"{path} cannot be opened: {exc}") from exc
+    try:
+        with _htslib_stderr_to_log():
+            try:
+                contigs = list(vcf.seqnames)
+                # Any contig name proves the index: through an index a name the
+                # file lacks returns no records, and without one the query raises.
+                _query_region(vcf, f"{contigs[0] if contigs else 'probe'}:1-1")
+            except Exception as exc:
+                raise VcfQueryError(
+                    f"{path} has no usable index. Bgzip the file and index it with "
+                    f"tabix or bcftools index. ({exc})"
+                ) from exc
+    finally:
+        vcf.close()
+    return contigs
 
 
 @dataclass
@@ -144,15 +198,7 @@ def _query_ingroup_snps_with_handle(
     # Build query regions from exons
     for start, end in cds.exons:
         region = f"{cds.chrom}:{start + 1}-{end}"  # cyvcf2 uses 1-based
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                variants = list(vcf(region))
-        except Exception as exc:
-            logger.debug("ingroup VCF query failed for %s region %s: %s", cds.gene_id, region, exc)
-            continue
-
-        for variant in variants:
+        for variant in _query_region(vcf, region):
             pos_0 = variant.POS - 1  # convert to 0-based
 
             # Must be in our CDS
@@ -229,15 +275,7 @@ def _query_outgroup_genotype_with_handle(
 
     for start, end in cds.exons:
         region = f"{cds.chrom}:{start + 1}-{end}"
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                variants = list(vcf(region))
-        except Exception as exc:
-            logger.debug("outgroup VCF query failed for %s region %s: %s", cds.gene_id, region, exc)
-            continue
-
-        for variant in variants:
+        for variant in _query_region(vcf, region):
             pos_0 = variant.POS - 1
 
             if not cds.contains_position(pos_0):
