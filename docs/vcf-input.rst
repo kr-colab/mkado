@@ -28,7 +28,7 @@ A single-sample VCF of the outgroup species, called against the **same reference
 
 The outgroup VCF must be bgzipped and indexed like the ingroup VCF.
 
-Positions with no record in the outgroup VCF, with a missing genotype, or with a heterozygous genotype are taken as the reference base. A heterozygous call cannot resolve a single outgroup allele, so it is treated the same as a missing one. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence. If the annotation uses a contig that either VCF's header never mentions, MKado warns at start-up, because every site on that contig will read as the reference base.
+The outgroup carries the ALT base at a position only when every allele of its call is called and is ALT (``1/1``, or ``1`` for a haploid call). Positions with no record in the outgroup VCF, with a missing genotype, with a partly missing genotype (``1/.``, ``./1``), or with a heterozygous genotype are taken as the reference base. A heterozygous or partly missing call cannot resolve a single outgroup allele, so it is treated the same as a missing one. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence. If the annotation uses a contig that either VCF's header never mentions, MKado warns at start-up, because every site on that contig will read as the reference base.
 
 ``--ref`` : Reference FASTA
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -229,7 +229,8 @@ Edge Cases
 
 - **Indels**: Skipped (count logged per gene)
 - **Multi-allelic sites**: Skipped. Pre-decompose with ``bcftools norm -m-`` if needed
-- **Missing genotypes**: Excluded from frequency calculation; only non-missing samples counted
+- **Missing genotypes**: Allele frequencies count each called allele and leave out each missing one. ``./.`` adds nothing, ``0/.`` adds one REF copy, and ``./1`` adds one ALT copy. A haploid call adds one copy, and a polyploid call adds one copy per allele. A site with no called allele is skipped
+- **Ambiguous reference bases**: A SNP or a fixed difference in a codon with a reference base other than A, C, G or T (``N`` or an IUPAC code) is skipped, because the change cannot be classified. The per-gene warning gives the count as "with ambiguous bases"
 - **Two SNPs in the same codon**: Each SNP classified independently (standard MK convention, avoids phasing issues)
 - **Sites fixed for ALT in the ingroup**: A fixed difference when the outgroup carries the reference base; no difference when the outgroup carries the same ALT
 - **Heterozygous outgroup genotype**: Unresolved, treated the same as a missing outgroup record — not used for divergence, and does not polarize a polymorphism at that position

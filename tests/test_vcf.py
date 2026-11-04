@@ -718,3 +718,126 @@ class TestFrequencyFilter:
         """Only sites below the minimum are dropped, as the option's documentation says."""
         poly, _ = _extract(genome, "g_plus", min_frequency=0.125)
         _assert_polys(poly.polymorphisms, genome.expected["g_plus"].polymorphisms)
+
+
+SYN_SITE = "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t"
+"""Codon 2, GCC to GCT (Ala to Ala). Append the sample genotypes, tab-separated."""
+
+
+class TestCalledAlleleCounts:
+    """Frequencies count each called allele and leave out each missing one."""
+
+    def poly(self, tmp_path, write_vcf, synthetic_ref, simple_cds, genotypes, **kwargs):
+        samples = [f"s{i}" for i in range(len(genotypes))]
+        ingroup = write_vcf(tmp_path / "in", [SYN_SITE + "\t".join(genotypes)], samples=samples)
+        poly, _ = extract_gene_data(ingroup, None, simple_cds, synthetic_ref, **kwargs)
+        return poly.polymorphisms
+
+    def test_partly_missing_ref_call_counts_one_ref(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds
+    ):
+        """0/. adds one REF copy, not two."""
+        polys = self.poly(
+            tmp_path, write_vcf, synthetic_ref, simple_cds, ["0/0", "0/1", "0/.", "0/."]
+        )
+        _assert_polys(polys, [(1 / 6, "S")])
+
+    def test_partly_missing_alt_call_counts_one_alt(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds
+    ):
+        """./1 adds one ALT copy and no REF copy."""
+        polys = self.poly(
+            tmp_path, write_vcf, synthetic_ref, simple_cds, ["0/0", "0/1", "./1", "./1"]
+        )
+        _assert_polys(polys, [(3 / 6, "S")])
+
+    def test_haploid_call_counts_one_copy(self, tmp_path, write_vcf, synthetic_ref, simple_cds):
+        """A haploid call adds one copy, next to diploid calls in the same record."""
+        polys = self.poly(tmp_path, write_vcf, synthetic_ref, simple_cds, ["1", "0/0", "0/0"])
+        _assert_polys(polys, [(1 / 5, "S")])
+
+    def test_haploid_singleton_is_removed(self, tmp_path, write_vcf, synthetic_ref, simple_cds):
+        """One haploid ALT call is one derived copy, so --no-singletons removes it."""
+        polys = self.poly(
+            tmp_path,
+            write_vcf,
+            synthetic_ref,
+            simple_cds,
+            ["1", "0", "0", "0"],
+            no_singletons=True,
+        )
+        assert polys == []
+
+    def test_triploid_calls_count_every_allele(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds
+    ):
+        """Each of the three alleles of a triploid call is counted."""
+        polys = self.poly(tmp_path, write_vcf, synthetic_ref, simple_cds, ["0/0/1", "0/0/0"])
+        _assert_polys(polys, [(1 / 6, "S")])
+
+    def test_partly_missing_call_keeps_a_fixed_difference(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds, outgroup_vcf_empty
+    ):
+        """./1 at a site fixed for ALT adds no REF copy, so the site stays fixed."""
+        ingroup = write_vcf(
+            tmp_path / "fixed_partial", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t./1\t1/1"]
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup_vcf_empty, simple_cds, synthetic_ref)
+        assert poly.polymorphisms == []
+        assert (poly.dn, poly.ds) == (1, 0)
+
+
+class TestOutgroupCalledAlleles:
+    """The outgroup carries ALT only when every allele of its call is called ALT."""
+
+    @pytest.mark.parametrize(
+        "genotype, expected",
+        [("1/.", (0, 0)), ("./1", (0, 0)), ("1", (1, 0)), ("1/1", (1, 0))],
+    )
+    def test_outgroup_call(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotype, expected
+    ):
+        """A partly missing call is unresolved and reads as the reference base."""
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out", [f"chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t{genotype}"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == expected
+
+
+@pytest.fixture(params=["N", "R"])
+def ambiguous_ref(request, tmp_path: Path) -> Path:
+    """The synthetic reference with an ambiguous base in codon 3: ATG GCC A?A."""
+    ref_path = tmp_path / "ambiguous_ref.fa"
+    ref_path.write_text(f">chr1\nATGGCCA{request.param}ATTTTTTTTTTTTTTTTTTTTTT\n")
+    pysam.faidx(str(ref_path))
+    return ref_path
+
+
+class TestAmbiguousReference:
+    """A codon with an ambiguous reference base is skipped and counted as ambiguous."""
+
+    def test_divergence_is_not_reported_as_stop_blocked(
+        self, ambiguous_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """An outgroup ALT in the ambiguous codon is skipped, not counted as stop-blocked."""
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t9\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, ambiguous_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.stop_blocked_pairs == 0
+        assert stats.skipped_ambiguous == 1
+
+    def test_polymorphism_is_counted_as_skipped(
+        self, ambiguous_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """An ingroup SNP in the ambiguous codon is skipped and counted."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t9\t.\tA\tG\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
+        )
+        poly, stats = extract_gene_data(ingroup, None, simple_cds, ambiguous_ref)
+        assert poly.polymorphisms == []
+        assert stats.skipped_ambiguous == 1

@@ -12,9 +12,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from mkado.analysis.asymptotic import PolymorphismData
 from mkado.core.cds import CdsRegion, _COMPLEMENT
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
+from mkado.data.genetic_codes import CLEAN_CODONS
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -132,7 +135,7 @@ def probe_vcf(path: str | Path) -> list[str]:
 
 @dataclass
 class _SnpInfo:
-    """A biallelic ingroup SNP with its diploid allele counts."""
+    """A biallelic ingroup SNP with its called allele counts."""
 
     pos: int  # 0-based genomic position
     ref: str
@@ -162,6 +165,23 @@ class GeneStats:
     skipped_missing: int = 0
     stop_blocked_pairs: int = 0
     """Fixed differences with no stop-free mutational ordering, dropped from Dn/Ds."""
+    skipped_ambiguous: int = 0
+    """SNPs and fixed differences dropped because a codon has a base other than A, C, G or T."""
+
+
+def _genotype_alleles(variant: object) -> np.ndarray | None:
+    """Allele indices of each sample's call (samples x copies), or None with no samples.
+
+    A missing allele is -1, and a copy past a sample's own ploidy, such as a
+    haploid call in a diploid record, is -2. cyvcf2's ``gt_types`` is not used
+    because it types ``0/.`` as HOM_REF and ``./1`` as HET, and so adds copies
+    the call does not have.
+    """
+    genotype = variant.genotype
+    if genotype is None:
+        return None
+    # The last column is the phase flag, not an allele.
+    return genotype.array()[:, :-1]
 
 
 def _ref_base_fetcher(fasta_file: object) -> callable:
@@ -255,19 +275,13 @@ def _query_ingroup_snps_with_handle(
                 stats.skipped_indels += 1
                 continue
 
-            # Get allele frequency from genotypes
-            gt_types = variant.gt_types  # 0=HOM_REF, 1=HET, 2=UNKNOWN, 3=HOM_ALT
-            n_ref = 0
-            n_alt = 0
-            for gt in gt_types:
-                if gt == 0:  # HOM_REF
-                    n_ref += 2
-                elif gt == 1:  # HET
-                    n_ref += 1
-                    n_alt += 1
-                elif gt == 3:  # HOM_ALT
-                    n_alt += 2
-                # gt == 2 is missing, skip
+            # Count each called allele. The site is biallelic, so a called allele is
+            # 0 (REF) or 1 (ALT), and a missing one adds nothing.
+            alleles = _genotype_alleles(variant)
+            n_ref = n_alt = 0
+            if alleles is not None:
+                n_ref = int(np.count_nonzero(alleles == 0))
+                n_alt = int(np.count_nonzero(alleles == 1))
 
             total = n_ref + n_alt
             if total == 0:
@@ -298,10 +312,10 @@ def _query_outgroup_genotype_with_handle(
     """Query outgroup VCF for genotypes at CDS positions.
 
     Uses a pre-opened cyvcf2.VCF handle. Returns dict mapping 0-based genomic
-    position -> outgroup allele. Only includes positions where the outgroup is
-    homozygous for an allele that differs from reference; a heterozygous call
-    cannot resolve a single outgroup allele, so it is left out and treated like
-    a missing record.
+    position -> outgroup allele. Only includes positions where every allele of
+    the outgroup's call is called and is ALT. A heterozygous or partly missing
+    call cannot resolve a single outgroup allele, so it is left out and treated
+    like a missing record.
     """
     outgroup_alleles: dict[int, str] = {}
 
@@ -323,13 +337,13 @@ def _query_outgroup_genotype_with_handle(
             if len(ref) != 1 or len(alt) != 1:
                 continue
 
-            # For single-sample outgroup, check if it carries ALT
-            gt_types = variant.gt_types
-            if len(gt_types) == 0:
+            alleles = _genotype_alleles(variant)
+            if alleles is None:
                 continue
 
-            gt = gt_types[0]
-            if gt == 3:  # HOM_ALT
+            # The outgroup is the first sample. Drop the padding past its ploidy.
+            call = alleles[0][alleles[0] != -2]
+            if call.size and (call == 1).all():
                 outgroup_alleles[pos_0] = alt
 
     return outgroup_alleles
@@ -421,6 +435,11 @@ def extract_gene_data(
             cds, codon_idx, ref_fetch, snp.pos, snp.alt
         )
 
+        # An ambiguous reference base (N, an IUPAC code) leaves the change unknown.
+        if not {ref_codon, alt_codon} <= CLEAN_CODONS:
+            stats.skipped_ambiguous += 1
+            continue
+
         # Skip stop codons in reference
         if code.translate(ref_codon) == "*":
             continue
@@ -476,6 +495,11 @@ def extract_gene_data(
             in_codon = cds.extract_codon(codon_idx, in_fetch)
             out_codon = cds.extract_codon(codon_idx, out_fetch)
             if in_codon == out_codon:
+                continue
+            # Checked before get_path, which has no path for such a codon and would
+            # otherwise report the pair as stop-blocked.
+            if not {in_codon, out_codon} <= CLEAN_CODONS:
+                stats.skipped_ambiguous += 1
                 continue
             if code.translate(in_codon) == "*" or code.translate(out_codon) == "*":
                 continue
