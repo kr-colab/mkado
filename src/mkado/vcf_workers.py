@@ -17,7 +17,7 @@ def _plural(count: int, noun: str) -> str:
 
 
 def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
-    """Build a "skipped N indels, M multi-allelic, ..." warning, or None if nothing was skipped."""
+    """Build a "skipped N indels, ...; used M with REF and ALT swapped" warning, or None."""
     parts = []
     if stats.skipped_indels > 0:
         parts.append(_plural(stats.skipped_indels, "indel"))
@@ -35,9 +35,12 @@ def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
         parts.append(f"{stats.skipped_ambiguous} with ambiguous bases")
     if stats.outgroup_skipped > 0:
         parts.append(_plural(stats.outgroup_skipped, "outgroup record"))
-    if not parts:
+    clauses = [f"skipped {', '.join(parts)}"] if parts else []
+    if stats.swapped_ref_alt > 0:
+        clauses.append(f"used {stats.swapped_ref_alt} with REF and ALT swapped")
+    if not clauses:
         return None
-    return f"{gene_id}: skipped {', '.join(parts)}"
+    return f"{gene_id}: {'; '.join(clauses)}"
 
 
 @dataclass

@@ -986,7 +986,7 @@ class TestReferenceMismatch:
     def test_outgroup_ref_mismatch_is_counted(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
         ingroup = write_vcf(tmp_path / "in", [])
         outgroup = write_vcf(
-            tmp_path / "out", ["chr1\t6\t.\tT\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+            tmp_path / "out", ["chr1\t6\t.\tT\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
         )
         poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
         assert (poly.dn, poly.ds) == (0, 0)
@@ -1049,7 +1049,7 @@ class TestReferenceMismatchCodon:
     ):
         """REF T where the FASTA has A at position 7, in codon 3 with an outgroup difference."""
         ingroup = write_vcf(
-            tmp_path / "in", ["chr1\t7\t.\tT\tA\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
+            tmp_path / "in", ["chr1\t7\t.\tT\tC\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
         )
         outgroup = write_vcf(
             tmp_path / "out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
@@ -1065,7 +1065,7 @@ class TestReferenceMismatchCodon:
         ingroup = write_vcf(
             tmp_path / "in",
             [
-                "chr1\t5\t.\tT\tC\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0",
+                "chr1\t5\t.\tT\tG\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0",
                 "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0",
             ],
         )
@@ -1082,7 +1082,7 @@ class TestReferenceMismatchCodon:
             tmp_path / "out",
             [
                 "chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1",
-                "chr1\t9\t.\tG\tA\t30\tPASS\t.\tGT\t1/1",
+                "chr1\t9\t.\tG\tC\t30\tPASS\t.\tGT\t1/1",
             ],
             samples=OUTGROUP,
         )
@@ -1096,7 +1096,7 @@ class TestReferenceMismatchCodon:
     ):
         """A filtered record with a REF mismatch still shows the FASTA base is wrong."""
         ingroup = write_vcf(
-            tmp_path / "in", ["chr1\t7\t.\tT\tA\t30\tLowQual\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
+            tmp_path / "in", ["chr1\t7\t.\tT\tC\t30\tLowQual\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
         )
         outgroup = write_vcf(
             tmp_path / "out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
@@ -1114,9 +1114,74 @@ class TestReferenceMismatchCodon:
             tmp_path / "in",
             [
                 "chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
-                "chr1\t9\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0",
+                "chr1\t9\t.\tG\tC\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0",
             ],
         )
         poly, stats = extract_gene_data(ingroup, outgroup_vcf_empty, simple_cds, synthetic_ref)
         assert (poly.dn, poly.ds) == (0, 0)
         assert stats.skipped_ref_mismatch == 2
+
+
+class TestSwappedRefAlt:
+    """A VCF REF that is not the FASTA base, with an ALT that is, is read with the two swapped."""
+
+    def test_ingroup_swap_gives_a_polymorphism(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """REF T, ALT C at position 6 (FASTA C): three copies of T in eight."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tT\tC\t30\tPASS\t.\tGT\t0/0\t0/1\t1/1\t1/1"]
+        )
+        poly, stats = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.375, "S")])
+        assert stats.swapped_ref_alt == 1
+        assert stats.skipped_ref_mismatch == 0
+
+    def test_ingroup_swap_can_be_fixed(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, outgroup_vcf_empty
+    ):
+        """REF G, ALT A at position 8 (FASTA A), all 0/0: the ingroup is fixed for G."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t8\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/0\t0/0"]
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup_vcf_empty, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (1, 0)
+
+    def test_outgroup_swap_with_the_non_reference_call(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """A 0/0 call on a swapped record means the outgroup carries G, not the FASTA A."""
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t8\t.\tG\tA\t30\tPASS\t.\tGT\t0/0"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (1, 0)
+        assert stats.swapped_ref_alt == 1
+
+    def test_outgroup_swap_with_the_reference_call(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """A 1/1 call on a swapped record means the outgroup carries the FASTA base."""
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t8\t.\tG\tA\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.outgroup_skipped == 0
+
+    def test_filtered_swap_does_not_remove_its_codon(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """A swapped record agrees with the FASTA, so only the FILTER rule skips it."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t9\t.\tG\tA\t30\tLowQual\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (1, 0)
+        assert stats.skipped_filtered == 1
+        assert stats.skipped_ref_mismatch == 0

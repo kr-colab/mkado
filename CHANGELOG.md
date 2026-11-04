@@ -14,11 +14,12 @@
   the command at start-up; before, it gave empty counts with no warning
   (closes #132).
 - `mkado vcf` did not check its input in three ways. A record whose REF
-  is not the reference FASTA base was used, and could count as a
-  polymorphism. Such a record is now skipped and reported, and every
-  other record in its codon, in either VCF, is skipped and reported too,
-  because the FASTA base there cannot be trusted. Records with a FILTER
-  value other than `PASS` or `.` were used;
+  is not the reference FASTA base was used as it stood. If its ALT is the
+  FASTA base, it is now read with REF and ALT swapped, and the warning
+  reports how many records were swapped. Otherwise it is skipped and
+  reported, and every other record in its codon, in either VCF, is
+  skipped and reported too, because the FASTA base there cannot be
+  trusted. Records with a FILTER value other than `PASS` or `.` were used;
   they are now skipped and reported unless `--include-filtered` is set.
   An outgroup VCF with more than one sample silently used the first
   sample; the command now warns and names it. The docs state that the FT

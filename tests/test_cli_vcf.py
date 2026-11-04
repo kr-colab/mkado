@@ -551,7 +551,7 @@ class TestExampleData:
         result = invoke(example_dataset, example_dataset.gff, "-a", "--bootstrap", "10")
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.startswith("20\t36\t9\t11\t1.000000\t1.000000\t1.000000\texponential\t42\t")
+        assert row.startswith("20\t36\t12\t16\t-0.200000\t-0.200000\t-0.200000\texponential\t42\t")
 
     def test_asymptotic_plot_saved(self, example_dataset, tmp_path):
         plot = tmp_path / "asymptotic.png"
@@ -566,13 +566,13 @@ class TestExampleData:
         result = invoke(example_dataset, example_dataset.gff, "--imputed", *FAST)
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.startswith("20\t36\t9\t11\t1.67\t7.33\t-0.200000\t1\t0.15\t")
+        assert row.startswith("20\t36\t12\t16\t1.71\t10.29\t-0.157143\t0.810608\t0.15\t")
 
     def test_alpha_tg(self, example_dataset):
         result = invoke(example_dataset, example_dataset.gff, "--alpha-tg", *FAST)
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.startswith("20\t36\t9\t11\t0.710345\t0.289655\t")
+        assert row.startswith("20\t36\t12\t16\t0.461538\t0.538462\t")
 
     def test_parallel_matches_sequential(self, example_dataset, example_per_gene):
         parallel = invoke(example_dataset, example_dataset.gff, workers="2")

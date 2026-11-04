@@ -275,6 +275,27 @@ class TestWarningString:
         run(make_task(genome, "g_plus", include_filtered=True))
         assert [call["include_filtered"] for call in calls] == [True]
 
+    @pytest.mark.parametrize(
+        "stats, expected",
+        [
+            (
+                GeneStats(skipped_indels=1, swapped_ref_alt=3),
+                "g: skipped 1 indel; used 3 with REF and ALT swapped",
+            ),
+            (GeneStats(swapped_ref_alt=1), "g: used 1 with REF and ALT swapped"),
+        ],
+    )
+    def test_warning_reports_swapped_records(self, genome, monkeypatch, stats, expected):
+        """Records used with REF and ALT swapped are reported after the skips."""
+
+        def fake_extract(*args, **kwargs):
+            return PolymorphismData(polymorphisms=[], dn=0, ds=0, gene_id="g"), stats
+
+        monkeypatch.setattr("mkado.io.vcf.extract_gene_data", fake_extract)
+        task = make_task(genome, "g_plus", gene_id="g", extract_only=True)
+        wr = _process_single_gene(task, None, None, None)
+        assert wr.warning == expected
+
 
 class TestProcessVcfChunk:
     def test_chunk_equals_per_gene(self, genome):

@@ -202,7 +202,10 @@ Which Records Are Used
 MKado uses a record only when it is a biallelic SNV that passes these checks, in both VCFs:
 
 - **FILTER**: only records with FILTER ``PASS`` or ``.`` are used. Use ``--include-filtered`` to use every record whatever its FILTER value.
-- **REF**: a record with a one-base REF must have the reference FASTA base there. If it does not, the record is skipped, even if another rule would skip it too. The FASTA base there cannot be trusted, so MKado also skips every other record, in either VCF, in the codon that holds that position.
+- **REF**: a record with a one-base REF should have the reference FASTA base there. If it does not, there are two cases:
+
+  - **Swapped**: the record is a biallelic SNV and its ALT is the FASTA base. MKado reads it with REF and ALT swapped: the FASTA base is the reference allele, and the VCF REF is the non-reference allele. The record is then used as usual.
+  - **Mismatch**: neither allele is the FASTA base, or the record is not a biallelic SNV. The record is skipped, even if another rule would skip it too. The FASTA base there cannot be trusted, so MKado also skips every other record, in either VCF, in the codon that holds that position.
 - **Genotype filters (FT)**: MKado does not read the FT FORMAT field. To leave out genotypes that failed a filter, set them to missing first:
 
   .. code-block:: bash
@@ -228,6 +231,8 @@ The line lists only the kinds with a count above zero, in this order:
 - ``stop-blocked codon pairs``: fixed differences where every mutational path passes through a stop codon (see :ref:`counting-differences`)
 - ``with ambiguous bases``: SNPs and fixed differences in a codon with a reference base other than A, C, G or T
 - ``outgroup records``: outgroup records skipped for any of the reasons above, or because they have no genotype
+
+After the skips, a second part reports the records that were used with REF and ALT swapped, for example ``skipped 1 indel; used 3 with REF and ALT swapped``. Many swaps in one file usually mean that the VCF was called against a different version of the reference.
 
 Records with no ALT (``.``, as in an all-sites VCF) and ingroup records with no called ALT allele are invariant sites. They read as the reference base and are not counted, because no data is lost.
 
