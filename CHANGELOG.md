@@ -3,6 +3,17 @@
 ## [Unreleased]
 
 ### Fixed
+- In FASTA input, a codon was missing data only when it had `N` or `-`.
+  A codon with any other IUPAC ambiguity code (`R`, `Y`, `K` and so on)
+  or with `?` was read as a real allele. One such base in one ingroup
+  sequence hid a true fixed difference and reported it as a stop-blocked
+  pair. It also lowered Ls and added the sequence to the frequency
+  denominator. A codon is now used only when all three bases are `A`, `C`,
+  `G` or `T`. Any other codon is missing data for that sequence at that
+  codon, the same as `N` and `-`. A `Sequence` built through the Python
+  API is now uppercased, as FASTA input already was, so lowercase bases
+  are not read as missing data. Results change only for alignments that
+  contain such characters (closes #127).
 - `--verbose` governed only the htslib warnings raised while a VCF was
   opened. Those raised while a record is parsed, such as a FORMAT tag the
   header never declares, are emitted inside the region query and went

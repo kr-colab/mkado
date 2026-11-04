@@ -242,3 +242,40 @@ class TestDerivedState:
         ingroup = ["ATGAAACCC", "ATGAAACCG"]
         assert self.derived(ingroup, codon_index=1) == (0.0, 0)
         assert self.derived(ingroup, codon_index=2) == (0.5, 1)
+
+
+class TestAmbiguousBases:
+    """A codon with any base other than A, C, G or T is missing data for that sequence."""
+
+    @pytest.mark.parametrize("code", list("RYSWKMBDHV?."))
+    def test_codon_set_clean_drops_ambiguous_codon(self, code: str) -> None:
+        """An ambiguity code removes the codon, as N and gaps do."""
+        s = sequence_set(["ATGAAA", f"ATGA{code}A", "ATGAAG"])
+        assert s.codon_set_clean(1) == {"AAA", "AAG"}
+
+    def test_site_codon_counts_drops_ambiguous_codon(self) -> None:
+        """An ambiguous codon is left out of both the counts and the total."""
+        s = sequence_set(["ATGAAA", "ATGARA", "ATGAAG", "ATGAYG"])
+        assert s.site_codon_counts(1) == ({"AAA": 1, "AAG": 1}, 2)
+
+    def test_site_set_clean_drops_ambiguous_base(self) -> None:
+        """Only A, C, G and T remain in the clean nucleotide set."""
+        s = sequence_set(["ATGAAA", "ATGRAA", "ATG?AA", "ATGCAA"])
+        assert s.site_set_clean(3) == {"A", "C"}
+
+    def test_lowercase_input_is_uppercased(self) -> None:
+        """Lowercase bases are read as their uppercase form, not as missing data."""
+        assert Sequence("x", "atgaaa").sequence == "ATGAAA"
+        s = sequence_set(["atgaaa", "ATGAAG"])
+        assert s.codon_set_clean(1) == {"AAA", "AAG"}
+
+    def test_short_codon_is_missing_data(self) -> None:
+        """A sequence that ends inside a codon does not add a partial codon."""
+        s = sequence_set(["ATGAAA", "ATGAA"])
+        assert s.codon_set_clean(1) == {"AAA"}
+
+    def test_derived_state_denominator_drops_ambiguous_codon(self) -> None:
+        """A sequence with an ambiguous codon is left out of the frequency denominator."""
+        ingroup = sequence_set(["ATGAAACCC", "ATGAAGCCC", "ATGARACCC", "ATGAAACCC"])
+        outgroup = sequence_set(["ATGAAACCC"])
+        assert ingroup.derived_state(outgroup, 1) == (pytest.approx(1 / 3), 1)

@@ -4,9 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from mkado.analysis.mk_test import mk_test, mk_test_from_counts
+from mkado.analysis.mk_test import MKResult, mk_test, mk_test_from_counts
 from mkado.analysis.statistics import alpha, dos, fishers_exact, neutrality_index
 from mkado.core.sequences import SequenceSet
+from tests.builders import sequence_set, write_alignment_file
 
 
 class TestStatistics:
@@ -328,3 +329,50 @@ ATGATGATG
         total_poly_filtered = result_with_filter.pn + result_with_filter.ps
 
         assert total_poly_filtered <= total_poly_no_filter
+
+
+class TestAmbiguityCodes:
+    """Ambiguity codes other than N are missing data, not alleles.
+
+    Codon 0 is a fixed nonsynonymous difference (ATG in the ingroup, ACG in the
+    outgroup). Codon 1 is a synonymous polymorphism (CTG/CTA).
+    """
+
+    CLEAN = ["ATGCTG", "ATGCTG", "ATGCTA", "ATGCTG"]
+    OUTGROUP = ["ACGCTG"] * 3
+
+    def run(self, ingroup: list[str]) -> MKResult:
+        return mk_test(sequence_set(ingroup), sequence_set(self.OUTGROUP))
+
+    def test_ambiguity_code_at_fixed_codon_keeps_the_difference(self) -> None:
+        """An R in one ingroup sequence does not hide the fixed difference."""
+        result = self.run(["ARGCTG", *self.CLEAN[1:]])
+        assert (result.dn, result.ds, result.pn, result.ps) == (1, 0, 0, 1)
+        assert result.stop_blocked_pairs == 0
+
+    def test_ambiguity_code_at_polymorphic_codon_keeps_site_counts(self) -> None:
+        """A Y in one ingroup sequence does not change Ls or report a stop-blocked pair."""
+        clean = self.run(self.CLEAN)
+        result = self.run(["ATGCTY", *self.CLEAN[1:]])
+        assert result.ls == pytest.approx(clean.ls)
+        assert result.stop_blocked_pairs == 0
+
+    def test_lowercase_ambiguity_code_in_fasta_matches_n(self, tmp_path: Path) -> None:
+        """From a file, a lowercase r gives the same result as an N."""
+        outgroup = write_alignment_file(
+            tmp_path / "out.fa", {f"o{i}": s for i, s in enumerate(self.OUTGROUP)}
+        )
+        results = []
+        for code in ("N", "r"):
+            records = {f"i{i}": s for i, s in enumerate([f"A{code}GCTG", *self.CLEAN[1:]])}
+            ingroup = write_alignment_file(tmp_path / f"in_{code}.fa", records)
+            results.append(mk_test(ingroup, outgroup))
+        with_n, with_r = results
+        assert (with_r.dn, with_r.ds, with_r.pn, with_r.ps) == (
+            with_n.dn,
+            with_n.ds,
+            with_n.pn,
+            with_n.ps,
+        )
+        assert with_r.ls == pytest.approx(with_n.ls)
+        assert with_r.stop_blocked_pairs == 0
