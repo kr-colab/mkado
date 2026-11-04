@@ -135,7 +135,7 @@ def probe_vcf(path: str | Path) -> list[str]:
 
 @dataclass
 class _SnpInfo:
-    """A biallelic ingroup SNP with its called allele counts."""
+    """A biallelic ingroup SNP with its called allele counts. ``n_alt`` is at least 1."""
 
     pos: int  # 0-based genomic position
     ref: str
@@ -295,6 +295,9 @@ def _query_ingroup_snps_with_handle(
             if total == 0:
                 stats.skipped_missing += 1
                 continue
+            # No called ALT allele: the same as no record, so the ingroup carries REF.
+            if n_alt == 0:
+                continue
 
             snps.append(_SnpInfo(pos=pos_0, ref=ref, alt=alt, n_ref=n_ref, n_alt=n_alt))
 
@@ -438,10 +441,6 @@ def extract_gene_data(
         if snp.is_fixed_alt:
             continue
 
-        # Skip sites fixed for REF (freq == 0)
-        if snp.alt_freq <= 0.0 or snp.alt_freq >= 1.0:
-            continue
-
         codon_idx = cds.genomic_pos_to_codon_index(snp.pos)
         if codon_idx is None:
             continue
@@ -476,8 +475,6 @@ def extract_gene_data(
         if no_singletons and derived_count <= 1:
             continue
         if derived_freq < min_frequency:
-            continue
-        if derived_freq <= 0.0 or derived_freq >= 1.0:
             continue
 
         poly_type = "S" if is_syn else "N"

@@ -3,6 +3,12 @@
 ## [Unreleased]
 
 ### Fixed
+- In `mkado vcf`, an ingroup record with an ALT allele that no called
+  sample carries, such as one where every sample is `0/0`, was taken as a
+  polymorphism in the divergence step. Its codon was then left out of
+  divergence, so a real fixed difference there was lost. These records
+  are common after `bcftools view -s` without `-a`. Such a record is now
+  the same as no record (closes #131).
 - `mkado vcf` counted ingroup allele copies from cyvcf2's genotype types,
   which give a fixed number of copies per type. A partly missing call
   added copies it does not have: `0/.` counted as two REF copies and
