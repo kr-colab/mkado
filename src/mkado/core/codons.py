@@ -148,12 +148,10 @@ class GeneticCode:
             codon: Three-letter codon string
 
         Returns:
-            Number of synonymous sites (0-3)
+            Number of synonymous sites (0-3), or 0.0 for a codon with any base
+            other than A, C, G or T
         """
-        codon = codon.upper()
-        if "N" in codon or "-" in codon:
-            return 0.0
-        return self._syn_sites_cache.get(codon, 0.0)
+        return self._syn_sites_cache.get(codon.upper(), 0.0)
 
     def is_synonymous_change(self, codon1: str, codon2: str) -> bool | None:
         """Check if a single-nucleotide change is synonymous.

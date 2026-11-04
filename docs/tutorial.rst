@@ -192,7 +192,7 @@ If the outgroup has codon AAA, then:
 Some polymorphic sites cannot be polarized:
 
 - **No shared allele**: If no ingroup codon matches any outgroup codon, we cannot determine which is ancestral. This can happen when the outgroup is distantly related or multiple mutations have occurred.
-- **Ambiguous data**: Codons containing ambiguous bases (N) or gaps (-) are excluded from comparison.
+- **Ambiguous data**: A codon with any base other than A, C, G or T, such as ``N``, a gap or an IUPAC ambiguity code, is missing data for that sequence and is not compared (see :ref:`missing-data`).
 
 Unpolarizable sites are excluded from frequency-based analyses (asymptotic test, ``--min-freq`` filtering) but are still counted in the standard MK test's Pn/Ps totals.
 

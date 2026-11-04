@@ -9,10 +9,17 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
+from mkado.data.genetic_codes import CODONS, NUCLEOTIDES
 from mkado.io.fasta import read_fasta
 
 if TYPE_CHECKING:
     pass
+
+# A codon is usable data only when all three bases are A, C, G or T. Any other
+# character (N, a gap, an IUPAC ambiguity code, "?") makes the codon missing data
+# for that sequence, so it never becomes an allele of its own.
+_CLEAN_BASES = frozenset(NUCLEOTIDES)
+_CLEAN_CODONS = frozenset(CODONS)
 
 
 @dataclass
@@ -21,6 +28,11 @@ class Sequence:
 
     name: str
     sequence: str
+
+    def __post_init__(self) -> None:
+        # The clean-codon check matches uppercase bases only, so lowercase input
+        # (soft-masked sequence, for example) would otherwise all be missing data.
+        self.sequence = self.sequence.upper()
 
     def __len__(self) -> int:
         return len(self.sequence)
@@ -128,7 +140,7 @@ class SequenceSet:
         return codons
 
     def codon_set_clean(self, codon_index: int) -> set[str]:
-        """Get unique codons at a position, excluding those with N or gaps.
+        """Get unique codons at a position, excluding any with a base other than A, C, G or T.
 
         Result is cached per ``codon_index`` for the lifetime of the
         ``SequenceSet``. Callers must not mutate the returned set.
@@ -143,7 +155,7 @@ class SequenceSet:
         if cached is not None:
             return cached
         codons = self.codon_set(codon_index)
-        clean = {c for c in codons if "N" not in c and "-" not in c}
+        clean = codons & _CLEAN_CODONS
         self._codon_set_clean_cache[codon_index] = clean
         return clean
 
@@ -195,7 +207,7 @@ class SequenceSet:
         return {seq.sequence[site_index] for seq in self.sequences if site_index < len(seq)}
 
     def site_set_clean(self, site_index: int) -> set[str]:
-        """Get unique nucleotides at a site, excluding N and gaps.
+        """Get unique nucleotides at a site, excluding any base other than A, C, G or T.
 
         Args:
             site_index: Zero-based nucleotide position
@@ -204,7 +216,7 @@ class SequenceSet:
             Set of unique valid nucleotide characters
         """
         sites = self.site_set(site_index)
-        return {s for s in sites if s not in ("N", "-")}
+        return sites & _CLEAN_BASES
 
     def codon_array(self) -> np.ndarray:
         """Get a 2D array of codons (n_sequences x n_codons).
@@ -229,7 +241,7 @@ class SequenceSet:
         return [i for i in range(self.num_codons) if self.is_polymorphic(i)]
 
     def site_codon_counts(self, codon_index: int) -> tuple[dict[str, int], int]:
-        """Count each codon at a position, over sequences with no gap or ambiguity.
+        """Count each codon at a position, over sequences whose codon is all A, C, G or T.
 
         Args:
             codon_index: Zero-based codon index
@@ -243,7 +255,7 @@ class SequenceSet:
         total = 0
         for seq in self.sequences:
             codon = seq.get_codon(codon_index, self.reading_frame)
-            if "N" not in codon and "-" not in codon:
+            if codon in _CLEAN_CODONS:
                 counts[codon] = counts.get(codon, 0) + 1
                 total += 1
         return counts, total

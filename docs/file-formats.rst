@@ -19,7 +19,7 @@ Requirements:
 
 - Standard FASTA format with ``>`` headers
 - Sequences can span multiple lines
-- Any valid sequence characters (ACGT, gaps, ambiguous codes)
+- Bases ``A``, ``C``, ``G`` and ``T``, in uppercase or lowercase. MKado reads any other character, such as ``N``, a gap or an ambiguity code, as missing data (see :ref:`missing-data`)
 
 Alignment Requirements
 ----------------------
@@ -96,23 +96,23 @@ For polarized tests:
 Handling Special Cases
 ----------------------
 
-Gaps
-^^^^
+.. _missing-data:
 
-- Codons containing gaps (``---``) are excluded from analysis
-- Partial gaps within codons are handled conservatively
+Missing and Ambiguous Data
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+MKado uses a codon only if all three bases are ``A``, ``C``, ``G`` or ``T``. Any other character makes the codon missing data. This includes ``N``, a gap (``-``), an IUPAC ambiguity code (``R``, ``Y``, ``K`` and so on) and ``?``. One such base removes the full codon, not only that position.
+
+- MKado removes the sequence from that codon only. The other sequences at that codon are still used, and that sequence is still used at all other codons.
+- Allele frequencies at that codon use only the sequences that remain.
+- MKado drops the codon when the ingroup or the outgroup has no clean sequence there.
+- Lowercase bases are read as uppercase.
 
 Stop Codons
 ^^^^^^^^^^^
 
 - Internal stop codons are flagged but not automatically excluded
 - Check your alignments if you see unexpected results
-
-Ambiguous Bases
-^^^^^^^^^^^^^^^
-
-- ``N`` and other IUPAC ambiguity codes are supported
-- Codons with ambiguous bases may be excluded from certain calculations
 
 Common Problems
 ---------------
