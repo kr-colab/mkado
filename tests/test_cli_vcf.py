@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mkado.cli import app
+from tests.conftest import INGROUP_RECORDS, OUTGROUP_RECORDS, _write_vcf
 
 runner = CliRunner()
 
@@ -578,3 +579,36 @@ class TestExampleData:
         assert parallel.exit_code == 0
         assert rows(parallel.stdout) == rows(example_per_gene.stdout)
         assert len(rows(parallel.stdout)) == 42
+
+
+class TestGenotypeChecks:
+    """A VCF with no genotypes is stopped at start-up; extra outgroup samples are named."""
+
+    @pytest.mark.parametrize(
+        "option, field, records",
+        [
+            ("--vcf", "ingroup_vcf", INGROUP_RECORDS),
+            ("--outgroup-vcf", "outgroup_vcf", OUTGROUP_RECORDS),
+        ],
+    )
+    def test_sites_only_vcf_is_rejected(self, genome, gff_chr1, tmp_path, option, field, records):
+        # Drop the FORMAT and sample columns from every record.
+        sites = ["\t".join(r.split("\t")[:8]) for r in records]
+        sites_only = _write_vcf(tmp_path / "sites", sites, samples=[])
+        result = invoke(dataclasses.replace(genome, **{field: sites_only}), gff_chr1)
+        assert result.exit_code == 1
+        assert f"{option}:" in result.output
+        assert "has no genotypes" in result.output
+
+    def test_extra_outgroup_samples_are_named(self, genome, gff_chr1, tmp_path):
+        two = [f"{r}\t0/0" for r in OUTGROUP_RECORDS]
+        outgroup = _write_vcf(tmp_path / "two", two, samples=["first", "second"])
+        result = invoke(dataclasses.replace(genome, outgroup_vcf=outgroup), gff_chr1, "-f", "tsv")
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: --outgroup-vcf has 2 samples; only the first, first, is read" in result.output
+        )
+
+    def test_include_filtered_is_accepted(self, genome, gff_chr1):
+        result = invoke(genome, gff_chr1, "--include-filtered", "-f", "tsv")
+        assert result.exit_code == 0, result.output

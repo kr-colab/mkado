@@ -12,17 +12,29 @@ if TYPE_CHECKING:
     from mkado.io.vcf import GeneStats
 
 
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
 def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
     """Build a "skipped N indels, M multi-allelic, ..." warning, or None if nothing was skipped."""
     parts = []
     if stats.skipped_indels > 0:
-        parts.append(f"{stats.skipped_indels} indels")
+        parts.append(_plural(stats.skipped_indels, "indel"))
     if stats.skipped_multiallelic > 0:
         parts.append(f"{stats.skipped_multiallelic} multi-allelic")
+    if stats.skipped_filtered > 0:
+        parts.append(f"{stats.skipped_filtered} filtered")
+    if stats.skipped_ref_mismatch > 0:
+        parts.append(f"{stats.skipped_ref_mismatch} with REF not matching the reference")
+    if stats.skipped_missing > 0:
+        parts.append(f"{stats.skipped_missing} with no called genotype")
     if stats.stop_blocked_pairs > 0:
         parts.append(f"{stats.stop_blocked_pairs} stop-blocked codon pairs")
     if stats.skipped_ambiguous > 0:
         parts.append(f"{stats.skipped_ambiguous} with ambiguous bases")
+    if stats.outgroup_skipped > 0:
+        parts.append(_plural(stats.outgroup_skipped, "outgroup record"))
     if not parts:
         return None
     return f"{gene_id}: skipped {', '.join(parts)}"
@@ -49,6 +61,7 @@ class VcfBatchTask:
     code_table: int = 1
     min_freq: float = 0.0
     no_singletons: bool = False
+    include_filtered: bool = False
 
     # Analysis flags
     use_asymptotic: bool = False
@@ -106,6 +119,7 @@ def _process_single_gene(
                 genetic_code=genetic_code,
                 min_frequency=task.min_freq,
                 no_singletons=task.no_singletons,
+                include_filtered=task.include_filtered,
                 ingroup_vcf=ingroup_vcf,
                 outgroup_vcf=outgroup_vcf,
                 ref_fasta=ref_fasta,
@@ -237,6 +251,7 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
                 genetic_code=genetic_code,
                 min_frequency=task.min_freq,
                 no_singletons=task.no_singletons,
+                include_filtered=task.include_filtered,
             )
 
         # Build warning if many sites skipped
