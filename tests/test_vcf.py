@@ -841,3 +841,44 @@ class TestAmbiguousReference:
         poly, stats = extract_gene_data(ingroup, None, simple_cds, ambiguous_ref)
         assert poly.polymorphisms == []
         assert stats.skipped_ambiguous == 1
+
+
+class TestSpanningDeletion:
+    """A ``*`` ALT is a deletion that spans the site, so it is skipped as an indel."""
+
+    def test_ingroup_star_is_counted_as_indel(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tC\t*\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0"]
+        )
+        poly, stats = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
+        assert poly.polymorphisms == []
+        assert stats.skipped_indels == 1
+        assert stats.skipped_ambiguous == 0
+
+    def test_outgroup_star_does_not_void_a_difference(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """The deletion reads as the reference base, so the A>G difference in codon 3 stays."""
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out",
+            [
+                "chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1",
+                "chr1\t9\t.\tA\t*\t30\tPASS\t.\tGT\t1/1",
+            ],
+            samples=OUTGROUP,
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (1, 0)
+        assert stats.skipped_ambiguous == 0
+
+
+class TestCdsPastContigEnd:
+    def test_cds_past_contig_end_is_an_error(self, synthetic_ref, write_vcf, tmp_path):
+        """A CDS that ends past its contig does not match the reference, so the gene fails."""
+        cds = CdsRegion(
+            gene_id="long", transcript_id="tx", chrom="chr1", exons=[(0, 33)], strand="+"
+        )
+        ingroup = write_vcf(tmp_path / "in", [])
+        with pytest.raises(ValueError, match="past the end of chr1"):
+            extract_gene_data(ingroup, None, cds, synthetic_ref)

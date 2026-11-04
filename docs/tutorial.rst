@@ -187,12 +187,14 @@ If the outgroup has codon AAA, then:
 - AAG is the **derived** allele (new mutation in ingroup)
 - Derived allele frequency = 0.25
 
+.. _unpolarizable-sites:
+
 **Unpolarizable sites:**
 
 Some polymorphic sites cannot be polarized:
 
 - **No shared allele**: If no ingroup codon matches any outgroup codon, we cannot determine which is ancestral. This can happen when the outgroup is distantly related or multiple mutations have occurred.
-- **Ambiguous data**: A codon with any base other than A, C, G or T, such as ``N``, a gap or an IUPAC ambiguity code, is missing data for that sequence and is not compared (see :ref:`missing-data`).
+- **No outgroup data**: If every outgroup sequence is missing data at the codon (see :ref:`missing-data`), no outgroup codon exists to share.
 
 Unpolarizable sites are excluded from frequency-based analyses (asymptotic test, ``--min-freq`` filtering) but are still counted in the standard MK test's Pn/Ps totals.
 

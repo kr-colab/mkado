@@ -169,6 +169,15 @@ class GeneStats:
     """SNPs and fixed differences dropped because a codon has a base other than A, C, G or T."""
 
 
+def _is_snv(ref: str, alt: str) -> bool:
+    """Whether a biallelic record is a single-base substitution.
+
+    A ``*`` ALT is one character, but it marks a deletion that spans the site,
+    so it is not a base.
+    """
+    return len(ref) == 1 and len(alt) == 1 and alt != "*"
+
+
 def _genotype_alleles(variant: object) -> np.ndarray | None:
     """Allele indices of each sample's call (samples x copies), or None with no samples.
 
@@ -270,8 +279,7 @@ def _query_ingroup_snps_with_handle(
             ref = variant.REF.upper()
             alt = variant.ALT[0].upper()
 
-            # Must be SNP
-            if len(ref) != 1 or len(alt) != 1:
+            if not _is_snv(ref, alt):
                 stats.skipped_indels += 1
                 continue
 
@@ -334,7 +342,7 @@ def _query_outgroup_genotype_with_handle(
             ref = variant.REF.upper()
             alt = variant.ALT[0].upper()
 
-            if len(ref) != 1 or len(alt) != 1:
+            if not _is_snv(ref, alt):
                 continue
 
             alleles = _genotype_alleles(variant)
@@ -399,6 +407,14 @@ def extract_gene_data(
         import pysam
 
         ref_fasta = pysam.FastaFile(str(ref_fasta_path))
+
+    # A CDS that runs past its contig means the annotation does not match the reference.
+    contig_length = ref_fasta.get_reference_length(cds.chrom)
+    cds_end = cds.exons[-1][1]
+    if cds_end > contig_length:
+        if owns_ref_fasta:
+            ref_fasta.close()
+        raise ValueError(f"CDS ends at {cds_end}, past the end of {cds.chrom} ({contig_length} bp)")
     ref_fetch = _ref_base_fetcher(ref_fasta)
 
     # Get ingroup SNPs

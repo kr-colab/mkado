@@ -19,6 +19,11 @@
   pair, and a SNP in such a codon was dropped without a count. Both are
   now counted as skipped, and the per-gene warning reports them as
   "with ambiguous bases" (closes #130).
+- In `mkado vcf`, a `*` ALT, which marks a deletion that spans the site,
+  went through as a base. It is now skipped and counted as an indel in
+  the ingroup, and ignored in the outgroup. A CDS that runs past the end
+  of its contig now fails the gene with an error. Before, its last codons
+  had no reference base and were dropped under the wrong cause.
 - In FASTA input, a codon was missing data only when it had `N` or `-`.
   A codon with any other IUPAC ambiguity code (`R`, `Y`, `K` and so on)
   or with `?` was read as a real allele. One such base in one ingroup

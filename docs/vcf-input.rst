@@ -216,7 +216,7 @@ Polymorphism Extraction
 Divergence Extraction
 ^^^^^^^^^^^^^^^^^^^^^
 
-1. Build the ingroup codon: the reference codon with the ALT base at each position where every ingroup sample carries ALT
+1. Build the ingroup codon: the reference codon with the ALT base at each position where every called ingroup allele is ALT. Missing calls are not counted, so one called ``1/1`` sample with all others ``./.`` makes the position fixed for ALT
 2. Build the outgroup codon: the reference codon with the outgroup allele at each position the outgroup VCF reports a homozygous-ALT genotype
 3. A codon needs one clean codon per group to be a fixed difference: if any position in the codon is polymorphic in the ingroup, the whole codon is excluded, not just that position
 4. Skip codons that are identical, or that are stop codons in either group
@@ -227,7 +227,7 @@ The output is ``PolymorphismData`` (the same intermediate format used by the FAS
 Edge Cases
 ----------
 
-- **Indels**: Skipped (count logged per gene)
+- **Indels**: Skipped (count logged per gene). A ``*`` ALT, which marks a deletion that spans the site, is counted as an indel
 - **Multi-allelic sites**: Skipped. Pre-decompose with ``bcftools norm -m-`` if needed
 - **Missing genotypes**: Allele frequencies count each called allele and leave out each missing one. ``./.`` adds nothing, ``0/.`` adds one REF copy, and ``./1`` adds one ALT copy. A haploid call adds one copy, and a polyploid call adds one copy per allele. A site with no called allele is skipped
 - **Ambiguous reference bases**: A SNP or a fixed difference in a codon with a reference base other than A, C, G or T (``N`` or an IUPAC code) is skipped, because the change cannot be classified. The per-gene warning gives the count as "with ambiguous bases"
@@ -239,6 +239,7 @@ Edge Cases
 - **Overlapping genes**: Each gene processed independently; the same variant can contribute to multiple genes
 - **Stop codons**: Reference stop codons skipped; premature stop-creating variants treated as nonsynonymous
 - **Incomplete CDS**: Genes where CDS length % 3 != 0 are skipped
+- **CDS past the end of its contig**: The gene fails with an error, because the annotation does not match the reference
 
 Parallel Processing
 -------------------
