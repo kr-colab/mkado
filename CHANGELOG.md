@@ -3,6 +3,27 @@
 ## [Unreleased]
 
 ### Fixed
+- `mkado vcf` counted ingroup allele copies from cyvcf2's genotype types,
+  which give a fixed number of copies per type. A partly missing call
+  added copies it does not have: `0/.` counted as two REF copies and
+  `./1` as one REF and one ALT copy. One `./1` at a site fixed for ALT
+  made it a polymorphism, so the fixed difference was lost. A haploid
+  call counted as two copies, so a haploid singleton passed
+  `--no-singletons`, and a polyploid call was typed wrongly. Frequencies
+  now count each called allele and leave out each missing one. The
+  outgroup carries ALT only when every allele of its call is called ALT,
+  so a partly missing outgroup call reads as the reference base, as a
+  heterozygous one does (closes #128).
+- In `mkado vcf`, a fixed difference in a codon with an ambiguous
+  reference base (`N` or an IUPAC code) was reported as a stop-blocked
+  pair, and a SNP in such a codon was dropped without a count. Both are
+  now counted as skipped, and the per-gene warning reports them as
+  "with ambiguous bases" (closes #130).
+- In `mkado vcf`, a `*` ALT, which marks a deletion that spans the site,
+  went through as a base. It is now skipped and counted as an indel in
+  the ingroup, and ignored in the outgroup. A CDS that runs past the end
+  of its contig now fails the gene with an error. Before, its last codons
+  had no reference base and were dropped under the wrong cause.
 - In FASTA input, a codon was missing data only when it had `N` or `-`.
   A codon with any other IUPAC ambiguity code (`R`, `Y`, `K` and so on)
   or with `?` was read as a real allele. One such base in one ingroup

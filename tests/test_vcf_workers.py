@@ -93,9 +93,9 @@ class TestProcessVcfGene:
         assert wr.warning == expected.warning
 
     @pytest.mark.parametrize("gene_id", CHR1[1:])
-    def test_standard_mk_without_skipped_sites(self, genome, gene_id):
+    def test_standard_mk_other_genes(self, genome, gene_id):
         wr = process_vcf_gene(make_task(genome, gene_id))
-        assert wr.warning is None
+        assert wr.warning == genome.expected[gene_id].warning
         assert _counts(wr.result) == genome.expected[gene_id].counts
 
     def test_extract_only_returns_polymorphism_data(self, genome):
@@ -236,6 +236,18 @@ class TestWarningString:
         wr = _process_single_gene(task, None, None, None)
         assert wr.error is None
         assert wr.warning == expected
+
+    def test_warning_names_ambiguous_codons(self, genome, monkeypatch):
+        """Codons skipped for an ambiguous base are named in the warning."""
+
+        def fake_extract(*args, **kwargs):
+            data = PolymorphismData(polymorphisms=[], dn=0, ds=0, gene_id="g")
+            return data, GeneStats(skipped_ambiguous=2)
+
+        monkeypatch.setattr("mkado.io.vcf.extract_gene_data", fake_extract)
+        task = make_task(genome, "g_plus", gene_id="g", extract_only=True)
+        wr = _process_single_gene(task, None, None, None)
+        assert wr.warning == "g: skipped 2 with ambiguous bases"
 
 
 class TestProcessVcfChunk:

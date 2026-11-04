@@ -9,17 +9,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.data.genetic_codes import CODONS, NUCLEOTIDES
+from mkado.data.genetic_codes import CLEAN_BASES, CLEAN_CODONS
 from mkado.io.fasta import read_fasta
 
 if TYPE_CHECKING:
     pass
-
-# A codon is usable data only when all three bases are A, C, G or T. Any other
-# character (N, a gap, an IUPAC ambiguity code, "?") makes the codon missing data
-# for that sequence, so it never becomes an allele of its own.
-_CLEAN_BASES = frozenset(NUCLEOTIDES)
-_CLEAN_CODONS = frozenset(CODONS)
 
 
 @dataclass
@@ -155,7 +149,7 @@ class SequenceSet:
         if cached is not None:
             return cached
         codons = self.codon_set(codon_index)
-        clean = codons & _CLEAN_CODONS
+        clean = codons & CLEAN_CODONS
         self._codon_set_clean_cache[codon_index] = clean
         return clean
 
@@ -216,7 +210,7 @@ class SequenceSet:
             Set of unique valid nucleotide characters
         """
         sites = self.site_set(site_index)
-        return sites & _CLEAN_BASES
+        return sites & CLEAN_BASES
 
     def codon_array(self) -> np.ndarray:
         """Get a 2D array of codons (n_sequences x n_codons).
@@ -255,7 +249,7 @@ class SequenceSet:
         total = 0
         for seq in self.sequences:
             codon = seq.get_codon(codon_index, self.reading_frame)
-            if codon in _CLEAN_CODONS:
+            if codon in CLEAN_CODONS:
                 counts[codon] = counts.get(codon, 0) + 1
                 total += 1
         return counts, total

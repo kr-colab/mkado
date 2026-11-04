@@ -251,11 +251,12 @@ class Expected:
     dn: int
     ds: int
     skipped: tuple[int, int, int] = (0, 0, 0)  # indels, multi-allelic, missing
+    ambiguous: int = 0  # SNPs and differences in a codon with an ambiguous base
     warning: str | None = None
 
     @property
     def stats(self) -> GeneStats:
-        return GeneStats(*self.skipped)
+        return GeneStats(*self.skipped, skipped_ambiguous=self.ambiguous)
 
     @property
     def counts(self) -> tuple[int, int, int, int]:
@@ -275,7 +276,13 @@ EXPECTED = {
     "g_minus": Expected(((0.125, "S"), (0.375, "N")), dn=1, ds=1),
     "g_split": Expected(((0.125, "N"),), dn=0, ds=1),
     "g_phase1": Expected(((0.25, "S"),), dn=1, ds=0),
-    "g_ncodon": Expected(((0.375, "S"),), dn=0, ds=0),
+    "g_ncodon": Expected(
+        ((0.375, "S"),),
+        dn=0,
+        ds=0,
+        ambiguous=1,
+        warning="g_ncodon: skipped 1 with ambiguous bases",
+    ),
 }
 
 

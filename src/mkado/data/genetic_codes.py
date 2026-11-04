@@ -375,6 +375,11 @@ CODON_TABLE: dict[str, int] = {codon: i for i, codon in enumerate(CODONS)}
 # Nucleotides
 NUCLEOTIDES = ["A", "C", "G", "T"]
 
+# A base or codon is usable data only when it is made of A, C, G and T. Any other
+# character (N, a gap, an IUPAC ambiguity code, "?") makes it missing data.
+CLEAN_BASES = frozenset(NUCLEOTIDES)
+CLEAN_CODONS = frozenset(CODONS)
+
 
 def _compute_codon_paths(
     code: dict[str, str] | None = None,

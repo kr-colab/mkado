@@ -14,9 +14,6 @@ if TYPE_CHECKING:
 
 def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
     """Build a "skipped N indels, M multi-allelic, ..." warning, or None if nothing was skipped."""
-    skipped = stats.skipped_indels + stats.skipped_multiallelic + stats.stop_blocked_pairs
-    if skipped == 0:
-        return None
     parts = []
     if stats.skipped_indels > 0:
         parts.append(f"{stats.skipped_indels} indels")
@@ -24,6 +21,10 @@ def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
         parts.append(f"{stats.skipped_multiallelic} multi-allelic")
     if stats.stop_blocked_pairs > 0:
         parts.append(f"{stats.stop_blocked_pairs} stop-blocked codon pairs")
+    if stats.skipped_ambiguous > 0:
+        parts.append(f"{stats.skipped_ambiguous} with ambiguous bases")
+    if not parts:
+        return None
     return f"{gene_id}: skipped {', '.join(parts)}"
 
 
