@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mkado.cli import app
+from tests.conftest import INGROUP_RECORDS, OUTGROUP_RECORDS, _write_vcf
 
 runner = CliRunner()
 
@@ -550,7 +551,7 @@ class TestExampleData:
         result = invoke(example_dataset, example_dataset.gff, "-a", "--bootstrap", "10")
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.startswith("20\t36\t9\t11\t1.000000\t1.000000\t1.000000\texponential\t42\t")
+        assert row.startswith("20\t36\t12\t16\t-0.200000\t-0.200000\t-0.200000\texponential\t42\t")
 
     def test_asymptotic_plot_saved(self, example_dataset, tmp_path):
         plot = tmp_path / "asymptotic.png"
@@ -565,16 +566,49 @@ class TestExampleData:
         result = invoke(example_dataset, example_dataset.gff, "--imputed", *FAST)
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.startswith("20\t36\t9\t11\t1.67\t7.33\t-0.200000\t1\t0.15\t")
+        assert row.startswith("20\t36\t12\t16\t1.71\t10.29\t-0.157143\t0.810608\t0.15\t")
 
     def test_alpha_tg(self, example_dataset):
         result = invoke(example_dataset, example_dataset.gff, "--alpha-tg", *FAST)
         assert result.exit_code == 0
         _, row = header_and_row(result.stdout)
-        assert row.startswith("20\t36\t9\t11\t0.710345\t0.289655\t")
+        assert row.startswith("20\t36\t12\t16\t0.461538\t0.538462\t")
 
     def test_parallel_matches_sequential(self, example_dataset, example_per_gene):
         parallel = invoke(example_dataset, example_dataset.gff, workers="2")
         assert parallel.exit_code == 0
         assert rows(parallel.stdout) == rows(example_per_gene.stdout)
         assert len(rows(parallel.stdout)) == 42
+
+
+class TestGenotypeChecks:
+    """A VCF with no genotypes is stopped at start-up; extra outgroup samples are named."""
+
+    @pytest.mark.parametrize(
+        "option, field, records",
+        [
+            ("--vcf", "ingroup_vcf", INGROUP_RECORDS),
+            ("--outgroup-vcf", "outgroup_vcf", OUTGROUP_RECORDS),
+        ],
+    )
+    def test_sites_only_vcf_is_rejected(self, genome, gff_chr1, tmp_path, option, field, records):
+        # Drop the FORMAT and sample columns from every record.
+        sites = ["\t".join(r.split("\t")[:8]) for r in records]
+        sites_only = _write_vcf(tmp_path / "sites", sites, samples=[])
+        result = invoke(dataclasses.replace(genome, **{field: sites_only}), gff_chr1)
+        assert result.exit_code == 1
+        assert f"{option}:" in result.output
+        assert "has no genotypes" in result.output
+
+    def test_extra_outgroup_samples_are_named(self, genome, gff_chr1, tmp_path):
+        two = [f"{r}\t0/0" for r in OUTGROUP_RECORDS]
+        outgroup = _write_vcf(tmp_path / "two", two, samples=["first", "second"])
+        result = invoke(dataclasses.replace(genome, outgroup_vcf=outgroup), gff_chr1, "-f", "tsv")
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: --outgroup-vcf has 2 samples; only the first, first, is read" in result.output
+        )
+
+    def test_include_filtered_is_accepted(self, genome, gff_chr1):
+        result = invoke(genome, gff_chr1, "--include-filtered", "-f", "tsv")
+        assert result.exit_code == 0, result.output

@@ -9,6 +9,7 @@ import tempfile
 import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
+from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -133,6 +134,25 @@ def probe_vcf(path: str | Path) -> list[str]:
     return contigs
 
 
+def genotyped_samples(path: str | Path) -> list[str]:
+    """Sample names of a VCF that carries genotypes, or an empty list if it carries none.
+
+    A VCF carries no genotypes when it has no sample columns, or when its header
+    declares no ``GT`` FORMAT field. No result can come from such a file: an
+    ingroup gives no polymorphism, and an outgroup reads as the reference base
+    everywhere.
+    """
+    vcf = _open_vcf(path)
+    try:
+        has_gt = any(
+            header.type == "FORMAT" and header.info().get("ID") == "GT"
+            for header in vcf.header_iter()
+        )
+        return list(vcf.samples) if has_gt else []
+    finally:
+        vcf.close()
+
+
 @dataclass
 class _SnpInfo:
     """A biallelic ingroup SNP with its called allele counts. ``n_alt`` is at least 1."""
@@ -167,6 +187,85 @@ class GeneStats:
     """Fixed differences with no stop-free mutational ordering, dropped from Dn/Ds."""
     skipped_ambiguous: int = 0
     """SNPs and fixed differences dropped because a codon has a base other than A, C, G or T."""
+    skipped_filtered: int = 0
+    """Ingroup records with a FILTER value other than PASS or '.'."""
+    skipped_ref_mismatch: int = 0
+    """Ingroup records whose REF is not the reference FASTA base, and ingroup SNPs in a
+    codon that holds such a position in either VCF."""
+    outgroup_skipped: int = 0
+    """Outgroup records dropped for any reason, including a record with no genotype."""
+    swapped_ref_alt: int = 0
+    """Records in either VCF used with REF and ALT swapped: the VCF REF was not the FASTA
+    base, but the VCF ALT was."""
+
+    def count(self, reason: _Skip) -> None:
+        """Add one ingroup record skipped for ``reason``."""
+        match reason:
+            case _Skip.INDEL:
+                self.skipped_indels += 1
+            case _Skip.MULTIALLELIC:
+                self.skipped_multiallelic += 1
+            case _Skip.FILTERED:
+                self.skipped_filtered += 1
+            case _Skip.REF_MISMATCH:
+                self.skipped_ref_mismatch += 1
+            case _Skip.INVARIANT:
+                # No ALT allele: an invariant site, so no data is lost.
+                pass
+
+
+class _Skip(Enum):
+    """Why a VCF record is not a usable biallelic SNV."""
+
+    INVARIANT = auto()
+    INDEL = auto()
+    MULTIALLELIC = auto()
+    FILTERED = auto()
+    REF_MISMATCH = auto()
+
+
+def _skip_reason(variant: object, fasta_base: str, include_filtered: bool) -> _Skip | None:
+    """Why a record cannot be used as a biallelic SNV, or None if it can.
+
+    A biallelic SNV whose REF is not ``fasta_base`` but whose ALT is can be used:
+    ``_snv_alleles`` reads it with the two alleles swapped.
+    """
+    ref = variant.REF.upper()
+    # Checked first: unless the ALT is the FASTA base (the alleles are only swapped), a
+    # mismatch says the FASTA base is wrong, whatever else the record is.
+    alt_is_fasta = len(variant.ALT) == 1 and variant.ALT[0].upper() == fasta_base
+    if len(ref) == 1 and ref != fasta_base and not alt_is_fasta:
+        return _Skip.REF_MISMATCH
+    if not variant.ALT:
+        return _Skip.INVARIANT
+    if variant.is_indel:
+        return _Skip.INDEL
+    if len(variant.ALT) != 1:
+        return _Skip.MULTIALLELIC
+    if not _is_snv(ref, variant.ALT[0]):
+        return _Skip.INDEL
+    # cyvcf2 gives None for both PASS and '.'.
+    if variant.FILTER is not None and not include_filtered:
+        return _Skip.FILTERED
+    return None
+
+
+def _snv_alleles(variant: object, fasta_base: str) -> tuple[np.ndarray | None, str, str, bool]:
+    """Allele indices, REF, ALT and swap flag of a record that ``_skip_reason`` passed.
+
+    When the VCF REF is not the FASTA base, the ALT is, so the two are swapped back:
+    REF and ALT trade places and called indices 0 and 1 are exchanged. Index 0 is
+    then always the FASTA base, and index 1 the other base.
+    """
+    ref = variant.REF.upper()
+    alt = variant.ALT[0].upper()
+    alleles = _genotype_alleles(variant)
+    swapped = ref != fasta_base
+    if swapped:
+        ref, alt = alt, ref
+        if alleles is not None:
+            alleles = np.where(alleles >= 0, 1 - alleles, alleles)
+    return alleles, ref, alt, swapped
 
 
 def _is_snv(ref: str, alt: str) -> bool:
@@ -244,17 +343,22 @@ def _reconstruct_codon_with_sub(
     return ref_codon.upper(), alt_codon.upper()
 
 
-def _query_ingroup_snps_with_handle(
+def _query_ingroup_snps(
     vcf: object,
     cds: CdsRegion,
     stats: GeneStats,
-) -> list[_SnpInfo]:
+    ref_fetch: callable,
+    include_filtered: bool,
+) -> tuple[list[_SnpInfo], set[int], set[int]]:
     """Query ingroup VCF for biallelic SNPs overlapping a CDS region.
 
-    Uses a pre-opened cyvcf2.VCF handle. Returns SNPs in genomic coordinates
-    with allele frequencies.
+    Returns the SNPs in genomic coordinates with their allele counts, the
+    positions whose REF is not the FASTA base, and the positions of the SNPs
+    read with REF and ALT swapped.
     """
     snps: list[_SnpInfo] = []
+    mismatched: set[int] = set()
+    swapped_at: set[int] = set()
 
     # Build query regions from exons
     for start, end in cds.exons:
@@ -266,26 +370,17 @@ def _query_ingroup_snps_with_handle(
             if not cds.contains_position(pos_0):
                 continue
 
-            # Skip indels
-            if variant.is_indel:
-                stats.skipped_indels += 1
+            fasta_base = ref_fetch(cds.chrom, pos_0)
+            reason = _skip_reason(variant, fasta_base, include_filtered)
+            if reason is _Skip.REF_MISMATCH:
+                mismatched.add(pos_0)
+            if reason is not None:
+                stats.count(reason)
                 continue
-
-            # Skip multi-allelic
-            if len(variant.ALT) != 1:
-                stats.skipped_multiallelic += 1
-                continue
-
-            ref = variant.REF.upper()
-            alt = variant.ALT[0].upper()
-
-            if not _is_snv(ref, alt):
-                stats.skipped_indels += 1
-                continue
+            alleles, ref, alt, swapped = _snv_alleles(variant, fasta_base)
 
             # Count each called allele. The site is biallelic, so a called allele is
             # 0 (REF) or 1 (ALT), and a missing one adds nothing.
-            alleles = _genotype_alleles(variant)
             n_ref = n_alt = 0
             if alleles is not None:
                 n_ref = int(np.count_nonzero(alleles == 0))
@@ -300,35 +395,32 @@ def _query_ingroup_snps_with_handle(
                 continue
 
             snps.append(_SnpInfo(pos=pos_0, ref=ref, alt=alt, n_ref=n_ref, n_alt=n_alt))
+            if swapped:
+                swapped_at.add(pos_0)
 
-    return snps
-
-
-def _query_ingroup_snps(
-    vcf_path: str | Path,
-    cds: CdsRegion,
-    stats: GeneStats,
-) -> list[_SnpInfo]:
-    """Query ingroup VCF for biallelic SNPs overlapping a CDS region."""
-    vcf = _open_vcf(vcf_path)
-    snps = _query_ingroup_snps_with_handle(vcf, cds, stats)
-    vcf.close()
-    return snps
+    return snps, mismatched, swapped_at
 
 
-def _query_outgroup_genotype_with_handle(
+def _query_outgroup_genotype(
     vcf: object,
     cds: CdsRegion,
-) -> dict[int, str]:
+    stats: GeneStats,
+    ref_fetch: callable,
+    include_filtered: bool,
+) -> tuple[dict[int, str], set[int], set[int]]:
     """Query outgroup VCF for genotypes at CDS positions.
 
-    Uses a pre-opened cyvcf2.VCF handle. Returns dict mapping 0-based genomic
-    position -> outgroup allele. Only includes positions where every allele of
-    the outgroup's call is called and is ALT. A heterozygous or partly missing
-    call cannot resolve a single outgroup allele, so it is left out and treated
-    like a missing record.
+    Returns a dict mapping 0-based genomic position -> outgroup allele, the
+    positions whose REF is not the FASTA base, and the positions of homozygous
+    calls read with REF and ALT swapped. The dict only includes positions
+    where every allele of the outgroup's call is called and is ALT. A missing,
+    partly missing or heterozygous call cannot resolve a single outgroup allele,
+    so it is left out, treated like a missing record, and counted in
+    ``stats.outgroup_skipped``.
     """
     outgroup_alleles: dict[int, str] = {}
+    mismatched: set[int] = set()
+    swapped_at: set[int] = set()
 
     for start, end in cds.exons:
         region = f"{cds.chrom}:{start + 1}-{end}"
@@ -338,37 +430,31 @@ def _query_outgroup_genotype_with_handle(
             if not cds.contains_position(pos_0):
                 continue
 
-            # Skip indels and multi-allelic
-            if variant.is_indel or len(variant.ALT) != 1:
+            fasta_base = ref_fetch(cds.chrom, pos_0)
+            reason = _skip_reason(variant, fasta_base, include_filtered)
+            if reason is _Skip.REF_MISMATCH:
+                mismatched.add(pos_0)
+            if reason is not None:
+                if reason is not _Skip.INVARIANT:
+                    stats.outgroup_skipped += 1
                 continue
-
-            ref = variant.REF.upper()
-            alt = variant.ALT[0].upper()
-
-            if not _is_snv(ref, alt):
-                continue
-
-            alleles = _genotype_alleles(variant)
+            alleles, _, alt, swapped = _snv_alleles(variant, fasta_base)
             if alleles is None:
+                stats.outgroup_skipped += 1
                 continue
 
             # The outgroup is the first sample. Drop the padding past its ploidy.
             call = alleles[0][alleles[0] != -2]
-            if call.size and (call == 1).all():
+            # An unresolved call reads as REF, the same as no record; counted, as data is lost.
+            if not (call.size and call[0] >= 0 and (call == call[0]).all()):
+                stats.outgroup_skipped += 1
+                continue
+            if call[0] == 1:
                 outgroup_alleles[pos_0] = alt
+            if swapped:
+                swapped_at.add(pos_0)
 
-    return outgroup_alleles
-
-
-def _query_outgroup_genotype(
-    vcf_path: str | Path,
-    cds: CdsRegion,
-) -> dict[int, str]:
-    """Query outgroup VCF for genotypes at CDS positions."""
-    vcf = _open_vcf(vcf_path)
-    outgroup_alleles = _query_outgroup_genotype_with_handle(vcf, cds)
-    vcf.close()
-    return outgroup_alleles
+    return outgroup_alleles, mismatched, swapped_at
 
 
 def extract_gene_data(
@@ -380,6 +466,7 @@ def extract_gene_data(
     min_frequency: float = 0.0,
     no_singletons: bool = False,
     *,
+    include_filtered: bool = False,
     ingroup_vcf: object | None = None,
     outgroup_vcf: object | None = None,
     ref_fasta: object | None = None,
@@ -394,6 +481,7 @@ def extract_gene_data(
         genetic_code: Genetic code for classification (standard if None).
         min_frequency: Minimum derived allele frequency threshold.
         no_singletons: If True, exclude sites where the derived allele is seen once.
+        include_filtered: If True, also use records whose FILTER is not PASS or '.'.
         ingroup_vcf: Pre-opened cyvcf2.VCF handle for ingroup (optional).
         outgroup_vcf: Pre-opened cyvcf2.VCF handle for outgroup (optional).
         ref_fasta: Pre-opened pysam.FastaFile handle (optional).
@@ -420,18 +508,41 @@ def extract_gene_data(
         raise ValueError(f"CDS ends at {cds_end}, past the end of {cds.chrom} ({contig_length} bp)")
     ref_fetch = _ref_base_fetcher(ref_fasta)
 
-    # Get ingroup SNPs
-    if ingroup_vcf is not None:
-        ingroup_snps = _query_ingroup_snps_with_handle(ingroup_vcf, cds, stats)
-    else:
-        ingroup_snps = _query_ingroup_snps(vcf_path, cds, stats)
+    # Open each VCF that was not passed in, and close it after its query.
+    vcf = ingroup_vcf or _open_vcf(vcf_path)
+    ingroup_snps, mismatched, swapped_at = _query_ingroup_snps(
+        vcf, cds, stats, ref_fetch, include_filtered
+    )
+    if ingroup_vcf is None:
+        vcf.close()
 
-    # Get outgroup genotypes
     outgroup_alleles: dict[int, str] = {}
-    if outgroup_vcf is not None:
-        outgroup_alleles = _query_outgroup_genotype_with_handle(outgroup_vcf, cds)
-    elif outgroup_vcf_path is not None:
-        outgroup_alleles = _query_outgroup_genotype(outgroup_vcf_path, cds)
+    outgroup_swapped_at: set[int] = set()
+    if outgroup_vcf is not None or outgroup_vcf_path is not None:
+        vcf = outgroup_vcf or _open_vcf(outgroup_vcf_path)
+        outgroup_alleles, outgroup_mismatched, outgroup_swapped_at = _query_outgroup_genotype(
+            vcf, cds, stats, ref_fetch, include_filtered
+        )
+        mismatched |= outgroup_mismatched
+        if outgroup_vcf is None:
+            vcf.close()
+
+    # The FASTA base at a REF mismatch cannot be trusted, so no record in a codon that
+    # holds one is used, in either group.
+    mismatch_codons = {cds.genomic_pos_to_codon_index(pos) for pos in mismatched}
+
+    def usable(pos: int) -> bool:
+        return cds.genomic_pos_to_codon_index(pos) not in mismatch_codons
+
+    if mismatch_codons:
+        kept_snps = [s for s in ingroup_snps if usable(s.pos)]
+        stats.skipped_ref_mismatch += len(ingroup_snps) - len(kept_snps)
+        ingroup_snps = kept_snps
+        kept_alleles = {pos: alt for pos, alt in outgroup_alleles.items() if usable(pos)}
+        stats.outgroup_skipped += len(outgroup_alleles) - len(kept_alleles)
+        outgroup_alleles = kept_alleles
+    # Counted after the codon rule, so a record is never both swapped and skipped.
+    stats.swapped_ref_alt = sum(map(usable, swapped_at)) + sum(map(usable, outgroup_swapped_at))
 
     # === Polymorphism extraction ===
     polymorphisms: list[tuple[float, str]] = []

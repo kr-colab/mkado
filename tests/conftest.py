@@ -252,11 +252,18 @@ class Expected:
     ds: int
     skipped: tuple[int, int, int] = (0, 0, 0)  # indels, multi-allelic, missing
     ambiguous: int = 0  # SNPs and differences in a codon with an ambiguous base
+    outgroup: int = 0  # outgroup records skipped for any reason
+    swapped: int = 0  # records used with REF and ALT swapped
     warning: str | None = None
 
     @property
     def stats(self) -> GeneStats:
-        return GeneStats(*self.skipped, skipped_ambiguous=self.ambiguous)
+        return GeneStats(
+            *self.skipped,
+            skipped_ambiguous=self.ambiguous,
+            outgroup_skipped=self.outgroup,
+            swapped_ref_alt=self.swapped,
+        )
 
     @property
     def counts(self) -> tuple[int, int, int, int]:
@@ -271,7 +278,12 @@ EXPECTED = {
         dn=1,
         ds=1,
         skipped=(2, 1, 1),
-        warning="g_plus: skipped 2 indels, 1 multi-allelic",
+        outgroup=4,
+        swapped=1,
+        warning=(
+            "g_plus: skipped 2 indels, 1 multi-allelic, 1 with no called genotype, "
+            "4 outgroup records; used 1 with REF and ALT swapped"
+        ),
     ),
     "g_minus": Expected(((0.125, "S"), (0.375, "N")), dn=1, ds=1),
     "g_split": Expected(((0.125, "N"),), dn=0, ds=1),

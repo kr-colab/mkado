@@ -2,7 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+- `mkado vcf --include-filtered` uses every record whatever its FILTER
+  value. By default only `PASS` and `.` records are used now (see Fixed).
+
 ### Fixed
+- `mkado vcf` now reports every record it skips. A `.` ALT is an
+  invariant site and is no longer counted as multi-allelic. The per-gene
+  warning now reports records with no called genotype and every skipped
+  outgroup record, including an outgroup call that is missing, partly
+  missing or heterozygous and so reads as the reference base. A VCF with
+  no sample columns or no `GT` field stops the command at start-up;
+  before, it gave empty counts with no warning (closes #132).
+- `mkado vcf` did not check its input in three ways. A record whose REF
+  is not the reference FASTA base was used as it stood. If its ALT is the
+  FASTA base, it is now read with REF and ALT swapped, and the warning
+  reports how many records were swapped. Otherwise it is skipped and
+  reported, and every other record in its codon, in either VCF, is
+  skipped and reported too, because the FASTA base there cannot be
+  trusted. Records with a FILTER value other than `PASS` or `.` were used;
+  they are now skipped and reported unless `--include-filtered` is set.
+  An outgroup VCF with more than one sample silently used the first
+  sample; the command now warns and names it. The docs state that the FT
+  genotype field is not used (closes #133).
 - In `mkado vcf`, an ingroup record with an ALT allele that no called
   sample carries, such as one where every sample is `0/0`, was taken as a
   polymorphism in the divergence step. Its codon was then left out of

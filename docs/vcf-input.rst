@@ -13,7 +13,7 @@ Required Input Files
 ``--vcf`` : Ingroup VCF
 ^^^^^^^^^^^^^^^^^^^^^^^
 
-A multi-sample population VCF file. It must be bgzipped and indexed with ``tabix`` or ``bcftools index``. MKado reads each gene through the index, so an uncompressed or unindexed VCF cannot be queried, and the command stops before running any gene.
+A multi-sample population VCF file. It must be bgzipped and indexed with ``tabix`` or ``bcftools index``. MKado reads each gene through the index, so an uncompressed or unindexed VCF cannot be queried, and the command stops before running any gene. The file must also carry genotypes: if it has no sample columns, or its header declares no ``GT`` FORMAT field, the command stops at start-up.
 
 .. code-block:: bash
 
@@ -24,9 +24,9 @@ A multi-sample population VCF file. It must be bgzipped and indexed with ``tabix
 ``--outgroup-vcf`` : Outgroup VCF
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A single-sample VCF of the outgroup species, called against the **same reference genome** as the ingroup VCF. This is used to determine divergence (Dn/Ds) and to polarize polymorphisms.
+A VCF of the outgroup species, called against the **same reference genome** as the ingroup VCF. This is used to determine divergence (Dn/Ds) and to polarize polymorphisms.
 
-The outgroup VCF must be bgzipped and indexed like the ingroup VCF.
+The outgroup VCF must be bgzipped and indexed like the ingroup VCF, and it must carry genotypes, the same as the ingroup VCF. Only the first sample is read. If the file has more than one sample, MKado warns at start-up and names the sample it reads. To use a different sample, subset the file first with ``bcftools view -s <sample>``.
 
 The outgroup carries the ALT base at a position only when every allele of its call is called and is ALT (``1/1``, or ``1`` for a haploid call). Positions with no record in the outgroup VCF, with a missing genotype, with a partly missing genotype (``1/.``, ``./1``), or with a heterozygous genotype are taken as the reference base. A heterozygous or partly missing call cannot resolve a single outgroup allele, so it is treated the same as a missing one. The outgroup VCF should therefore be a variants-only call with coverage over the coding sequence. If the annotation uses a contig that either VCF's header never mentions, MKado warns at start-up, because every site on that contig will read as the reference base.
 
@@ -195,6 +195,46 @@ See :doc:`tutorial` for the full list of genetic codes.
 .. note::
 
    By default, low-level warnings from htslib (e.g., "FORMAT 'GT' not defined in header") are suppressed. Use ``--verbose`` to display them on stderr for debugging.
+
+Which Records Are Used
+----------------------
+
+MKado uses a record only when it is a biallelic SNV that passes these checks, in both VCFs:
+
+- **FILTER**: only records with FILTER ``PASS`` or ``.`` are used. Use ``--include-filtered`` to use every record whatever its FILTER value.
+- **REF**: a record with a one-base REF should have the reference FASTA base there. If it does not, there are two cases:
+
+  - **Swapped**: the record is a biallelic SNV and its ALT is the FASTA base. MKado reads it with REF and ALT swapped: the FASTA base is the reference allele, and the VCF REF is the non-reference allele. The record is then used as usual.
+  - **Mismatch**: neither allele is the FASTA base, or the record is not a biallelic SNV. The record is skipped, even if another rule would skip it too. The FASTA base there cannot be trusted, so MKado also skips every other record, in either VCF, in the codon that holds that position.
+- **Genotype filters (FT)**: MKado does not read the FT FORMAT field. To leave out genotypes that failed a filter, set them to missing first:
+
+  .. code-block:: bash
+
+     bcftools +setGT in.vcf.gz -Oz -o out.vcf.gz -- -t q -n . -i 'FMT/FT!="PASS" & FMT/FT!="."'
+
+Skip Warning
+^^^^^^^^^^^^
+
+When a gene loses records, MKado prints one warning line for it, for example:
+
+.. code-block:: text
+
+   Warning: LOC_00000025: skipped 3 with REF not matching the reference
+
+The line lists only the kinds with a count above zero, in this order:
+
+- ``indels``: indels, symbolic alleles such as ``<DEL>``, and ``*`` (spanning deletion) ALTs in the ingroup
+- ``multi-allelic``: ingroup records with more than one ALT
+- ``filtered``: ingroup records with a FILTER value other than ``PASS`` or ``.``
+- ``with REF not matching the reference``: ingroup records whose REF is not the FASTA base, and ingroup SNPs in a codon that holds such a position in either VCF
+- ``with no called genotype``: ingroup records where no sample has a called allele
+- ``stop-blocked codon pairs``: fixed differences where every mutational path passes through a stop codon (see :ref:`counting-differences`)
+- ``with ambiguous bases``: SNPs and fixed differences in a codon with a reference base other than A, C, G or T
+- ``outgroup records``: outgroup records skipped for any of the reasons above, records with no genotype, and records whose call is missing, partly missing or heterozygous (such a call is read as the reference base)
+
+After the skips, a second part reports the records that were used with REF and ALT swapped, for example ``skipped 1 indel; used 3 with REF and ALT swapped``. Many swaps in one file usually mean that the VCF was called against a different version of the reference.
+
+Records with no ALT (``.``, as in an all-sites VCF) and ingroup records with no called ALT allele are invariant sites. They read as the reference base and are not counted, because no data is lost.
 
 How It Works
 ------------

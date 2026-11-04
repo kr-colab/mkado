@@ -1551,7 +1551,10 @@ def vcf(
         Path,
         typer.Option(
             "--outgroup-vcf",
-            help="Single-sample outgroup VCF (same reference; absent positions count as reference)",
+            help=(
+                "Outgroup VCF called against the same reference. Only the first sample is "
+                "read. Positions without a fully called ALT genotype count as reference"
+            ),
         ),
     ],
     # === Gene selection ===
@@ -1614,6 +1617,10 @@ def vcf(
     no_singletons: Annotated[
         bool,
         typer.Option("--no-singletons", help="Exclude singletons"),
+    ] = False,
+    include_filtered: Annotated[
+        bool,
+        typer.Option("--include-filtered", help="Also use records whose FILTER is not PASS or '.'"),
     ] = False,
     code_table: Annotated[
         str,
@@ -1695,7 +1702,7 @@ def vcf(
     # stops the run here instead of failing once per gene. The query itself
     # still raises, which covers a failure that appears mid-run and callers of
     # the extraction that never pass through this command.
-    from mkado.io.vcf import VcfQueryError, probe_vcf
+    from mkado.io.vcf import VcfQueryError, genotyped_samples, probe_vcf
 
     vcf_contigs: dict[str, set[str]] = {}
     for path, name in [(vcf_file, "--vcf"), (outgroup_vcf, "--outgroup-vcf")]:
@@ -1703,6 +1710,17 @@ def vcf(
             vcf_contigs[name] = set(probe_vcf(path))
         except VcfQueryError as e:
             raise cli_error(f"{name}: {e}") from e
+        samples = genotyped_samples(path)
+        if not samples:
+            raise cli_error(
+                f"{name}: {path} has no genotypes: no sample columns, or no GT field in its header"
+            )
+        if name == "--outgroup-vcf" and len(samples) > 1:
+            typer.echo(
+                f"Warning: --outgroup-vcf has {len(samples)} samples; "
+                f"only the first, {samples[0]}, is read",
+                err=True,
+            )
 
     validate_option_compatibility(
         use_asymptotic=use_asymptotic,
@@ -1769,6 +1787,7 @@ def vcf(
             code_table=code_table_id,
             min_freq=min_freq,
             no_singletons=no_singletons,
+            include_filtered=include_filtered,
             use_asymptotic=use_asymptotic and not aggregate,
             bins=bins,
             bootstrap=bootstrap,

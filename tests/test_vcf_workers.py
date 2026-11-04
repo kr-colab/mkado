@@ -249,6 +249,53 @@ class TestWarningString:
         wr = _process_single_gene(task, None, None, None)
         assert wr.warning == "g: skipped 2 with ambiguous bases"
 
+    def test_warning_names_new_skip_kinds(self, genome, monkeypatch):
+        """Filtered, REF-mismatched, uncalled and outgroup skips are named in the warning."""
+
+        def fake_extract(*args, **kwargs):
+            data = PolymorphismData(polymorphisms=[], dn=0, ds=0, gene_id="g")
+            stats = GeneStats(
+                skipped_missing=3, skipped_filtered=1, skipped_ref_mismatch=2, outgroup_skipped=4
+            )
+            return data, stats
+
+        monkeypatch.setattr("mkado.io.vcf.extract_gene_data", fake_extract)
+        task = make_task(genome, "g_plus", gene_id="g", extract_only=True)
+        wr = _process_single_gene(task, None, None, None)
+        assert wr.warning == (
+            "g: skipped 1 filtered, 2 with REF not matching the reference, "
+            "3 with no called genotype, 4 outgroup records"
+        )
+
+    @pytest.mark.parametrize("run", [process_vcf_gene, _via_chunk], ids=["gene", "chunk"])
+    def test_include_filtered_reaches_extraction(self, genome, monkeypatch, record_calls, run):
+        import mkado.io.vcf as vcf_module
+
+        calls = record_calls(monkeypatch, vcf_module, "extract_gene_data")
+        run(make_task(genome, "g_plus", include_filtered=True))
+        assert [call["include_filtered"] for call in calls] == [True]
+
+    @pytest.mark.parametrize(
+        "stats, expected",
+        [
+            (
+                GeneStats(skipped_indels=1, swapped_ref_alt=3),
+                "g: skipped 1 indel; used 3 with REF and ALT swapped",
+            ),
+            (GeneStats(swapped_ref_alt=1), "g: used 1 with REF and ALT swapped"),
+        ],
+    )
+    def test_warning_reports_swapped_records(self, genome, monkeypatch, stats, expected):
+        """Records used with REF and ALT swapped are reported after the skips."""
+
+        def fake_extract(*args, **kwargs):
+            return PolymorphismData(polymorphisms=[], dn=0, ds=0, gene_id="g"), stats
+
+        monkeypatch.setattr("mkado.io.vcf.extract_gene_data", fake_extract)
+        task = make_task(genome, "g_plus", gene_id="g", extract_only=True)
+        wr = _process_single_gene(task, None, None, None)
+        assert wr.warning == expected
+
 
 class TestProcessVcfChunk:
     def test_chunk_equals_per_gene(self, genome):
