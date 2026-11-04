@@ -278,11 +278,11 @@ EXPECTED = {
         dn=1,
         ds=1,
         skipped=(2, 1, 1),
-        outgroup=3,
+        outgroup=4,
         swapped=1,
         warning=(
             "g_plus: skipped 2 indels, 1 multi-allelic, 1 with no called genotype, "
-            "3 outgroup records; used 1 with REF and ALT swapped"
+            "4 outgroup records; used 1 with REF and ALT swapped"
         ),
     ),
     "g_minus": Expected(((0.125, "S"), (0.375, "N")), dn=1, ds=1),

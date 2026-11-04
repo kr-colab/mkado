@@ -1185,3 +1185,31 @@ class TestSwappedRefAlt:
         assert (poly.dn, poly.ds) == (1, 0)
         assert stats.skipped_filtered == 1
         assert stats.skipped_ref_mismatch == 0
+
+
+class TestUnresolvedOutgroupCall:
+    """An outgroup call that cannot resolve one base reads as REF, and is counted."""
+
+    @pytest.mark.parametrize("genotype", ["./.", "1/.", "./1", "0/1"])
+    def test_unresolved_call_is_counted(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotype
+    ):
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out", [f"chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t{genotype}"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.outgroup_skipped == 1
+
+    @pytest.mark.parametrize("genotype, dn", [("0/0", 0), ("1/1", 1)])
+    def test_resolved_call_is_not_counted(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotype, dn
+    ):
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out", [f"chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t{genotype}"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert poly.dn == dn
+        assert stats.outgroup_skipped == 0

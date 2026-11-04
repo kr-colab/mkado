@@ -230,7 +230,7 @@ The line lists only the kinds with a count above zero, in this order:
 - ``with no called genotype``: ingroup records where no sample has a called allele
 - ``stop-blocked codon pairs``: fixed differences where every mutational path passes through a stop codon (see :ref:`counting-differences`)
 - ``with ambiguous bases``: SNPs and fixed differences in a codon with a reference base other than A, C, G or T
-- ``outgroup records``: outgroup records skipped for any of the reasons above, or because they have no genotype
+- ``outgroup records``: outgroup records skipped for any of the reasons above, records with no genotype, and records whose call is missing, partly missing or heterozygous (such a call is read as the reference base)
 
 After the skips, a second part reports the records that were used with REF and ALT swapped, for example ``skipped 1 indel; used 3 with REF and ALT swapped``. Many swaps in one file usually mean that the VCF was called against a different version of the reference.
 

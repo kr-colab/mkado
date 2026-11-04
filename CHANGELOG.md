@@ -10,9 +10,10 @@
 - `mkado vcf` now reports every record it skips. A `.` ALT is an
   invariant site and is no longer counted as multi-allelic. The per-gene
   warning now reports records with no called genotype and every skipped
-  outgroup record. A VCF with no sample columns or no `GT` field stops
-  the command at start-up; before, it gave empty counts with no warning
-  (closes #132).
+  outgroup record, including an outgroup call that is missing, partly
+  missing or heterozygous and so reads as the reference base. A VCF with
+  no sample columns or no `GT` field stops the command at start-up;
+  before, it gave empty counts with no warning (closes #132).
 - `mkado vcf` did not check its input in three ways. A record whose REF
   is not the reference FASTA base was used as it stood. If its ALT is the
   FASTA base, it is now read with REF and ALT swapped, and the warning

@@ -413,9 +413,10 @@ def _query_outgroup_genotype(
     Returns a dict mapping 0-based genomic position -> outgroup allele, the
     positions whose REF is not the FASTA base, and the positions of homozygous
     calls read with REF and ALT swapped. The dict only includes positions
-    where every allele of the outgroup's call is called and is ALT. A
-    heterozygous or partly missing call cannot resolve a single outgroup allele,
-    so it is left out and treated like a missing record.
+    where every allele of the outgroup's call is called and is ALT. A missing,
+    partly missing or heterozygous call cannot resolve a single outgroup allele,
+    so it is left out, treated like a missing record, and counted in
+    ``stats.outgroup_skipped``.
     """
     outgroup_alleles: dict[int, str] = {}
     mismatched: set[int] = set()
@@ -444,10 +445,13 @@ def _query_outgroup_genotype(
 
             # The outgroup is the first sample. Drop the padding past its ploidy.
             call = alleles[0][alleles[0] != -2]
-            if call.size and (call == 1).all():
+            # An unresolved call reads as REF, the same as no record; counted, as data is lost.
+            if not (call.size and call[0] >= 0 and (call == call[0]).all()):
+                stats.outgroup_skipped += 1
+                continue
+            if call[0] == 1:
                 outgroup_alleles[pos_0] = alt
-            # A swap counts only when it resolves the outgroup base, either way.
-            if swapped and call.size and call[0] >= 0 and (call == call[0]).all():
+            if swapped:
                 swapped_at.add(pos_0)
 
     return outgroup_alleles, mismatched, swapped_at
