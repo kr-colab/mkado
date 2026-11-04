@@ -232,6 +232,7 @@ Edge Cases
 - **Missing genotypes**: Allele frequencies count each called allele and leave out each missing one. ``./.`` adds nothing, ``0/.`` adds one REF copy, and ``./1`` adds one ALT copy. A haploid call adds one copy, and a polyploid call adds one copy per allele. A site with no called allele is skipped
 - **Ambiguous reference bases**: A SNP or a fixed difference in a codon with a reference base other than A, C, G or T (``N`` or an IUPAC code) is skipped, because the change cannot be classified. The per-gene warning gives the count as "with ambiguous bases"
 - **Two SNPs in the same codon**: Each SNP classified independently (standard MK convention, avoids phasing issues)
+- **Records with no called ALT allele**: Treated the same as no record, so the ingroup carries the reference base there. Such records are common after ``bcftools view -s`` without ``-a``
 - **Sites fixed for ALT in the ingroup**: A fixed difference when the outgroup carries the reference base; no difference when the outgroup carries the same ALT
 - **Heterozygous outgroup genotype**: Unresolved, treated the same as a missing outgroup record — not used for divergence, and does not polarize a polymorphism at that position
 - **Outgroup third allele at a polymorphic site**: Ignored for divergence, and the polymorphism is not polarized

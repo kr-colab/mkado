@@ -12,6 +12,7 @@ import pytest
 from mkado.core.cds import CdsRegion
 from mkado.core.codons import GeneticCode
 from mkado.io.vcf import (
+    GeneStats,
     VcfQueryError,
     _complement_base,
     _htslib_stderr_to_log,
@@ -882,3 +883,32 @@ class TestCdsPastContigEnd:
         ingroup = write_vcf(tmp_path / "in", [])
         with pytest.raises(ValueError, match="past the end of chr1"):
             extract_gene_data(ingroup, None, cds, synthetic_ref)
+
+
+class TestRecordWithoutCalledAlt:
+    """A record whose called ingroup alleles are all REF is the same as no record."""
+
+    def extract(self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotypes):
+        """Ingroup record in codon 3 at position 7; outgroup fixed for G at position 8."""
+        ingroup = write_vcf(tmp_path / "in", [f"chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t{genotypes}"])
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        return extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+
+    @pytest.mark.parametrize("genotypes", ["0/0\t0/0\t0/0\t0/0", "0/0\t./.\t0/0\t./."])
+    def test_keeps_the_fixed_difference_in_its_codon(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotypes
+    ):
+        poly, stats = self.extract(synthetic_ref, simple_cds, write_vcf, tmp_path, genotypes)
+        assert (poly.dn, poly.ds) == (1, 0)
+        assert poly.polymorphisms == []
+        assert stats == GeneStats()
+
+    def test_real_polymorphism_still_voids_the_codon(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """A called ALT allele in the same codon is a polymorphism, so no fixed difference."""
+        poly, _ = self.extract(synthetic_ref, simple_cds, write_vcf, tmp_path, "0/0\t0/1\t0/0\t0/0")
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert len(poly.polymorphisms) == 1
