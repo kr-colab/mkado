@@ -17,7 +17,7 @@ from scipy import optimize
 from mkado.analysis.statistics import omega_decomposition
 from mkado.core.alignment import AlignedPair, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import SequenceSet
+from mkado.core.sequences import SequenceSet, as_sequence_set
 
 if TYPE_CHECKING:
     pass
@@ -693,7 +693,7 @@ def _polarized_polymorphisms(
 def extract_polymorphism_data(
     ingroup: SequenceSet | str | Path,
     outgroup: SequenceSet | str | Path,
-    reading_frame: int = 1,
+    reading_frame: int | None = None,
     genetic_code: GeneticCode | None = None,
     pool_polymorphisms: bool = False,
     gene_id: str = "",
@@ -708,7 +708,9 @@ def extract_polymorphism_data(
     Args:
         ingroup: SequenceSet or path to FASTA file for ingroup sequences
         outgroup: SequenceSet or path to FASTA file for outgroup sequences
-        reading_frame: Reading frame (1, 2, or 3)
+        reading_frame: Reading frame (1, 2, or 3) for FASTA paths; None means 1.
+            A SequenceSet keeps its own frame, and a different value here raises
+            ValueError.
         genetic_code: Genetic code for translation (uses standard if None)
         pool_polymorphisms: If True, consider sites polymorphic in either
             population (libsequence convention). Frequencies are still
@@ -722,11 +724,8 @@ def extract_polymorphism_data(
     """
     code = genetic_code or DEFAULT_CODE
 
-    # Load sequences if paths provided
-    if isinstance(ingroup, (str, Path)):
-        ingroup = SequenceSet.from_fasta(ingroup, reading_frame, code)
-    if isinstance(outgroup, (str, Path)):
-        outgroup = SequenceSet.from_fasta(outgroup, reading_frame, code)
+    ingroup = as_sequence_set(ingroup, reading_frame, code)
+    outgroup = as_sequence_set(outgroup, reading_frame, code)
 
     # Create aligned pair
     pair = AlignedPair(ingroup=ingroup, outgroup=outgroup, genetic_code=code)
@@ -1144,7 +1143,7 @@ def asymptotic_mk_test_aggregated(
 def asymptotic_mk_test(
     ingroup: SequenceSet | str | Path,
     outgroup: SequenceSet | str | Path,
-    reading_frame: int = 1,
+    reading_frame: int | None = None,
     genetic_code: GeneticCode | None = None,
     num_bins: int = 10,
     bootstrap_replicates: int = 100,
@@ -1164,7 +1163,9 @@ def asymptotic_mk_test(
     Args:
         ingroup: SequenceSet or path to FASTA file for ingroup sequences
         outgroup: SequenceSet or path to FASTA file for outgroup sequences
-        reading_frame: Reading frame (1, 2, or 3)
+        reading_frame: Reading frame (1, 2, or 3) for FASTA paths; None means 1.
+            A SequenceSet keeps its own frame, and a different value here raises
+            ValueError.
         genetic_code: Genetic code for translation (uses standard if None)
         num_bins: Number of frequency bins (default 10)
         bootstrap_replicates: Number of bootstrap replicates for CI (default 100)
@@ -1181,11 +1182,8 @@ def asymptotic_mk_test(
 
     code = genetic_code or DEFAULT_CODE
 
-    # Load sequences if paths provided
-    if isinstance(ingroup, (str, Path)):
-        ingroup = SequenceSet.from_fasta(ingroup, reading_frame, code)
-    if isinstance(outgroup, (str, Path)):
-        outgroup = SequenceSet.from_fasta(outgroup, reading_frame, code)
+    ingroup = as_sequence_set(ingroup, reading_frame, code)
+    outgroup = as_sequence_set(outgroup, reading_frame, code)
 
     # Create aligned pair
     pair = AlignedPair(ingroup=ingroup, outgroup=outgroup, genetic_code=code)

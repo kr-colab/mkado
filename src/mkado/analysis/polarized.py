@@ -15,7 +15,7 @@ from mkado.analysis.statistics import (
 )
 from mkado.core.alignment import PolarizedAlignedPair, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import SequenceSet
+from mkado.core.sequences import SequenceSet, as_sequence_set
 
 if TYPE_CHECKING:
     pass
@@ -145,7 +145,7 @@ def polarized_mk_test(
     ingroup: SequenceSet | str | Path,
     outgroup1: SequenceSet | str | Path,
     outgroup2: SequenceSet | str | Path,
-    reading_frame: int = 1,
+    reading_frame: int | None = None,
     genetic_code: GeneticCode | None = None,
     pool_polymorphisms: bool = False,
     min_frequency: float = 0.0,
@@ -161,7 +161,9 @@ def polarized_mk_test(
         outgroup1: SequenceSet or path to FASTA file for first outgroup
         outgroup2: SequenceSet or path to FASTA file for second outgroup
             (used for polarization)
-        reading_frame: Reading frame (1, 2, or 3)
+        reading_frame: Reading frame (1, 2, or 3) for FASTA paths; None means 1.
+            A SequenceSet keeps its own frame, and a different value here raises
+            ValueError.
         genetic_code: Genetic code for translation (uses standard if None)
         pool_polymorphisms: If True, count polymorphisms from both ingroup
             and outgroup1 (libsequence convention). If False (default), count
@@ -179,13 +181,9 @@ def polarized_mk_test(
     """
     code = genetic_code or DEFAULT_CODE
 
-    # Load sequences if paths provided
-    if isinstance(ingroup, (str, Path)):
-        ingroup = SequenceSet.from_fasta(ingroup, reading_frame, code)
-    if isinstance(outgroup1, (str, Path)):
-        outgroup1 = SequenceSet.from_fasta(outgroup1, reading_frame, code)
-    if isinstance(outgroup2, (str, Path)):
-        outgroup2 = SequenceSet.from_fasta(outgroup2, reading_frame, code)
+    ingroup = as_sequence_set(ingroup, reading_frame, code)
+    outgroup1 = as_sequence_set(outgroup1, reading_frame, code)
+    outgroup2 = as_sequence_set(outgroup2, reading_frame, code)
 
     # Create polarized aligned pair
     pair = PolarizedAlignedPair(

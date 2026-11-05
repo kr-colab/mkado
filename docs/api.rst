@@ -125,6 +125,12 @@ Running MK Tests
    print(f"NI: {result.NI}")
    print(f"Alpha: {result.alpha}")
 
+A ``SequenceSet`` keeps the reading frame it was built with, for example
+``SequenceSet.from_fasta("combined.fa", reading_frame=2)``. All groups in one test must use
+the same frame. The ``reading_frame`` argument of ``mk_test`` and the other tests sets the
+frame only for FASTA paths. If you give it with ``SequenceSet`` objects in a different frame,
+the test raises ``ValueError``.
+
 Asymptotic Analysis
 ^^^^^^^^^^^^^^^^^^^
 

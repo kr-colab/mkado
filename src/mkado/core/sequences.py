@@ -50,6 +50,27 @@ def _length_mismatch_message(sequences: list[Sequence]) -> str:
     return "Sequences have different lengths: " + _first_few(groups, len(ordered), "lengths")
 
 
+def as_sequence_set(
+    source: SequenceSet | str | Path,
+    reading_frame: int | None,
+    genetic_code: GeneticCode,
+) -> SequenceSet:
+    """The SequenceSet for an analysis argument that is a set or a FASTA path.
+
+    A path is read in ``reading_frame``, or in frame 1 when it is None. A set already has
+    a frame, so a ``reading_frame`` that differs from it raises ValueError: the set would
+    otherwise be read in its own frame and the argument would have no effect.
+    """
+    if isinstance(source, (str, Path)):
+        return SequenceSet.from_fasta(source, reading_frame or 1, genetic_code)
+    if reading_frame is not None and reading_frame != source.reading_frame:
+        raise ValueError(
+            f"reading_frame={reading_frame} was given, but the SequenceSet is in frame "
+            f"{source.reading_frame}"
+        )
+    return source
+
+
 def position_bases(counts: dict[str, int], position: int) -> dict[str, int]:
     """Copies of each base at one codon position, from codon counts."""
     bases: dict[str, int] = {}

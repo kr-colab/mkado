@@ -7,6 +7,16 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- In the Python API, the groups of a test could be `SequenceSet` objects
+  in different reading frames. Each group read its codons in its own
+  frame, so the test compared codons at different columns and gave wrong
+  counts with no error. The `reading_frame` argument of `mk_test`,
+  `asymptotic_mk_test`, `extract_polymorphism_data` and
+  `polarized_mk_test` was also ignored for `SequenceSet` arguments.
+  Groups in different frames now raise `ValueError`, and so does a
+  `reading_frame` that differs from the frame of the sets. The argument
+  now defaults to None: frame 1 for FASTA paths, and the frame of the
+  sets for `SequenceSet` objects. The CLI is not affected (closes #147).
 - `mkado vcf` with a plain `--ref` that had no `.fai` index could lose
   most of its genes and still exit 0. Each worker opened the reference,
   so the workers raced to build the same index; in one test run of two,
