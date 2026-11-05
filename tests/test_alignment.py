@@ -314,3 +314,29 @@ class TestAlignedPairLength:
         with pytest.raises(AlignmentLengthError) as excinfo:
             polarized_pair(["ATGAAA"], ["ATGAAG"], ["ATGAAAC"])
         assert "7 bp" in str(excinfo.value)
+
+
+class TestAlignedPairFrame:
+    """Each group reads codons in its own frame, so the groups must use the same one."""
+
+    def test_outgroup_frame_mismatch_raises(self):
+        with pytest.raises(ValueError) as excinfo:
+            AlignedPair(ingroup=sequence_set(["CATGAAA"], 2), outgroup=sequence_set(["CATGAAG"], 1))
+        assert not isinstance(excinfo.value, AlignmentLengthError)
+        message = str(excinfo.value)
+        assert "frame 2" in message
+        assert "frame 1" in message
+
+    def test_outgroup2_frame_mismatch_raises(self):
+        with pytest.raises(ValueError, match="outgroup2 is in frame 1"):
+            PolarizedAlignedPair(
+                ingroup=sequence_set(["CATGAAA"], 2),
+                outgroup=sequence_set(["CATGAAG"], 2),
+                outgroup2=sequence_set(["CATGAAA"], 1),
+            )
+
+    def test_same_frame_passes(self):
+        pair = AlignedPair(
+            ingroup=sequence_set(["CATGAAA"], 2), outgroup=sequence_set(["CATGAAG"], 2)
+        )
+        assert pair.num_codons == 2

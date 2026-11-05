@@ -125,6 +125,12 @@ Running MK Tests
    print(f"NI: {result.NI}")
    print(f"Alpha: {result.alpha}")
 
+A ``SequenceSet`` keeps the reading frame it was built with, for example
+``SequenceSet.from_fasta("combined.fa", reading_frame=2)``. All groups in one test must use
+the same frame. The ``reading_frame`` argument of ``mk_test`` and the other tests sets the
+frame only for FASTA paths. If you give it with ``SequenceSet`` objects in a different frame,
+the test raises ``ValueError``.
+
 Asymptotic Analysis
 ^^^^^^^^^^^^^^^^^^^
 
@@ -132,13 +138,13 @@ Asymptotic Analysis
 
    from mkado import asymptotic_mk_test
 
-   result = asymptotic_mk_test("ingroup.fa", "outgroup.fa", n_bins=20)
+   result = asymptotic_mk_test("ingroup.fa", "outgroup.fa", num_bins=20)
 
    print(f"Asymptotic Alpha: {result.alpha_asymptotic}")
    print(f"95% CI: [{result.ci_low}, {result.ci_high}]")
 
    # Access per-bin data
-   for freq, alpha in zip(result.frequencies, result.alphas):
+   for freq, alpha in zip(result.alpha_x_values, result.alpha_by_freq):
        print(f"Frequency {freq:.2f}: Alpha = {alpha:.3f}")
 
 Batch Processing

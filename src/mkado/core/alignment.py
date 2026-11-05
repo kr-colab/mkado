@@ -56,18 +56,25 @@ class AlignedPair:
     and were dropped from the counts. See GeneticCode.get_path."""
 
     def __post_init__(self) -> None:
-        self._check_length("outgroup", self.outgroup)
+        self._check_aligned("outgroup", self.outgroup)
 
-    def _check_length(self, label: str, other: SequenceSet) -> None:
-        """Raise if ``other`` and the ingroup differ in length.
+    def _check_aligned(self, label: str, other: SequenceSet) -> None:
+        """Raise if ``other`` and the ingroup differ in length or in reading frame.
 
         Bases are compared, not codons: a 6 bp and a 7 bp alignment both have two
-        codons, but the extra base shows that they are not aligned.
+        codons, but the extra base shows that they are not aligned. Each set reads its
+        codons in its own frame, so sets in different frames would compare codons at
+        different columns.
         """
         if self.ingroup.alignment_length != other.alignment_length:
             raise AlignmentLengthError(
                 f"Alignment length mismatch: ingroup is {self.ingroup.alignment_length} bp, "
                 f"{label} is {other.alignment_length} bp"
+            )
+        if self.ingroup.reading_frame != other.reading_frame:
+            raise ValueError(
+                f"Reading frame mismatch: ingroup is in frame {self.ingroup.reading_frame}, "
+                f"{label} is in frame {other.reading_frame}"
             )
 
     @property
@@ -414,7 +421,7 @@ class PolarizedAlignedPair(AlignedPair):
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.outgroup2 is not None:
-            self._check_length("outgroup2", self.outgroup2)
+            self._check_aligned("outgroup2", self.outgroup2)
 
     def polarize_fixed_difference(self, codon_index: int) -> tuple[str, tuple[int, int]] | None:
         """Polarize a fixed difference to determine which lineage changed.

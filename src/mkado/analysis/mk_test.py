@@ -15,7 +15,7 @@ from mkado.analysis.statistics import (
 )
 from mkado.core.alignment import AlignedPair, _count_path, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import SequenceSet
+from mkado.core.sequences import SequenceSet, as_sequence_set
 
 if TYPE_CHECKING:
     pass
@@ -115,7 +115,7 @@ class MKResult:
 def mk_test(
     ingroup: SequenceSet | str | Path,
     outgroup: SequenceSet | str | Path,
-    reading_frame: int = 1,
+    reading_frame: int | None = None,
     genetic_code: GeneticCode | None = None,
     pool_polymorphisms: bool = False,
     min_frequency: float = 0.0,
@@ -133,7 +133,9 @@ def mk_test(
     Args:
         ingroup: SequenceSet or path to FASTA file for ingroup sequences
         outgroup: SequenceSet or path to FASTA file for outgroup sequences
-        reading_frame: Reading frame (1, 2, or 3)
+        reading_frame: Reading frame (1, 2, or 3) for FASTA paths; None means 1.
+            A SequenceSet keeps its own frame, and a different value here raises
+            ValueError.
         genetic_code: Genetic code for translation (uses standard if None)
         pool_polymorphisms: If True, count polymorphisms from both ingroup
             and outgroup (libsequence convention). If False (default), count
@@ -151,11 +153,8 @@ def mk_test(
     """
     code = genetic_code or DEFAULT_CODE
 
-    # Load sequences if paths provided
-    if isinstance(ingroup, (str, Path)):
-        ingroup = SequenceSet.from_fasta(ingroup, reading_frame, code)
-    if isinstance(outgroup, (str, Path)):
-        outgroup = SequenceSet.from_fasta(outgroup, reading_frame, code)
+    ingroup = as_sequence_set(ingroup, reading_frame, code)
+    outgroup = as_sequence_set(outgroup, reading_frame, code)
 
     # Create aligned pair
     pair = AlignedPair(ingroup=ingroup, outgroup=outgroup, genetic_code=code)

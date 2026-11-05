@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numbers
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -48,6 +49,28 @@ def _length_mismatch_message(sequences: list[Sequence]) -> str:
         for length, names in ordered[:_LENGTHS_SHOWN]
     ]
     return "Sequences have different lengths: " + _first_few(groups, len(ordered), "lengths")
+
+
+def as_sequence_set(
+    source: SequenceSet | str | Path,
+    reading_frame: int | None,
+    genetic_code: GeneticCode,
+) -> SequenceSet:
+    """The SequenceSet for an analysis argument that is a set or a FASTA path.
+
+    A path is read in ``reading_frame``, or in frame 1 when it is None. A set already has
+    a frame, so a ``reading_frame`` that differs from it raises ValueError: the set would
+    otherwise be read in its own frame and the argument would have no effect.
+    """
+    if isinstance(source, (str, Path)):
+        frame = 1 if reading_frame is None else reading_frame
+        return SequenceSet.from_fasta(source, frame, genetic_code)
+    if reading_frame is not None and reading_frame != source.reading_frame:
+        raise ValueError(
+            f"reading_frame={reading_frame} was given, but the SequenceSet is in frame "
+            f"{source.reading_frame}"
+        )
+    return source
 
 
 def position_bases(counts: dict[str, int], position: int) -> dict[str, int]:
@@ -121,6 +144,15 @@ class SequenceSet:
     or ``reading_frame`` afterwards will leave stale entries here."""
 
     def __post_init__(self) -> None:
+        # Any other value reads codons at the wrong columns or fails later: -1 slices from
+        # the end, and a bool or a float passes a plain comparison with 1, 2 or 3.
+        frame = self.reading_frame
+        if (
+            isinstance(frame, bool)
+            or not isinstance(frame, numbers.Integral)
+            or frame not in (1, 2, 3)
+        ):
+            raise ValueError(f"reading_frame must be 1, 2 or 3, not {frame!r}")
         # Every length is read from the first sequence, so a set of mixed lengths would
         # give results that depend on which sequence comes first.
         if len({len(seq) for seq in self.sequences}) > 1:
