@@ -376,3 +376,56 @@ class TestAmbiguityCodes:
         )
         assert with_r.ls == pytest.approx(with_n.ls)
         assert with_r.stop_blocked_pairs == 0
+
+
+class TestUnpolarizedSites:
+    """A polymorphism the outgroup cannot polarize is handled the same way in every mode.
+
+    Codon 0 is ATG in both groups. Codon 1 is a 2/4 synonymous polymorphism, AAA/AAG.
+    """
+
+    INGROUP = ["ATGAAA", "ATGAAG", "ATGAAA", "ATGAAG"]
+
+    def run(self, outgroup: str, **kwargs) -> MKResult:
+        return mk_test(sequence_set(self.INGROUP), sequence_set([outgroup]), **kwargs)
+
+    def test_no_clean_outgroup_codon_is_dropped(self) -> None:
+        result = self.run("ATGNNN")
+        assert result.ps == 0
+        assert result.unpolarized_sites == 1
+        assert (result.ln, result.ls) == (pytest.approx(3.0), pytest.approx(0.0))
+
+    def test_difference_at_another_position_still_polarizes(self) -> None:
+        """CAA differs at position 0, but shares the A at the varying position 2."""
+        result = self.run("ATGCAA", no_singletons=True)
+        assert result.ps == 1
+        assert result.unpolarized_sites == 0
+
+    def test_third_allele_counts_without_a_filter(self) -> None:
+        result = self.run("ATGAAC")
+        assert result.ps == 1
+        assert result.unpolarized_sites == 0
+
+    def test_third_allele_is_dropped_under_a_filter(self) -> None:
+        result = self.run("ATGAAC", no_singletons=True)
+        assert result.ps == 0
+        assert result.unpolarized_sites == 1
+
+    def test_each_mutation_is_filtered_by_its_own_position(self) -> None:
+        """AAG x2, AAA, CAG: position 0 has C at 1/4, position 2 has G at 3/4 (outgroup AAA)."""
+        ingroup = ["ATGAAG", "ATGAAG", "ATGAAA", "ATGCAG"]
+        result = mk_test(sequence_set(ingroup), sequence_set(["ATGAAA"]), min_frequency=0.5)
+        assert (result.pn, result.ps) == (0, 1)
+
+    def test_pooled_mode_drops_a_codon_without_outgroup_data(self) -> None:
+        result = self.run("ATGNNN", pool_polymorphisms=True)
+        assert result.ps == 0
+        assert result.unpolarized_sites == 1
+
+
+class TestTriallelicSingletons:
+    def test_two_singletons_at_one_position_are_both_removed(self) -> None:
+        """AAA x8, AAG, AAC against AAA: each derived base is one copy, a singleton."""
+        ingroup = ["AAA"] * 8 + ["AAG", "AAC"]
+        result = mk_test(sequence_set(ingroup), sequence_set(["AAA"]), no_singletons=True)
+        assert (result.pn, result.ps) == (0, 0)

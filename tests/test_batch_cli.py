@@ -266,3 +266,40 @@ class TestFindPartnerFile:
 
     def test_no_candidate_for_the_gene(self, tmp_path: Path) -> None:
         assert find_partner_file(tmp_path / "g1_ingroup.fa", [tmp_path / "g2_out.fa"]) is None
+
+
+# Gene g1 with its outgroup missing at codon 1, where the ingroup has AAA/AAG.
+G1_OUTGROUP_MISSING = {
+    **TWO_GENES,
+    "g1": {**TWO_GENES["g1"], "outgroup": ["ATGNNNCCAGGGTTTAAC"]},
+}
+
+
+class TestUnpolarizedSummary:
+    @pytest.mark.parametrize(
+        "extra", [[], *(args for args, _ in AGGREGATE_MODES)], ids=["standard", *range(3)]
+    )
+    def test_one_line_names_the_genes(self, tmp_path: Path, extra: list[str]) -> None:
+        dirs = write_two_genes(tmp_path, G1_OUTGROUP_MISSING)
+        result = batch_in(dirs, "separate", *extra)
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: 1 polymorphic site in 1 gene could not be polarized against the "
+            "outgroup and was dropped"
+        ) in result.output
+        assert result.output.count("could not be polarized") == 1
+
+
+class TestWarnedGeneIsKept:
+    """A gene whose result carries a warning still appears in the output."""
+
+    def test_stop_blocked_gene_stays_in_the_table(self, tmp_path: Path) -> None:
+        # Under the vertebrate mitochondrial code (table 2), AAA to TGG has no
+        # stop-free path, so gene "blocked" gets a stop-blocked warning.
+        (tmp_path / "blocked.fa").write_text(">a_1\nAAAATG\n>a_2\nAAAATG\n>b_1\nTGGATG\n")
+        (tmp_path / "clean.fa").write_text(">a_1\nAAAATG\n>a_2\nAAGATG\n>b_1\nAAAATG\n")
+        result = batch(tmp_path, "-i", "a", "-o", "b", "--code-table", "2", "-f", "tsv")
+        assert result.exit_code == 0, result.output
+        assert "blocked: 1 codon pair(s) had no stop-free path and were dropped" in result.output
+        genes = [row[0] for row in rows(result.stdout)[1:]]
+        assert sorted(genes) == ["blocked", "clean"]

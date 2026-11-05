@@ -6,15 +6,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import SequenceSet
+from mkado.core.sequences import SequenceSet, ancestral_base, position_bases
 
 if TYPE_CHECKING:
     pass
 
 
-def _count_path(path: list[tuple[str, int]]) -> tuple[int, int]:
-    """Split a mutational path into (replacement, synonymous) step counts."""
-    nonsyn = sum(1 for change_type, _ in path if change_type == "R")
+def _count_path(path: list[tuple]) -> tuple[int, int]:
+    """Split a mutational path, or a mutation list, into (replacement, synonymous) counts.
+
+    Only the first item of each step, ``"R"`` or ``"S"``, is read.
+    """
+    nonsyn = sum(1 for step in path if step[0] == "R")
     return (nonsyn, len(path) - nonsyn)
 
 
@@ -23,9 +26,9 @@ def passes_frequency_filter(
 ) -> bool:
     """Decide whether a polymorphism's (frequency, count) state clears the filters.
 
-    ``SequenceSet.derived_state`` and ``AlignedPair.minor_allele_state`` both
-    return this same (frequency, count) shape, so every counting loop that
-    filters on one or the other can share this one accept/reject rule.
+    ``AlignedPair.polarized_mutations``, ``SequenceSet.derived_state`` and
+    ``AlignedPair.minor_allele_state`` all give this same (frequency, count)
+    shape, so every counting loop can share this one accept/reject rule.
     """
     if state is None:
         return False
@@ -268,8 +271,11 @@ class AlignedPair:
 
         return _count_path(path)
 
-    def _classify_against_major(self, counts: dict[str, int]) -> tuple[int, int] | None:
-        """Classify a codon's alleles against the most common one.
+    def _mutations_against_major(self, counts: dict[str, int]) -> list[tuple[str, int, str, str]]:
+        """List a codon's mutations against the most common allele.
+
+        Each mutation is ``(change_type, position, base, major_base)``: the base this
+        mutation gives at ``position``, and the major allele's base there.
 
         Every allele is compared with the majority codon. A mutation is identified by
         the position it changes and the base it produces, so a change two alleles share
@@ -281,20 +287,21 @@ class AlignedPair:
         so a fixed order is what keeps the result independent of the order of sequences
         in the file.
 
+        ``change_type`` is ``"R"`` for a replacement and ``"S"`` for a synonymous
+        change, and ``position`` is the codon position (0, 1 or 2) it changes.
+
         Args:
             counts: Codon counts at this position over the sample being classified.
 
         Returns:
-            Tuple of (non_synonymous_count, synonymous_count), or None if not a valid
-            polymorphism.
+            The mutations, empty when fewer than two alleles are present.
         """
         if len(counts) < 2:
-            return None
+            return []
 
         major_codon, *others = sorted(counts, key=lambda c: (-counts[c], c))
 
-        total_nonsyn = 0
-        total_syn = 0
+        mutations: list[tuple[str, int, str, str]] = []
         counted: set[tuple[int, str]] = set()
         for codon in others:
             path = self._get_path(major_codon, codon)
@@ -306,12 +313,54 @@ class AlignedPair:
                 if mutation in counted:
                     continue
                 counted.add(mutation)
-                if change_type == "R":
-                    total_nonsyn += 1
-                else:
-                    total_syn += 1
+                mutations.append((change_type, pos, codon[pos], major_codon[pos]))
+        return mutations
 
-        return (total_nonsyn, total_syn)
+    def _classify_against_major(self, counts: dict[str, int]) -> tuple[int, int] | None:
+        """Count a codon's mutations as (non_synonymous, synonymous), or None if not polymorphic.
+
+        See ``_mutations_against_major`` for how the mutations are found.
+        """
+        if len(counts) < 2:
+            return None
+        return _count_path(self._mutations_against_major(counts))
+
+    def polarized_mutations(
+        self, codon_index: int, pooled: bool = False
+    ) -> tuple[list[tuple[str, tuple[float, int] | None]], int]:
+        """Each polymorphic mutation at a codon with its derived state, and how many were dropped.
+
+        A mutation is ``(change_type, state)``: ``change_type`` is ``"R"`` or ``"S"``, and
+        ``state`` is the (frequency, count) of the mutation's derived base at its position,
+        or None when the outgroup shares no base there. The ancestral base is chosen as in
+        ``SequenceSet.position_derived_state``, but at a position with three bases each
+        derived base has its own frequency. Polymorphism is counted only where both groups have a clean codon, the same
+        rule as for divergence and ``count_total_sites``; elsewhere every mutation is
+        dropped and returned as the drop count. Pooled mode lists the mutations over both
+        groups, as ``classify_polymorphism_pooled`` does, but polarizes the ingroup.
+        """
+        ingroup_counts, total = self.ingroup.site_codon_counts(codon_index)
+        counts = self.combined_codon_counts(codon_index) if pooled else ingroup_counts
+        mutations = self._mutations_against_major(counts)
+        source_codons = self.outgroup.codon_set_clean(codon_index)
+        if not (ingroup_counts and source_codons):
+            return [], len(mutations)
+        by_position = {}
+        for position in {position for _, position, _, _ in mutations}:
+            bases = position_bases(ingroup_counts, position)
+            by_position[position] = (bases, ancestral_base(bases, source_codons, position))
+        polarized = []
+        for change_type, position, base, major_base in mutations:
+            bases, ancestral = by_position[position]
+            state = None
+            if ancestral is not None:
+                # When the mutation's base is the ancestral one, the major allele carries
+                # the derived base.
+                derived = major_base if base == ancestral else base
+                count = bases.get(derived, 0)
+                state = (count / total, count)
+            polarized.append((change_type, state))
+        return polarized, 0
 
     def classify_polymorphism(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a polymorphism as synonymous/non-synonymous.

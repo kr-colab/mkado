@@ -73,24 +73,26 @@ The default is ``at`` for backward compatibility. The ``above`` form follows the
 Determining Derived Allele Frequency
 ------------------------------------
 
-To calculate derived frequency, we need to distinguish **ancestral** (original) from **derived** (new mutation) alleles. MKado uses the outgroup:
+To calculate derived frequency, we need to distinguish **ancestral** (original) from **derived** (new mutation) alleles. MKado uses the outgroup, one nucleotide position at a time:
 
-1. At each polymorphic codon in the ingroup, identify which alleles are present
-2. Compare with the outgroup codon at the same position
-3. The allele shared between ingroup and outgroup is **ancestral**
-4. **Derived frequency** = 1.0 − frequency(ancestral allele)
+1. For each mutation at a polymorphic codon, find the bases present in the ingroup at the position it changes
+2. Find the bases that the outgroup has at the same position
+3. The base shared between ingroup and outgroup is **ancestral**
+4. **Derived frequency** = the frequency of the mutation's derived base. At a position with two bases, this is 1.0 − frequency(ancestral base); at a position with three, each derived base has its own frequency
 
 **Example:**
 
-If a codon position has allele A at 80% and allele B at 20% in the ingroup, and the outgroup has allele A:
+If a position has base A at 80% and base G at 20% in the ingroup, and the outgroup has A at that position:
 
 - A is ancestral (shared with outgroup)
-- B is derived (new mutation)
+- G is derived (new mutation)
 - Derived allele frequency = 0.20
+
+A difference between the groups at another position of the same codon does not stop polarization.
 
 .. note::
 
-   Sites where no ingroup allele matches the outgroup cannot be polarized and are excluded from frequency spectrum analysis.
+   A site where no ingroup base matches the outgroup, or where the outgroup has no clean codon, cannot be polarized and is left out of the frequency spectrum analysis. See :ref:`Unpolarizable sites <unpolarizable-sites>`.
 
 Model Fitting and Selection
 ---------------------------
@@ -218,16 +220,16 @@ Example output (pretty format):
 .. code-block:: text
 
    Asymptotic MK Test Results:
-     Asymptotic α: 0.5997 (95% CI [monte-carlo]: 0.5162 - 0.6853)
+     Asymptotic α: 0.5444 (95% CI [monte-carlo]: 0.4674 - 0.6233)
      Divergence: Dn=18828, Ds=49857
      SFS mode: at
-     Polymorphism: Pn=8150, Ps=26641
+     Polymorphism: Pn=15225, Ps=31363
      Sites: Ln=473618.29, Ls=148023.71
-     omega: 0.1180 (omega_a=0.0708, omega_na=0.0472)
-       omega_a 95% CI:  (0.0609, 0.0809)
-       omega_na 95% CI: (0.0371, 0.0571)
+     omega: 0.1180 (omega_a=0.0643, omega_na=0.0538)
+       omega_a 95% CI:  (0.0552, 0.0736)
+       omega_na 95% CI: (0.0445, 0.0629)
      Genes aggregated: 400
-     Fit (linear): α(x) = 0.4336 + 0.1661 * x
+     Fit (linear): α(x) = 0.3866 + 0.1577 * x
 
 The Alpha(x) Plot
 -----------------

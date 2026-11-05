@@ -15,7 +15,7 @@ import numpy as np
 from scipy import optimize
 
 from mkado.analysis.statistics import omega_decomposition
-from mkado.core.alignment import AlignedPair
+from mkado.core.alignment import AlignedPair, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import SequenceSet
 
@@ -40,6 +40,8 @@ class PolymorphismData:
     """Total synonymous sites (Nei-Gojobori) over analyzed codons."""
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
+    unpolarized_sites: int = 0
+    """Polymorphic sites dropped because the outgroup could not polarize them."""
 
 
 def sum_site_totals(
@@ -78,6 +80,8 @@ class AggregatedSFS:
     """SFS construction mode used to build ``pn_counts``/``ps_counts``."""
     stop_blocked_pairs_total: int = 0
     """Sum of per-gene stop-blocked codon pairs (see ``PolymorphismData``)."""
+    unpolarized_sites_total: int = 0
+    """Sum of per-gene unpolarized sites (see ``PolymorphismData``)."""
 
 
 @dataclass
@@ -144,6 +148,8 @@ class AsymptoticMKResult:
     ``"above"`` (Uricchio et al. 2019, inclusive right-tail cumulative count)."""
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
+    unpolarized_sites: int = 0
+    """Polymorphic sites dropped because the outgroup could not polarize them."""
 
     # Dn, Ds, Ln, Ls are constants under the asymptotic Monte Carlo procedure,
     # so omega has no sampling distribution. The CIs on omega_a and omega_na
@@ -654,6 +660,36 @@ def _mask_to_frequency_cutoffs(
     return x_data[mask], y_data[mask]
 
 
+def _polarized_polymorphisms(
+    pair: AlignedPair,
+    codon_indices: list[int],
+    min_frequency: float = 0.0,
+    no_singletons: bool = False,
+) -> tuple[list[tuple[float, str]], int]:
+    """Derived frequency and type of each ingroup mutation, and how many could not be polarized.
+
+    Each mutation is polarized at its own codon position (see
+    ``AlignedPair.polarized_mutations``), so a difference at another position of
+    the codon does not block it. A mutation at a codon where the outgroup has no clean
+    codon, or at a position where no base is shared with the outgroup, is dropped and
+    counted.
+
+    Returns:
+        Tuple of the ``(derived_frequency, "N" or "S")`` list and the drop count.
+    """
+    poly_data: list[tuple[float, str]] = []
+    unpolarized = 0
+    for codon_idx in codon_indices:
+        mutations, dropped = pair.polarized_mutations(codon_idx)
+        unpolarized += dropped
+        for change_type, state in mutations:
+            if state is None:
+                unpolarized += 1
+            elif passes_frequency_filter(state, min_frequency, no_singletons):
+                poly_data.append((state[0], "N" if change_type == "R" else "S"))
+    return poly_data, unpolarized
+
+
 def extract_polymorphism_data(
     ingroup: SequenceSet | str | Path,
     outgroup: SequenceSet | str | Path,
@@ -707,41 +743,15 @@ def extract_polymorphism_data(
                 dn += nonsyn
                 ds += syn
 
-    # Collect polymorphisms with their frequencies
-    poly_data: list[tuple[float, str]] = []
-
     # Get polymorphic sites based on mode
     if pool_polymorphisms:
         poly_sites = pair.polymorphic_sites_pooled()
     else:
         poly_sites = pair.polymorphic_sites_ingroup()
 
-    for codon_idx in poly_sites:
-        codons = list(ingroup.codon_set_clean(codon_idx))
-        if len(codons) < 2:
-            continue
-
-        state = ingroup.derived_state(outgroup, codon_idx)
-        if state is None:
-            continue
-        derived_freq, derived_count = state
-
-        if derived_freq <= 0 or derived_freq >= 1:
-            continue
-
-        if no_singletons and derived_count == 1:
-            continue
-        if derived_freq < min_frequency:
-            continue
-
-        # Classify the polymorphism
-        result = pair.classify_polymorphism(codon_idx)
-        if result is not None:
-            nonsyn, syn = result
-            for _ in range(nonsyn):
-                poly_data.append((derived_freq, "N"))
-            for _ in range(syn):
-                poly_data.append((derived_freq, "S"))
+    poly_data, unpolarized = _polarized_polymorphisms(
+        pair, poly_sites, min_frequency=min_frequency, no_singletons=no_singletons
+    )
 
     ln, ls = pair.count_total_sites()
 
@@ -753,6 +763,7 @@ def extract_polymorphism_data(
         ln=ln,
         ls=ls,
         stop_blocked_pairs=pair.stop_blocked_pairs,
+        unpolarized_sites=unpolarized,
     )
 
 
@@ -781,6 +792,7 @@ def aggregate_polymorphism_data(
     ds_total = sum(g.ds for g in gene_data)
     ln_total, ls_total = sum_site_totals(gene_data)
     stop_blocked_pairs_total = sum(g.stop_blocked_pairs for g in gene_data)
+    unpolarized_sites_total = sum(g.unpolarized_sites for g in gene_data)
 
     # Create frequency bins
     bin_edges = _frequency_bin_edges(num_bins)
@@ -825,6 +837,7 @@ def aggregate_polymorphism_data(
         ps_total=ps_total,
         sfs_mode=sfs_mode,
         stop_blocked_pairs_total=stop_blocked_pairs_total,
+        unpolarized_sites_total=unpolarized_sites_total,
     )
 
 
@@ -912,6 +925,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
         return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1032,6 +1046,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
         return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1098,6 +1113,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
     else:
         a_lin, b_lin = lin_popt
@@ -1120,6 +1136,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
     return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1186,37 +1203,13 @@ def asymptotic_mk_test(
                 dn += nonsyn
                 ds += syn
 
-    # Collect polymorphisms with their frequencies
-    poly_data: list[tuple[float, str]] = []  # (frequency, type: 'N' or 'S')
-
     # Get polymorphic sites based on mode
     if pool_polymorphisms:
         poly_sites = pair.polymorphic_sites_pooled()
     else:
         poly_sites = pair.polymorphic_sites_ingroup()
 
-    for codon_idx in poly_sites:
-        codons = list(ingroup.codon_set_clean(codon_idx))
-        if len(codons) < 2:
-            continue
-
-        # Polarizing needs an allele the ingroup shares with the outgroup.
-        state = ingroup.derived_state(outgroup, codon_idx)
-        if state is None:
-            continue
-        derived_freq, _ = state
-
-        if derived_freq <= 0 or derived_freq >= 1:
-            continue
-
-        # Classify the polymorphism
-        result = pair.classify_polymorphism(codon_idx)
-        if result is not None:
-            nonsyn, syn = result
-            for _ in range(nonsyn):
-                poly_data.append((derived_freq, "N"))
-            for _ in range(syn):
-                poly_data.append((derived_freq, "S"))
+    poly_data, unpolarized = _polarized_polymorphisms(pair, poly_sites)
 
     # Create frequency bins
     bin_edges = _frequency_bin_edges(num_bins)
@@ -1274,6 +1267,7 @@ def asymptotic_mk_test(
             ci_method="bootstrap",
             sfs_mode=sfs_mode,
             stop_blocked_pairs=pair.stop_blocked_pairs,
+            unpolarized_sites=unpolarized,
         )
         return _attach_omega(result, ln_total, ls_total)
 
@@ -1347,5 +1341,6 @@ def asymptotic_mk_test(
         ci_method="bootstrap",
         sfs_mode=sfs_mode,
         stop_blocked_pairs=pair.stop_blocked_pairs,
+        unpolarized_sites=unpolarized,
     )
     return _attach_omega(result, ln_total, ls_total)

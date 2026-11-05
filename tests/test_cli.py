@@ -1107,3 +1107,29 @@ def test_batch_with_no_results_succeeds(tmp_path: Path) -> None:
     result = runner.invoke(app, ["batch", str(alignments), "-i", "nomatch", "-o", "alsonomatch"])
     assert result.exit_code == 0
     assert "No results to display" in result.output
+
+
+class TestUnpolarizedSummary:
+    """One summary line reports polymorphic sites the outgroup cannot polarize."""
+
+    def write(self, tmp_path: Path, outgroup: str) -> Path:
+        fasta = tmp_path / "gene.fa"
+        ingroup = ["ATGAAA", "ATGAAG", "ATGAAA", "ATGAAG"]
+        records = [f">speciesA_{i}\n{seq}\n" for i, seq in enumerate(ingroup)]
+        fasta.write_text("".join(records) + f">speciesB_1\n{outgroup}\n")
+        return fasta
+
+    def test_single_file_prints_the_summary(self, tmp_path: Path) -> None:
+        fasta = self.write(tmp_path, "ACGNNN")
+        result = runner.invoke(app, ["test", str(fasta), "-i", "speciesA", "-o", "speciesB"])
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: 1 polymorphic site in 1 gene could not be polarized against the "
+            "outgroup and was dropped"
+        ) in result.output
+
+    def test_clean_file_prints_no_summary(self, tmp_path: Path) -> None:
+        fasta = self.write(tmp_path, "ACGAAA")
+        result = runner.invoke(app, ["test", str(fasta), "-i", "speciesA", "-o", "speciesB"])
+        assert result.exit_code == 0, result.output
+        assert "could not be polarized" not in result.output

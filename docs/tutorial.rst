@@ -85,18 +85,18 @@ The key insight is that weakly deleterious mutations are more common at low freq
 Determining Derived Allele Frequency
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-To calculate derived allele frequency, we need to identify which allele is **ancestral** (the original state) versus **derived** (the new mutation). MKado uses the outgroup to polarize mutations:
+To calculate derived allele frequency, we need to identify which allele is **ancestral** (the original state) versus **derived** (the new mutation). MKado uses the outgroup to polarize each mutation at its own nucleotide position in the codon:
 
-1. At each polymorphic codon position in the ingroup, examine which codons are present
-2. Compare with the outgroup codon at the same position
-3. The allele shared between ingroup and outgroup is assumed to be **ancestral**
-4. **Derived frequency** = 1.0 − (frequency of ancestral allele in ingroup)
+1. At the position that varies in the ingroup, find the bases present in the ingroup
+2. Find the bases that the outgroup has at the same position
+3. The base shared between ingroup and outgroup is assumed to be **ancestral**
+4. **Derived frequency** = the frequency of the mutation's derived base in the ingroup. At a position with two bases, this is 1.0 − (frequency of the ancestral base)
 
-For example, if a codon position has allele A at 80% and allele B at 20% in the ingroup, and the outgroup has allele A, then A is ancestral and the derived allele frequency is 0.20.
+For example, if a position has base A at 80% and base G at 20% in the ingroup, and the outgroup has A, then A is ancestral and the derived allele frequency is 0.20.
 
 .. note::
 
-   Sites where no ingroup allele matches the outgroup cannot be polarized and are excluded from the frequency spectrum analysis.
+   A site where no ingroup base matches the outgroup cannot be polarized, and is left out of the frequency spectrum analysis. See :ref:`Unpolarizable sites <unpolarizable-sites>`.
 
 The Asymptotic Method
 ^^^^^^^^^^^^^^^^^^^^^
@@ -169,22 +169,24 @@ Polarization in Standard MK and Asymptotic Tests
 
 In the standard and asymptotic MK tests, MKado uses a **single outgroup** to identify ancestral alleles:
 
-1. **For each polymorphic codon position** in the ingroup, MKado identifies which codons are present and their frequencies
-2. **Compare with the outgroup** — find codons that are shared between the ingroup and outgroup
-3. **The shared allele is ancestral** — if multiple ingroup alleles match outgroup alleles, the most frequent one is chosen as ancestral
-4. **Calculate derived frequency** — derived_freq = 1.0 − frequency(ancestral)
+1. **List the mutations at each polymorphic codon.** Each mutation changes one nucleotide position of the codon.
+2. **Compare that position with the outgroup.** Find the bases that the ingroup and the outgroup share at that position. Only that position is compared, so a difference between the groups at another position of the same codon does not stop polarization.
+3. **The shared base is ancestral.** If more than one shared base is present, the one most common in the ingroup is ancestral. A tie goes to the first base in alphabetical order, so the result does not depend on the order of the sequences.
+4. **Calculate derived frequency.** derived_freq = the frequency of the mutation's derived base at its position. The frequency counts only the ingroup sequences with a clean codon there.
+
+Each mutation is filtered and binned by itself. If a codon varies at two positions, each mutation has the frequency of its own position. If a position has three ingroup bases, each derived base has its own frequency: with A ancestral at 80% and G and C at 10% each, both G and C are at 0.10, and both are singletons in a sample of ten.
 
 **Example:**
 
-Consider a codon position where the ingroup has:
+Consider a codon where the ingroup has:
 
 - Codon AAA at 75% frequency
 - Codon AAG at 25% frequency
 
-If the outgroup has codon AAA, then:
+If the outgroup has codon CAA, it differs from the ingroup at position 1, but at the varying position 3 it has A. Then:
 
-- AAA is the **ancestral** allele (shared with outgroup)
-- AAG is the **derived** allele (new mutation in ingroup)
+- A is the **ancestral** base at position 3 (shared with the outgroup)
+- G is the **derived** base (a new mutation in the ingroup)
 - Derived allele frequency = 0.25
 
 .. _unpolarizable-sites:
@@ -193,10 +195,14 @@ If the outgroup has codon AAA, then:
 
 Some polymorphic sites cannot be polarized:
 
-- **No shared allele**: If no ingroup codon matches any outgroup codon, we cannot determine which is ancestral. This can happen when the outgroup is distantly related or multiple mutations have occurred.
-- **No outgroup data**: If every outgroup sequence is missing data at the codon (see :ref:`missing-data`), no outgroup codon exists to share.
+- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in the standard, asymptotic, imputed and α_TG tests. The polarized MK test does not use this rule yet, and still counts such a polymorphism.
+- **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps. With ``--pool-polymorphisms``, ``--min-freq`` and ``--no-singletons`` use the minor allele over both groups, not the ancestral state, so they keep such a site.
 
-Unpolarizable sites are excluded from frequency-based analyses (asymptotic test, ``--min-freq`` filtering) but are still counted in the standard MK test's Pn/Ps totals.
+MKado counts the sites it drops for either reason and prints one line at the end of the run, for example:
+
+.. code-block:: text
+
+   Warning: 2386 polymorphic sites in 209 genes could not be polarized against the outgroup and were dropped
 
 Polarized MK Test
 -----------------

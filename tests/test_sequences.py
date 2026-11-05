@@ -279,3 +279,30 @@ class TestAmbiguousBases:
         ingroup = sequence_set(["ATGAAACCC", "ATGAAGCCC", "ATGARACCC", "ATGAAACCC"])
         outgroup = sequence_set(["ATGAAACCC"])
         assert ingroup.derived_state(outgroup, 1) == (pytest.approx(1 / 3), 1)
+
+
+class TestPositionDerivedState:
+    """Polarization reads one codon position, so a difference elsewhere does not block it."""
+
+    INGROUP = ["AAA", "AAG", "AAA", "AAG"]
+
+    def state(self, ingroup: list[str], outgroup: list[str], position: int = 2):
+        return sequence_set(ingroup).position_derived_state(sequence_set(outgroup), 0, position)
+
+    def test_outgroup_differs_at_another_position(self) -> None:
+        """CAA shares the A at position 2 with half the ingroup."""
+        assert self.state(self.INGROUP, ["CAA"]) == (0.5, 2)
+
+    def test_third_allele_at_the_position(self) -> None:
+        assert self.state(self.INGROUP, ["AAC"]) is None
+
+    def test_outgroup_with_no_clean_codon(self) -> None:
+        assert self.state(self.INGROUP, ["NNN"]) is None
+
+    @pytest.mark.parametrize("outgroup", [["AAA", "AAG"], ["AAG", "AAA"]])
+    def test_tie_goes_to_the_first_base(self, outgroup: list[str]) -> None:
+        """A and G are both shared and equally common: A is ancestral, whatever the order."""
+        assert self.state(self.INGROUP, outgroup) == (0.5, 2)
+
+    def test_missing_ingroup_codon_is_not_counted(self) -> None:
+        assert self.state(["AAA", "AAG", "NNN", "AAA"], ["AAA"]) == (pytest.approx(1 / 3), 1)
