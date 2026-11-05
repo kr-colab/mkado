@@ -138,13 +138,13 @@ Asymptotic Analysis
 
    from mkado import asymptotic_mk_test
 
-   result = asymptotic_mk_test("ingroup.fa", "outgroup.fa", n_bins=20)
+   result = asymptotic_mk_test("ingroup.fa", "outgroup.fa", num_bins=20)
 
    print(f"Asymptotic Alpha: {result.alpha_asymptotic}")
    print(f"95% CI: [{result.ci_low}, {result.ci_high}]")
 
    # Access per-bin data
-   for freq, alpha in zip(result.frequencies, result.alphas):
+   for freq, alpha in zip(result.alpha_x_values, result.alpha_by_freq):
        print(f"Frequency {freq:.2f}: Alpha = {alpha:.3f}")
 
 Batch Processing

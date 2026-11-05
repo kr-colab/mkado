@@ -5,6 +5,7 @@ import pickle
 import numpy as np
 import pytest
 
+from mkado.analysis.mk_test import mk_test
 from mkado.core.codons import GeneticCode
 from mkado.core.sequences import AlignmentLengthError, Sequence, SequenceSet
 from tests.builders import sequence_set, write_alignment_file
@@ -354,3 +355,22 @@ class TestLengthCheck:
         assert message.startswith("Sequences have different lengths: 9 bp (")
         assert "and 15 more lengths" in message
         assert len(message) < 300
+
+
+class TestReadingFrameCheck:
+    """A reading frame is the int 1, 2 or 3; any other value would read the wrong columns."""
+
+    @pytest.mark.parametrize("frame", [1, 2, 3, np.int64(2)])
+    def test_valid_frames_load(self, frame) -> None:
+        assert sequence_set(["CATGAAACC"], reading_frame=frame).reading_frame == frame
+
+    @pytest.mark.parametrize("frame", [0, 4, -1, True, "2", 2.0])
+    def test_invalid_frames_raise(self, frame) -> None:
+        with pytest.raises(ValueError, match="reading_frame must be 1, 2 or 3"):
+            sequence_set(["CATGAAACC"], reading_frame=frame)
+
+    def test_frame_zero_for_a_path_raises(self, tmp_path) -> None:
+        """An explicit 0 is an error, not a request for the default frame."""
+        fasta = write_alignment_file(tmp_path / "g.fa", {"a": "ATGAAA"})
+        with pytest.raises(ValueError, match="reading_frame must be 1, 2 or 3"):
+            mk_test(fasta, fasta, reading_frame=0)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numbers
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -62,7 +63,8 @@ def as_sequence_set(
     otherwise be read in its own frame and the argument would have no effect.
     """
     if isinstance(source, (str, Path)):
-        return SequenceSet.from_fasta(source, reading_frame or 1, genetic_code)
+        frame = 1 if reading_frame is None else reading_frame
+        return SequenceSet.from_fasta(source, frame, genetic_code)
     if reading_frame is not None and reading_frame != source.reading_frame:
         raise ValueError(
             f"reading_frame={reading_frame} was given, but the SequenceSet is in frame "
@@ -142,6 +144,15 @@ class SequenceSet:
     or ``reading_frame`` afterwards will leave stale entries here."""
 
     def __post_init__(self) -> None:
+        # Any other value reads codons at the wrong columns or fails later: -1 slices from
+        # the end, and a bool or a float passes a plain comparison with 1, 2 or 3.
+        frame = self.reading_frame
+        if (
+            isinstance(frame, bool)
+            or not isinstance(frame, numbers.Integral)
+            or frame not in (1, 2, 3)
+        ):
+            raise ValueError(f"reading_frame must be 1, 2 or 3, not {frame!r}")
         # Every length is read from the first sequence, so a set of mixed lengths would
         # give results that depend on which sequence comes first.
         if len({len(seq) for seq in self.sequences}) > 1:

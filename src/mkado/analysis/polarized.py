@@ -144,7 +144,7 @@ class PolarizedMKResult:
 def polarized_mk_test(
     ingroup: SequenceSet | str | Path,
     outgroup1: SequenceSet | str | Path,
-    outgroup2: SequenceSet | str | Path,
+    outgroup2: SequenceSet | str | Path | None,
     reading_frame: int | None = None,
     genetic_code: GeneticCode | None = None,
     pool_polymorphisms: bool = False,
@@ -159,8 +159,10 @@ def polarized_mk_test(
     Args:
         ingroup: SequenceSet or path to FASTA file for ingroup sequences
         outgroup1: SequenceSet or path to FASTA file for first outgroup
-        outgroup2: SequenceSet or path to FASTA file for second outgroup
-            (used for polarization)
+        outgroup2: SequenceSet or path to FASTA file for the second outgroup, used for
+            polarization. With None, no fixed difference can be polarized, so every one is
+            counted as unpolarized. Polymorphisms are also unpolarized, except with
+            ``pool_polymorphisms``, which counts them in the ingroup lineage.
         reading_frame: Reading frame (1, 2, or 3) for FASTA paths; None means 1.
             A SequenceSet keeps its own frame, and a different value here raises
             ValueError.
@@ -183,7 +185,8 @@ def polarized_mk_test(
 
     ingroup = as_sequence_set(ingroup, reading_frame, code)
     outgroup1 = as_sequence_set(outgroup1, reading_frame, code)
-    outgroup2 = as_sequence_set(outgroup2, reading_frame, code)
+    if outgroup2 is not None:
+        outgroup2 = as_sequence_set(outgroup2, reading_frame, code)
 
     # Create polarized aligned pair
     pair = PolarizedAlignedPair(

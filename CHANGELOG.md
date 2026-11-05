@@ -16,7 +16,10 @@
   Groups in different frames now raise `ValueError`, and so does a
   `reading_frame` that differs from the frame of the sets. The argument
   now defaults to None: frame 1 for FASTA paths, and the frame of the
-  sets for `SequenceSet` objects. The CLI is not affected (closes #147).
+  sets for `SequenceSet` objects. A `SequenceSet` now also rejects a
+  reading frame that is not the integer 1, 2 or 3: a frame of -1, for
+  example, read the frame-2 codons with no error. The CLI is not affected
+  (closes #147).
 - `mkado vcf` with a plain `--ref` that had no `.fai` index could lose
   most of its genes and still exit 0. Each worker opened the reference,
   so the workers raced to build the same index; in one test run of two,

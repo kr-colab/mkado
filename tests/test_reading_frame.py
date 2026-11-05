@@ -77,3 +77,14 @@ def test_path_and_set_in_other_frame_raises(tmp_path: Path) -> None:
     ingroup = write_alignment_file(tmp_path / "in.fa", {f"s{i}": s for i, s in enumerate(INGROUP)})
     with pytest.raises(ValueError, match="frame"):
         mk_test(ingroup, sequence_set(OUTGROUP, 2))
+
+
+def test_polarized_without_outgroup2_accepts_a_frame() -> None:
+    """The second outgroup may be None; a reading_frame argument must not break that."""
+    result = polarized_mk_test(
+        sequence_set(INGROUP, reading_frame=1),
+        sequence_set(OUTGROUP, reading_frame=1),
+        None,
+        reading_frame=1,
+    )
+    assert result is not None
