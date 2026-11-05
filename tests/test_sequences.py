@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from mkado.core.codons import GeneticCode
-from mkado.core.sequences import Sequence, SequenceSet
-from tests.builders import sequence_set
+from mkado.core.sequences import AlignmentLengthError, Sequence, SequenceSet
+from tests.builders import sequence_set, write_alignment_file
 
 VERTEBRATE_MITO = GeneticCode(table_id=2)
 
@@ -142,10 +142,6 @@ class TestCodonAndSiteSets:
         assert s.site_set_clean(3) == {"A"}
         assert s.site_set(99) == set()
 
-    def test_site_set_skips_short_sequences(self) -> None:
-        """A sequence that ends before the site contributes nothing."""
-        assert sequence_set(["ATGAAA", "ATG"]).site_set(4) == {"A"}
-
 
 class TestCodonArray:
     """The sequences-by-codons array."""
@@ -269,11 +265,6 @@ class TestAmbiguousBases:
         s = sequence_set(["atgaaa", "ATGAAG"])
         assert s.codon_set_clean(1) == {"AAA", "AAG"}
 
-    def test_short_codon_is_missing_data(self) -> None:
-        """A sequence that ends inside a codon does not add a partial codon."""
-        s = sequence_set(["ATGAAA", "ATGAA"])
-        assert s.codon_set_clean(1) == {"AAA"}
-
     def test_derived_state_denominator_drops_ambiguous_codon(self) -> None:
         """A sequence with an ambiguous codon is left out of the frequency denominator."""
         ingroup = sequence_set(["ATGAAACCC", "ATGAAGCCC", "ATGARACCC", "ATGAAACCC"])
@@ -306,3 +297,49 @@ class TestPositionDerivedState:
 
     def test_missing_ingroup_codon_is_not_counted(self) -> None:
         assert self.state(["AAA", "AAG", "NNN", "AAA"], ["AAA"]) == (pytest.approx(1 / 3), 1)
+
+
+class TestLengthCheck:
+    """Every sequence in a set must have the same length."""
+
+    def test_equal_lengths_load(self) -> None:
+        assert sequence_set(ALIGNMENT).alignment_length == 9
+
+    def test_unequal_lengths_raise(self) -> None:
+        with pytest.raises(AlignmentLengthError) as excinfo:
+            sequence_set(["ATGAAA", "ATG"])
+        assert isinstance(excinfo.value, ValueError)
+
+    def test_error_does_not_depend_on_order(self) -> None:
+        """The two orderings from issue 136 give the same lengths in the message."""
+        with pytest.raises(AlignmentLengthError) as short_last:
+            sequence_set(["ATGAAA", "ATGAAG", "ATG"])
+        with pytest.raises(AlignmentLengthError) as short_first:
+            sequence_set(["ATG", "ATGAAG", "ATGAAA"])
+        for excinfo in (short_last, short_first):
+            assert "3 bp" in str(excinfo.value)
+            assert "6 bp" in str(excinfo.value)
+
+    def test_one_base_insertion_raises(self) -> None:
+        with pytest.raises(AlignmentLengthError):
+            sequence_set(["ATGAAA", "ATGAAAA"])
+
+    def test_from_fasta_names_file_and_lengths(self, tmp_path) -> None:
+        fasta = write_alignment_file(
+            tmp_path / "ragged.fa", {"in3": "ATG", "in2": "ATGAAG", "in1": "ATGAAA"}
+        )
+        with pytest.raises(AlignmentLengthError) as excinfo:
+            SequenceSet.from_fasta(fasta)
+        message = str(excinfo.value)
+        assert "ragged.fa" in message
+        assert "3 bp" in message
+        assert "6 bp" in message
+        assert "in3" in message
+
+    def test_long_name_list_is_cut(self) -> None:
+        """A length shared by many sequences names only the first few."""
+        with pytest.raises(AlignmentLengthError) as excinfo:
+            sequence_set(["ATGAAA"] + ["ATG"] * 10)
+        message = str(excinfo.value)
+        assert "and 7 more" in message
+        assert "s10" not in message

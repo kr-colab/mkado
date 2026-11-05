@@ -26,7 +26,10 @@ Alignment Requirements
 
 Sequences must be pre-aligned:
 
-- All sequences must be the same length
+- All sequences must be the same length. If they are not, MKado stops with an error
+  that gives each length and the names of the sequences that have it. This also
+  applies to the ingroup, outgroup and second outgroup files, which must have the
+  same length as each other.
 - Gaps should be represented as ``-``
 - Alignment should be in-frame (codon-aligned)
 

@@ -7,6 +7,7 @@ import typer
 from typer.testing import CliRunner
 
 from mkado.cli import app, cli_error
+from tests.builders import write_alignment_file
 
 runner = CliRunner()
 
@@ -1133,3 +1134,49 @@ class TestUnpolarizedSummary:
         result = runner.invoke(app, ["test", str(fasta), "-i", "speciesA", "-o", "speciesB"])
         assert result.exit_code == 0, result.output
         assert "could not be polarized" not in result.output
+
+
+class TestUnequalLengths:
+    """Sequences of different lengths stop the run with an error line, not a traceback."""
+
+    @staticmethod
+    def assert_clean_error(result, *fragments: str) -> None:
+        assert result.exit_code == 1, result.output
+        # An uncaught ValueError would mean the user saw a traceback.
+        assert isinstance(result.exception, SystemExit), result.exception
+        assert "Error:" in result.output
+        for fragment in fragments:
+            assert fragment in result.output
+
+    def test_combined_mode(self, tmp_path: Path) -> None:
+        fasta = write_alignment_file(
+            tmp_path / "all.fa", {"in_1": "ATGAAA", "in_2": "ATG", "out_1": "ATGAAA"}
+        )
+        result = runner.invoke(app, ["test", str(fasta), "-i", "in_", "-o", "out_"])
+        self.assert_clean_error(result, "all.fa", "3 bp", "6 bp")
+
+    def test_separate_mode_ragged_ingroup(self, tmp_path: Path) -> None:
+        ingroup = write_alignment_file(
+            tmp_path / "in.fa", {"in3": "ATG", "in2": "ATGAAG", "in1": "ATGAAA"}
+        )
+        outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAA"})
+        result = runner.invoke(app, ["test", str(ingroup), str(outgroup)])
+        self.assert_clean_error(result, "in.fa", "3 bp", "6 bp")
+
+    def test_separate_mode_ingroup_outgroup_mismatch(self, tmp_path: Path) -> None:
+        ingroup = write_alignment_file(tmp_path / "in.fa", {"in1": "ATGAAA", "in2": "ATGAAG"})
+        outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAAC"})
+        result = runner.invoke(app, ["test", str(ingroup), str(outgroup)])
+        self.assert_clean_error(result, "Alignment length mismatch", "6 bp", "7 bp")
+
+    def test_polarize_file_mismatch(self, tmp_path: Path) -> None:
+        ingroup = write_alignment_file(tmp_path / "in.fa", {"in1": "ATGAAA", "in2": "ATGAAG"})
+        outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAA"})
+        outgroup2 = write_alignment_file(tmp_path / "out2.fa", {"out2": "ATGAAAC"})
+        result = runner.invoke(app, ["test", str(ingroup), str(outgroup), "-p", str(outgroup2)])
+        self.assert_clean_error(result, "7 bp")
+
+    def test_info_ragged_file(self, tmp_path: Path) -> None:
+        fasta = write_alignment_file(tmp_path / "ragged.fa", {"in3": "ATG", "in2": "ATGAAG"})
+        result = runner.invoke(app, ["info", str(fasta)])
+        self.assert_clean_error(result, "ragged.fa", "3 bp", "6 bp")

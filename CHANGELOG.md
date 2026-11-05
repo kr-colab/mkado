@@ -7,6 +7,16 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- FASTA input did not check that all sequences have the same length. The
+  alignment length came from the first sequence only, so the result
+  depended on the order of the sequences: a short sequence at the end was
+  read as missing data, and the same sequence at the start stopped the run
+  with a traceback. `mkado info` also showed the length of the first
+  sequence only. Sequences of different lengths now stop `mkado test` and
+  `mkado info` with an error that gives each length, and `mkado batch`
+  reports the gene as an error. The ingroup, outgroup and second outgroup
+  files are also compared in bases, not codons, so a 6 bp ingroup with a
+  7 bp outgroup is now an error (closes #136).
 - `mkado batch` left a gene out of its table, and out of every aggregated
   analysis, whenever the gene's result also carried a warning, such as
   codon pairs with no stop-free path. The warning was printed but the

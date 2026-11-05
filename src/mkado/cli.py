@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import functools
 import os
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Optional
@@ -33,6 +35,7 @@ from mkado.batch_workers import (
     process_gene,
     unpolarized_summary,
 )
+from mkado.core.sequences import AlignmentLengthError
 from mkado.io.output import OutputFormat, format_batch_results, format_result
 from scipy.stats import false_discovery_control
 
@@ -58,6 +61,23 @@ def cli_error(message: str) -> typer.Exit:
     """
     typer.echo(f"Error: {message}", err=True)
     return typer.Exit(1)
+
+
+def report_alignment_length_errors[**P, R](command: Callable[P, R]) -> Callable[P, R]:
+    """Report sequences of different lengths as a CLI error, not a traceback.
+
+    The files of a command can load deep inside an analysis function, so the
+    error is caught at the command and not where each file loads.
+    """
+
+    @functools.wraps(command)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return command(*args, **kwargs)
+        except AlignmentLengthError as e:
+            raise cli_error(str(e)) from e
+
+    return wrapper
 
 
 def resolve_code_table_or_exit(code_table: str) -> int:
@@ -555,6 +575,7 @@ def main(
 
 
 @app.command()
+@report_alignment_length_errors
 def test(
     fasta: Annotated[
         Path,
@@ -1498,6 +1519,7 @@ def batch(
 
 
 @app.command()
+@report_alignment_length_errors
 def info(
     fasta: Annotated[
         Path,
