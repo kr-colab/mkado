@@ -6,7 +6,12 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import SequenceSet, ancestral_base, position_bases
+from mkado.core.sequences import (
+    AlignmentLengthError,
+    SequenceSet,
+    ancestral_base,
+    position_bases,
+)
 
 if TYPE_CHECKING:
     pass
@@ -51,10 +56,18 @@ class AlignedPair:
     and were dropped from the counts. See GeneticCode.get_path."""
 
     def __post_init__(self) -> None:
-        if self.ingroup.num_codons != self.outgroup.num_codons:
-            raise ValueError(
-                f"Alignment length mismatch: ingroup has {self.ingroup.num_codons} codons, "
-                f"outgroup has {self.outgroup.num_codons} codons"
+        self._check_length("outgroup", self.outgroup)
+
+    def _check_length(self, label: str, other: SequenceSet) -> None:
+        """Raise if ``other`` and the ingroup differ in length.
+
+        Bases are compared, not codons: a 6 bp and a 7 bp alignment both have two
+        codons, but the extra base shows that they are not aligned.
+        """
+        if self.ingroup.alignment_length != other.alignment_length:
+            raise AlignmentLengthError(
+                f"Alignment length mismatch: ingroup is {self.ingroup.alignment_length} bp, "
+                f"{label} is {other.alignment_length} bp"
             )
 
     @property
@@ -397,6 +410,11 @@ class PolarizedAlignedPair(AlignedPair):
     """Aligned pair with a second outgroup for polarization."""
 
     outgroup2: SequenceSet | None = None
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.outgroup2 is not None:
+            self._check_length("outgroup2", self.outgroup2)
 
     def polarize_fixed_difference(self, codon_index: int) -> tuple[str, tuple[int, int]] | None:
         """Polarize a fixed difference to determine which lineage changed.

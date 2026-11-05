@@ -6,7 +6,7 @@ import pytest
 
 from mkado.core.alignment import AlignedPair, PolarizedAlignedPair
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import Sequence, SequenceSet
+from mkado.core.sequences import AlignmentLengthError, Sequence, SequenceSet
 from tests.builders import sequence_set
 
 VERTEBRATE_MITO = GeneticCode(table_id=2)
@@ -294,3 +294,23 @@ class TestPolarizeIngroupPolymorphism:
             ingroup=sequence_set(self.INGROUP), outgroup=sequence_set(["AAA"])
         )
         assert pair.polarize_ingroup_polymorphism(0) is None
+
+
+class TestAlignedPairLength:
+    """The groups of a pair must have the same length in bases, not only in codons."""
+
+    def test_base_length_mismatch_with_same_codon_count(self):
+        with pytest.raises(AlignmentLengthError) as excinfo:
+            pair(["ATGAAA"], ["ATGAAAC"])
+        message = str(excinfo.value)
+        assert "Alignment length mismatch" in message
+        assert "6 bp" in message
+        assert "7 bp" in message
+
+    def test_equal_lengths_pair(self):
+        assert pair(["ATGAAA"], ["ATGAAG"]).num_codons == 2
+
+    def test_outgroup2_length_mismatch(self):
+        with pytest.raises(AlignmentLengthError) as excinfo:
+            polarized_pair(["ATGAAA"], ["ATGAAG"], ["ATGAAAC"])
+        assert "7 bp" in str(excinfo.value)

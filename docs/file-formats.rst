@@ -26,7 +26,10 @@ Alignment Requirements
 
 Sequences must be pre-aligned:
 
-- All sequences must be the same length
+- All sequences must be the same length. If they are not, MKado stops with an error
+  that gives the most common lengths and the names of some sequences that have them.
+  The ingroup, outgroup and second outgroup files must also have the same length as
+  each other.
 - Gaps should be represented as ``-``
 - Alignment should be in-frame (codon-aligned)
 
@@ -71,6 +74,9 @@ Then filter with:
    mkado test alignment.fa -i "speciesA" -o "speciesB"
 
 The pattern matching is case-sensitive substring matching.
+
+The file is one alignment, so MKado checks the length of every sequence in it, also the
+sequences that no pattern selects.
 
 Ingroup and Outgroup
 --------------------
@@ -144,9 +150,12 @@ Wrong Species Pattern
 Unequal Sequence Lengths
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-**Symptom**: Error about alignment length
+**Symptom**: ``Sequences have different lengths`` or ``Alignment length mismatch``
 
-**Solution**: Re-align sequences or check for truncated sequences
+**Solution**: Re-align the sequences, or remove the truncated sequences. The first error
+gives the most common lengths and the names of some sequences that have them. The second
+error compares the ingroup with an outgroup file. In combined file mode, a sequence that no
+pattern selects also causes the first error.
 
 VCF Mode Input Files
 --------------------

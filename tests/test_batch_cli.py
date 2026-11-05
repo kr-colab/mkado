@@ -303,3 +303,22 @@ class TestWarnedGeneIsKept:
         assert "blocked: 1 codon pair(s) had no stop-free path and were dropped" in result.output
         genes = [row[0] for row in rows(result.stdout)[1:]]
         assert sorted(genes) == ["blocked", "clean"]
+
+
+class TestUnequalLengths:
+    def test_one_ragged_gene_is_reported(self, tmp_path: Path) -> None:
+        """A gene with sequences of different lengths errors; the other gene still runs.
+
+        The short sequence is the last one, the order that used to give a result with no error.
+        """
+        g1 = TWO_GENES["g1"]
+        genes = {
+            **TWO_GENES,
+            "g1": {**g1, "ingroup": [*g1["ingroup"][:-1], g1["ingroup"][-1][:-3]]},
+        }
+        dirs = write_two_genes(tmp_path, genes)
+        result = batch(dirs.separate)
+        assert result.exit_code == 0, result.output
+        assert "Error processing g1_ingroup.fa" in result.output
+        genes_in_table = [row[0] for row in rows(result.stdout)[1:]]
+        assert genes_in_table == ["g2_ingroup"]

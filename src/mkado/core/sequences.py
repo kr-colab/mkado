@@ -16,6 +16,39 @@ if TYPE_CHECKING:
     pass
 
 
+class AlignmentLengthError(ValueError):
+    """Sequences that must be aligned have different lengths."""
+
+
+# A file can hold thousands of sequences, and an unaligned file can have as many lengths,
+# so the error lists only this many lengths, and this many names for each length.
+_LENGTHS_SHOWN = 5
+_NAMES_PER_LENGTH = 3
+
+
+def _first_few(shown: list[str], total: int, noun: str) -> str:
+    """``shown`` joined with commas, then a count of the ``total`` items not shown."""
+    text = ", ".join(shown)
+    if total > len(shown):
+        text += f" and {total - len(shown)} more {noun}"
+    return text
+
+
+def _length_mismatch_message(sequences: list[Sequence]) -> str:
+    """The lengths in ``sequences``, most common first, with the first few names that have each."""
+    names_by_length: dict[int, list[str]] = {}
+    for seq in sequences:
+        names_by_length.setdefault(len(seq), []).append(seq.name)
+    # The most common length is usually the alignment length, so it comes first and the
+    # sequences that differ from it follow. A tie goes to the shorter length.
+    ordered = sorted(names_by_length.items(), key=lambda item: (-len(item[1]), item[0]))
+    groups = [
+        f"{length} bp ({_first_few(names[:_NAMES_PER_LENGTH], len(names), 'names')})"
+        for length, names in ordered[:_LENGTHS_SHOWN]
+    ]
+    return "Sequences have different lengths: " + _first_few(groups, len(ordered), "lengths")
+
+
 def position_bases(counts: dict[str, int], position: int) -> dict[str, int]:
     """Copies of each base at one codon position, from codon counts."""
     bases: dict[str, int] = {}
@@ -86,6 +119,12 @@ class SequenceSet:
     as immutable once any caching method has been called; mutating ``sequences``
     or ``reading_frame`` afterwards will leave stale entries here."""
 
+    def __post_init__(self) -> None:
+        # Every length is read from the first sequence, so a set of mixed lengths would
+        # give results that depend on which sequence comes first.
+        if len({len(seq) for seq in self.sequences}) > 1:
+            raise AlignmentLengthError(_length_mismatch_message(self.sequences))
+
     @classmethod
     def from_fasta(
         cls,
@@ -104,11 +143,14 @@ class SequenceSet:
             SequenceSet containing all sequences from the file
         """
         sequences = [Sequence(name, seq) for name, seq in read_fasta(path)]
-        return cls(
-            sequences=sequences,
-            reading_frame=reading_frame,
-            genetic_code=genetic_code or DEFAULT_CODE,
-        )
+        try:
+            return cls(
+                sequences=sequences,
+                reading_frame=reading_frame,
+                genetic_code=genetic_code or DEFAULT_CODE,
+            )
+        except AlignmentLengthError as e:
+            raise AlignmentLengthError(f"{Path(path).name}: {e}") from None
 
     def __len__(self) -> int:
         return len(self.sequences)
@@ -126,14 +168,14 @@ class SequenceSet:
 
     @property
     def num_codons(self) -> int:
-        """Number of complete codons (based on first sequence)."""
+        """Number of complete codons in each sequence."""
         if not self.sequences:
             return 0
         return self.sequences[0].num_codons(self.reading_frame)
 
     @property
     def alignment_length(self) -> int:
-        """Length of the alignment (based on first sequence)."""
+        """Length of the alignment in bases."""
         if not self.sequences:
             return 0
         return len(self.sequences[0])
