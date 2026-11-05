@@ -288,3 +288,18 @@ class TestUnpolarizedSummary:
             "outgroup and was dropped"
         ) in result.output
         assert result.output.count("could not be polarized") == 1
+
+
+class TestWarnedGeneIsKept:
+    """A gene whose result carries a warning still appears in the output."""
+
+    def test_stop_blocked_gene_stays_in_the_table(self, tmp_path: Path) -> None:
+        # Under the vertebrate mitochondrial code (table 2), AAA to TGG has no
+        # stop-free path, so gene "blocked" gets a stop-blocked warning.
+        (tmp_path / "blocked.fa").write_text(">a_1\nAAAATG\n>a_2\nAAAATG\n>b_1\nTGGATG\n")
+        (tmp_path / "clean.fa").write_text(">a_1\nAAAATG\n>a_2\nAAGATG\n>b_1\nAAAATG\n")
+        result = batch(tmp_path, "-i", "a", "-o", "b", "--code-table", "2", "-f", "tsv")
+        assert result.exit_code == 0, result.output
+        assert "blocked: 1 codon pair(s) had no stop-free path and were dropped" in result.output
+        genes = [row[0] for row in rows(result.stdout)[1:]]
+        assert sorted(genes) == ["blocked", "clean"]

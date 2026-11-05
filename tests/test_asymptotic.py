@@ -1290,3 +1290,24 @@ class TestUnpolarizedSites:
             sequence_set(self.INGROUP), sequence_set(["ACGNNN"]), bootstrap_replicates=0
         )
         assert result.unpolarized_sites == 1
+
+
+def _gene_with_unpolarized(count: int, n_polys: int = 0) -> PolymorphismData:
+    """A gene whose polymorphisms span the frequency range, with ``count`` drops."""
+    freqs = [(i + 0.5) / n_polys for i in range(n_polys)] if n_polys else []
+    polys = [(f, "N" if i % 3 == 0 else "S") for i, f in enumerate(freqs)]
+    return PolymorphismData(polymorphisms=polys, dn=20, ds=40, unpolarized_sites=count)
+
+
+class TestAggregatedUnpolarizedSites:
+    """Aggregated results carry the total of their genes' unpolarized sites."""
+
+    def test_aggregated_sfs_sums_the_counts(self) -> None:
+        agg = aggregate_polymorphism_data([_gene_with_unpolarized(1), _gene_with_unpolarized(2)])
+        assert agg.unpolarized_sites_total == 3
+
+    @pytest.mark.parametrize("n_polys", [0, 200], ids=["sparse", "fitted"])
+    def test_aggregated_asymptotic_result_sums_the_counts(self, n_polys: int) -> None:
+        genes = [_gene_with_unpolarized(1, n_polys), _gene_with_unpolarized(2, n_polys)]
+        result = asymptotic_mk_test_aggregated(genes, ci_replicates=100)
+        assert result.unpolarized_sites == 3

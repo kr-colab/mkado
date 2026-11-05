@@ -7,6 +7,10 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- `mkado batch` left a gene out of its table, and out of every aggregated
+  analysis, whenever the gene's result also carried a warning, such as
+  codon pairs with no stop-free path. The warning was printed but the
+  gene's counts were lost. The gene is now kept.
 - FASTA polarization matched whole codons between the ingroup and the
   outgroup, so a polymorphism was dropped from every frequency-based
   analysis (asymptotic, imputed, alpha-TG, `--min-freq`,

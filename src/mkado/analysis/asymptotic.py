@@ -80,6 +80,8 @@ class AggregatedSFS:
     """SFS construction mode used to build ``pn_counts``/``ps_counts``."""
     stop_blocked_pairs_total: int = 0
     """Sum of per-gene stop-blocked codon pairs (see ``PolymorphismData``)."""
+    unpolarized_sites_total: int = 0
+    """Sum of per-gene unpolarized sites (see ``PolymorphismData``)."""
 
 
 @dataclass
@@ -790,6 +792,7 @@ def aggregate_polymorphism_data(
     ds_total = sum(g.ds for g in gene_data)
     ln_total, ls_total = sum_site_totals(gene_data)
     stop_blocked_pairs_total = sum(g.stop_blocked_pairs for g in gene_data)
+    unpolarized_sites_total = sum(g.unpolarized_sites for g in gene_data)
 
     # Create frequency bins
     bin_edges = _frequency_bin_edges(num_bins)
@@ -834,6 +837,7 @@ def aggregate_polymorphism_data(
         ps_total=ps_total,
         sfs_mode=sfs_mode,
         stop_blocked_pairs_total=stop_blocked_pairs_total,
+        unpolarized_sites_total=unpolarized_sites_total,
     )
 
 
@@ -921,6 +925,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
         return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1041,6 +1046,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
         return _attach_omega(result, agg.ln_total, agg.ls_total)
 
@@ -1107,6 +1113,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
     else:
         a_lin, b_lin = lin_popt
@@ -1129,6 +1136,7 @@ def asymptotic_mk_test_aggregated(
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             stop_blocked_pairs=agg.stop_blocked_pairs_total,
+            unpolarized_sites=agg.unpolarized_sites_total,
         )
     return _attach_omega(result, agg.ln_total, agg.ls_total)
 

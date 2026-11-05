@@ -456,19 +456,18 @@ def run_parallel_batch(
     results: list[WorkerResult] = []
     warnings: list[str] = []
     had_error = False
-    # Every result counts toward the summary, including one that also carries a warning.
-    counted: list[object] = []
 
     def record(worker_result: WorkerResult) -> None:
         nonlocal had_error
-        if worker_result.result is not None:
-            counted.append(worker_result.result)
         if worker_result.error:
             warnings.append(worker_result.error)
             had_error = True
-        elif worker_result.warning:
+            return
+        # A warning can come with a valid result (stop-blocked pairs, for example), so
+        # the result is still kept.
+        if worker_result.warning:
             warnings.append(f"Warning: {worker_result.warning}")
-        elif worker_result.result is not None:
+        if worker_result.result is not None:
             results.append(worker_result)
 
     if num_workers == 1:
@@ -491,7 +490,7 @@ def run_parallel_batch(
                         had_error = True
                     progress.advance(task_id)
 
-    summary = unpolarized_summary(counted)
+    summary = unpolarized_summary([r.result for r in results])
     if summary:
         warnings.append(summary)
     return results, warnings, had_error
