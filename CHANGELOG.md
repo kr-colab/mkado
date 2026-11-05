@@ -7,6 +7,15 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- The FASTA reader removed whitespace only at the ends of a line, so a
+  space or a tab inside a sequence line counted as a base and shifted
+  every codon after it. A sequence written in blocks of 10 bases gave
+  wrong counts with no error. Whitespace inside a sequence line is now
+  removed. Three other malformed inputs now stop with an error that gives
+  the file and the line number: a digit in a sequence line (a numbered
+  layout such as GenBank, which was read as bases), sequence lines before
+  the first header (which were dropped), and a header with no name (which
+  gave a traceback) (closes #146).
 - FASTA input did not check that all sequences have the same length. The
   alignment length came from the first sequence only, so the result
   depended on the order of the sequences: a short sequence at the end was
