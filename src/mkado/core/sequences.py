@@ -16,23 +16,24 @@ if TYPE_CHECKING:
     pass
 
 
-def base_derived_state(
-    counts: dict[str, int], total: int, source_codons: set[str], position: int
-) -> tuple[float, int] | None:
-    """Derived (frequency, count) at one codon position, from codon counts already made.
-
-    See ``SequenceSet.position_derived_state``, which this serves; a caller that has
-    the codon counts for other work passes them here and saves a second pass.
-    """
+def position_bases(counts: dict[str, int], position: int) -> dict[str, int]:
+    """Copies of each base at one codon position, from codon counts."""
     bases: dict[str, int] = {}
     for codon, count in counts.items():
         bases[codon[position]] = bases.get(codon[position], 0) + count
+    return bases
+
+
+def ancestral_base(bases: dict[str, int], source_codons: set[str], position: int) -> str | None:
+    """The base shared with ``source_codons`` at ``position`` that is most common in ``bases``.
+
+    A tie goes to the first base in alphabetical order, so the result does not depend
+    on the order of the sequences. None when no base is shared.
+    """
     shared = bases.keys() & {codon[position] for codon in source_codons}
     if not shared:
         return None
-    ancestral = min(shared, key=lambda base: (-bases[base], base))
-    derived_count = total - bases[ancestral]
-    return derived_count / total, derived_count
+    return min(shared, key=lambda base: (-bases[base], base))
 
 
 @dataclass
@@ -341,9 +342,12 @@ class SequenceSet:
             position is shared, including when ``ancestral_source`` has no clean codon.
         """
         counts, total = self.site_codon_counts(codon_index)
-        return base_derived_state(
-            counts, total, ancestral_source.codon_set_clean(codon_index), position
-        )
+        bases = position_bases(counts, position)
+        ancestral = ancestral_base(bases, ancestral_source.codon_set_clean(codon_index), position)
+        if ancestral is None:
+            return None
+        derived_count = total - bases[ancestral]
+        return derived_count / total, derived_count
 
     def filter_by_name(self, pattern: str) -> SequenceSet:
         """Filter sequences by name pattern (substring match).

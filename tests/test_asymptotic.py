@@ -1311,3 +1311,19 @@ class TestAggregatedUnpolarizedSites:
         genes = [_gene_with_unpolarized(1, n_polys), _gene_with_unpolarized(2, n_polys)]
         result = asymptotic_mk_test_aggregated(genes, ci_replicates=100)
         assert result.unpolarized_sites == 3
+
+
+class TestTriallelicPosition:
+    """At a position with three ingroup bases, each derived base has its own frequency."""
+
+    def test_each_derived_base_is_counted_by_itself(self) -> None:
+        """AAA x8, AAG, AAC against AAA: G and C are each one copy in ten."""
+        ingroup = ["AAA"] * 8 + ["AAG", "AAC"]
+        data = extract_polymorphism_data(sequence_set(ingroup), sequence_set(["AAA"]))
+        assert sorted(data.polymorphisms) == [(0.1, "N"), (0.1, "S")]
+
+    def test_derived_major_base(self) -> None:
+        """AAG x5, AAA x3, AAC x2 against AAA: G is derived at 0.5, C at 0.2."""
+        ingroup = ["AAG"] * 5 + ["AAA"] * 3 + ["AAC"] * 2
+        data = extract_polymorphism_data(sequence_set(ingroup), sequence_set(["AAA"]))
+        assert sorted(data.polymorphisms) == [(0.2, "N"), (0.5, "S")]

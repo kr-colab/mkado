@@ -421,3 +421,11 @@ class TestUnpolarizedSites:
         result = self.run("ATGNNN", pool_polymorphisms=True)
         assert result.ps == 0
         assert result.unpolarized_sites == 1
+
+
+class TestTriallelicSingletons:
+    def test_two_singletons_at_one_position_are_both_removed(self) -> None:
+        """AAA x8, AAG, AAC against AAA: each derived base is one copy, a singleton."""
+        ingroup = ["AAA"] * 8 + ["AAG", "AAC"]
+        result = mk_test(sequence_set(ingroup), sequence_set(["AAA"]), no_singletons=True)
+        assert (result.pn, result.ps) == (0, 0)

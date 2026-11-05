@@ -151,8 +151,8 @@ Different methods for estimating alpha correct for different biases:
      - -0.43
      - -0.53 to -0.34
    * - Asymptotic α
-     - +0.55
-     - +0.45 to +0.65
+     - +0.54
+     - +0.47 to +0.62
 
 The large gap between α_TG and asymptotic α suggests substantial slightly deleterious polymorphism — a common finding. The asymptotic method extrapolates to high frequencies where deleterious variants have been purged, revealing adaptive substitutions masked by segregating deleterious mutations.
 

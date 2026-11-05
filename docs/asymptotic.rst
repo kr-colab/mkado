@@ -78,7 +78,7 @@ To calculate derived frequency, we need to distinguish **ancestral** (original) 
 1. For each mutation at a polymorphic codon, find the bases present in the ingroup at the position it changes
 2. Find the bases that the outgroup has at the same position
 3. The base shared between ingroup and outgroup is **ancestral**
-4. **Derived frequency** = 1.0 − frequency(ancestral base)
+4. **Derived frequency** = the frequency of the mutation's derived base. At a position with two bases, this is 1.0 − frequency(ancestral base); at a position with three, each derived base has its own frequency
 
 **Example:**
 
@@ -220,16 +220,16 @@ Example output (pretty format):
 .. code-block:: text
 
    Asymptotic MK Test Results:
-     Asymptotic α: 0.5459 (95% CI [monte-carlo]: 0.4465 - 0.6477)
+     Asymptotic α: 0.5444 (95% CI [monte-carlo]: 0.4674 - 0.6233)
      Divergence: Dn=18828, Ds=49857
      SFS mode: at
      Polymorphism: Pn=15225, Ps=31363
      Sites: Ln=473618.29, Ls=148023.71
-     omega: 0.1180 (omega_a=0.0644, omega_na=0.0536)
-       omega_a 95% CI:  (0.0527, 0.0764)
-       omega_na 95% CI: (0.0416, 0.0653)
+     omega: 0.1180 (omega_a=0.0643, omega_na=0.0538)
+       omega_a 95% CI:  (0.0552, 0.0736)
+       omega_na 95% CI: (0.0445, 0.0629)
      Genes aggregated: 400
-     Fit (linear): α(x) = 0.3362 + 0.2097 * x
+     Fit (linear): α(x) = 0.3866 + 0.1577 * x
 
 The Alpha(x) Plot
 -----------------

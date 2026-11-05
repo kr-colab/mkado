@@ -80,6 +80,11 @@ MKado discards orderings that pass through a stop codon and keeps the one with
 the **fewest replacements**. For AAA to CGC, the six orderings carry 1, 2, 3, 3,
 3 and 3 replacements, and MKado reports 1.
 
+When every ordering passes through a stop codon, the pair is dropped and counted
+as stop-blocked. For FASTA input, each polymorphic codon is classified before the
+frequency filters, so the count also includes pairs at sites that ``--min-freq``,
+``--no-singletons`` or a frequency-based analysis would drop anyway.
+
 VCF input does not use this rule for polymorphism. Each variant is classified on
 its own against the reference codon, so a codon carrying two SNPs contributes
 two independent single-position changes.

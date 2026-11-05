@@ -6,15 +6,18 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
-from mkado.core.sequences import SequenceSet, base_derived_state
+from mkado.core.sequences import SequenceSet, ancestral_base, position_bases
 
 if TYPE_CHECKING:
     pass
 
 
-def _count_path(path: list[tuple[str, int]]) -> tuple[int, int]:
-    """Split a mutational path into (replacement, synonymous) step counts."""
-    nonsyn = sum(1 for change_type, _ in path if change_type == "R")
+def _count_path(path: list[tuple]) -> tuple[int, int]:
+    """Split a mutational path, or a mutation list, into (replacement, synonymous) counts.
+
+    Only the first item of each step, ``"R"`` or ``"S"``, is read.
+    """
+    nonsyn = sum(1 for step in path if step[0] == "R")
     return (nonsyn, len(path) - nonsyn)
 
 
@@ -23,8 +26,8 @@ def passes_frequency_filter(
 ) -> bool:
     """Decide whether a polymorphism's (frequency, count) state clears the filters.
 
-    ``SequenceSet.position_derived_state``, ``SequenceSet.derived_state`` and
-    ``AlignedPair.minor_allele_state`` all return this same (frequency, count)
+    ``AlignedPair.polarized_mutations``, ``SequenceSet.derived_state`` and
+    ``AlignedPair.minor_allele_state`` all give this same (frequency, count)
     shape, so every counting loop can share this one accept/reject rule.
     """
     if state is None:
@@ -268,8 +271,11 @@ class AlignedPair:
 
         return _count_path(path)
 
-    def _mutations_against_major(self, counts: dict[str, int]) -> list[tuple[str, int]]:
-        """List a codon's mutations as ``(change_type, position)``, against the most common allele.
+    def _mutations_against_major(self, counts: dict[str, int]) -> list[tuple[str, int, str, str]]:
+        """List a codon's mutations against the most common allele.
+
+        Each mutation is ``(change_type, position, base, major_base)``: the base this
+        mutation gives at ``position``, and the major allele's base there.
 
         Every allele is compared with the majority codon. A mutation is identified by
         the position it changes and the base it produces, so a change two alleles share
@@ -295,7 +301,7 @@ class AlignedPair:
 
         major_codon, *others = sorted(counts, key=lambda c: (-counts[c], c))
 
-        mutations: list[tuple[str, int]] = []
+        mutations: list[tuple[str, int, str, str]] = []
         counted: set[tuple[int, str]] = set()
         for codon in others:
             path = self._get_path(major_codon, codon)
@@ -307,7 +313,7 @@ class AlignedPair:
                 if mutation in counted:
                     continue
                 counted.add(mutation)
-                mutations.append((change_type, pos))
+                mutations.append((change_type, pos, codon[pos], major_codon[pos]))
         return mutations
 
     def _classify_against_major(self, counts: dict[str, int]) -> tuple[int, int] | None:
@@ -325,9 +331,10 @@ class AlignedPair:
         """Each polymorphic mutation at a codon with its derived state, and how many were dropped.
 
         A mutation is ``(change_type, state)``: ``change_type`` is ``"R"`` or ``"S"``, and
-        ``state`` is the derived (frequency, count) at the mutation's own position (see
-        ``SequenceSet.position_derived_state``), or None when the outgroup shares no base
-        there. Polymorphism is counted only where both groups have a clean codon, the same
+        ``state`` is the (frequency, count) of the mutation's derived base at its position,
+        or None when the outgroup shares no base there. The ancestral base is chosen as in
+        ``SequenceSet.position_derived_state``, but at a position with three bases each
+        derived base has its own frequency. Polymorphism is counted only where both groups have a clean codon, the same
         rule as for divergence and ``count_total_sites``; elsewhere every mutation is
         dropped and returned as the drop count. Pooled mode lists the mutations over both
         groups, as ``classify_polymorphism_pooled`` does, but polarizes the ingroup.
@@ -338,10 +345,22 @@ class AlignedPair:
         source_codons = self.outgroup.codon_set_clean(codon_index)
         if not (ingroup_counts and source_codons):
             return [], len(mutations)
-        return [
-            (change_type, base_derived_state(ingroup_counts, total, source_codons, position))
-            for change_type, position in mutations
-        ], 0
+        by_position = {}
+        for position in {position for _, position, _, _ in mutations}:
+            bases = position_bases(ingroup_counts, position)
+            by_position[position] = (bases, ancestral_base(bases, source_codons, position))
+        polarized = []
+        for change_type, position, base, major_base in mutations:
+            bases, ancestral = by_position[position]
+            state = None
+            if ancestral is not None:
+                # When the mutation's base is the ancestral one, the major allele carries
+                # the derived base.
+                derived = major_base if base == ancestral else base
+                count = bases.get(derived, 0)
+                state = (count / total, count)
+            polarized.append((change_type, state))
+        return polarized, 0
 
     def classify_polymorphism(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a polymorphism as synonymous/non-synonymous.

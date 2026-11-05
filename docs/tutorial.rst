@@ -90,7 +90,7 @@ To calculate derived allele frequency, we need to identify which allele is **anc
 1. At the position that varies in the ingroup, find the bases present in the ingroup
 2. Find the bases that the outgroup has at the same position
 3. The base shared between ingroup and outgroup is assumed to be **ancestral**
-4. **Derived frequency** = 1.0 − (frequency of the ancestral base in the ingroup)
+4. **Derived frequency** = the frequency of the mutation's derived base in the ingroup. At a position with two bases, this is 1.0 − (frequency of the ancestral base)
 
 For example, if a position has base A at 80% and base G at 20% in the ingroup, and the outgroup has A, then A is ancestral and the derived allele frequency is 0.20.
 
@@ -172,9 +172,9 @@ In the standard and asymptotic MK tests, MKado uses a **single outgroup** to ide
 1. **List the mutations at each polymorphic codon.** Each mutation changes one nucleotide position of the codon.
 2. **Compare that position with the outgroup.** Find the bases that the ingroup and the outgroup share at that position. Only that position is compared, so a difference between the groups at another position of the same codon does not stop polarization.
 3. **The shared base is ancestral.** If more than one shared base is present, the one most common in the ingroup is ancestral. A tie goes to the first base in alphabetical order, so the result does not depend on the order of the sequences.
-4. **Calculate derived frequency.** derived_freq = 1.0 − frequency(ancestral base). The frequency counts only the ingroup sequences with a clean codon there.
+4. **Calculate derived frequency.** derived_freq = the frequency of the mutation's derived base at its position. The frequency counts only the ingroup sequences with a clean codon there.
 
-Each mutation gets the frequency of its own position. So if a codon varies at two positions, each mutation is filtered and binned by itself.
+Each mutation is filtered and binned by itself. If a codon varies at two positions, each mutation has the frequency of its own position. If a position has three ingroup bases, each derived base has its own frequency: with A ancestral at 80% and G and C at 10% each, both G and C are at 0.10, and both are singletons in a sample of ten.
 
 **Example:**
 
@@ -195,8 +195,8 @@ If the outgroup has codon CAA, it differs from the ingroup at position 1, but at
 
 Some polymorphic sites cannot be polarized:
 
-- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in **every** mode, including the standard MK test.
-- **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps.
+- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in the standard, asymptotic, imputed and α_TG tests. The polarized MK test does not use this rule yet, and still counts such a polymorphism.
+- **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps. With ``--pool-polymorphisms``, ``--min-freq`` and ``--no-singletons`` use the minor allele over both groups, not the ancestral state, so they keep such a site.
 
 MKado counts the sites it drops for either reason and prints one line at the end of the run, for example:
 

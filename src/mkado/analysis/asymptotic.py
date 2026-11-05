@@ -669,7 +669,7 @@ def _polarized_polymorphisms(
     """Derived frequency and type of each ingroup mutation, and how many could not be polarized.
 
     Each mutation is polarized at its own codon position (see
-    ``SequenceSet.position_derived_state``), so a difference at another position of
+    ``AlignedPair.polarized_mutations``), so a difference at another position of
     the codon does not block it. A mutation at a codon where the outgroup has no clean
     codon, or at a position where no base is shared with the outgroup, is dropped and
     counted.

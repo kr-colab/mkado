@@ -18,11 +18,14 @@
   of the same codon. On the example data this dropped 57% of Pn and 31%
   of Ps from those analyses, without a count. Each mutation is now
   polarized at its own nucleotide position, as DnaSP does in its
-  outgroup-based tests and as the mkado paper describes. A polymorphism at a codon where the outgroup has
-  no clean codon is now dropped from every mode, including the standard
-  MK test, because the codon is already left out of divergence and of
-  Ln/Ls. Every site that cannot be polarized is counted, and each run
-  prints one summary line. **This changes asymptotic, imputed and alpha-TG
+  outgroup-based tests and as the mkado paper describes. At a position
+  with three ingroup bases, each derived base now has its own frequency,
+  where before the derived bases shared one. A polymorphism at a codon
+  where the outgroup has no clean codon is now dropped from the standard,
+  asymptotic, imputed and alpha-TG tests, because the codon is already
+  left out of divergence and of Ln/Ls; the polarized MK test does not use
+  this rule yet. Every site that cannot be polarized is counted, and each
+  run prints one summary line. **This changes asymptotic, imputed and alpha-TG
   results on most data** (closes #135).
 - `mkado vcf` now reports every record it skips. A `.` ALT is an
   invariant site and is no longer counted as multi-allelic. The per-gene
