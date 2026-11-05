@@ -11,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from mkado.cli import app
+from tests.builders import GTF_LINE, NON_UTF8_GFF, assert_clean_error
 from tests.conftest import INGROUP_RECORDS, OUTGROUP_RECORDS, _write_vcf
 
 runner = CliRunner()
@@ -183,6 +184,58 @@ class TestValidation:
         result = invoke(genome, gff_all)
         assert result.exit_code == 0
         assert "lists no contig" not in result.output
+
+
+class TestUnreadableInput:
+    """A bad input file stops the run with one error line, not a traceback or one line per gene."""
+
+    def test_gtf_is_clean_error(self, genome, tmp_path):
+        gtf = tmp_path / "genes.gtf"
+        gtf.write_text(GTF_LINE)
+        assert_clean_error(invoke(genome, gtf), "genes.gtf")
+
+    def test_non_utf8_gff_is_clean_error(self, genome, tmp_path):
+        gff = tmp_path / "latin1.gff3"
+        gff.write_bytes(NON_UTF8_GFF)
+        assert_clean_error(invoke(genome, gff), "latin1.gff3")
+
+    def test_gene_list_directory_is_clean_error(self, genome, gff_chr1, tmp_path):
+        assert_clean_error(invoke(genome, gff_chr1, "--gene-list", str(tmp_path)), "--gene-list")
+
+    def test_reference_that_is_not_fasta_stops_before_any_gene(self, genome, gff_chr1):
+        result = invoke(dataclasses.replace(genome, ref_fasta=gff_chr1), gff_chr1)
+        assert_clean_error(result, "Error: --ref")
+        assert "Error processing" not in result.output
+        assert result.stdout.strip() == ""
+
+    def test_reference_error_prints_no_htslib_lines(self, genome, gff_chr1, capfd):
+        """htslib writes its own error lines straight to stderr; the user sees only ours."""
+        result = invoke(dataclasses.replace(genome, ref_fasta=gff_chr1), gff_chr1)
+        assert_clean_error(result, "Error: --ref")
+        assert "[E::" not in capfd.readouterr().err
+
+    def test_reference_index_is_built_before_any_gene_runs(
+        self, genome, gff_chr1, tmp_path, monkeypatch
+    ):
+        """Workers that each build a missing index race to write it, so it must exist first."""
+        import mkado.vcf_workers
+
+        ref = tmp_path / "ref.fa"
+        ref.write_bytes(genome.ref_fasta.read_bytes())
+        index = Path(f"{ref}.fai")
+        index_seen: list[bool] = []
+        real = mkado.vcf_workers.process_vcf_gene
+
+        def recording(task):
+            index_seen.append(index.exists())
+            return real(task)
+
+        monkeypatch.setattr(mkado.vcf_workers, "process_vcf_gene", recording)
+        result = invoke(dataclasses.replace(genome, ref_fasta=ref), gff_chr1)
+        assert result.exit_code == 0, result.output
+        assert index_seen
+        assert all(index_seen)
+        assert rows(result.stdout) == expected_rows(genome)
 
 
 class TestGeneSelection:

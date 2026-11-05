@@ -18,6 +18,22 @@ class FastaFormatError(InputError):
 _DIGIT = re.compile(r"\d")
 
 
+def _numbered_lines(path: Path) -> Iterator[tuple[int, str]]:
+    """Each line of a text file with its line number, counted from 1.
+
+    A file that cannot be read, or is not text, raises FastaFormatError with the file
+    name, not an error from deep inside the reader.
+    """
+    try:
+        with path.open() as f:
+            yield from enumerate(f, start=1)
+    except FileNotFoundError:
+        # A missing file keeps its standard error type, which callers test for.
+        raise
+    except (OSError, UnicodeDecodeError) as e:
+        raise FastaFormatError(f"{path.name} cannot be read as text: {e}") from e
+
+
 def read_fasta(path: str | Path) -> Iterator[tuple[str, str]]:
     """Parse a FASTA file and yield (name, sequence) tuples.
 
@@ -41,37 +57,36 @@ def read_fasta(path: str | Path) -> Iterator[tuple[str, str]]:
     def error(line_number: int, problem: str) -> FastaFormatError:
         return FastaFormatError(f"{path.name}, line {line_number}: {problem}")
 
-    with path.open() as f:
-        for line_number, line in enumerate(f, start=1):
-            line = line.strip()
-            if not line:
-                continue
-            if line.startswith(">"):
-                if name is not None:
-                    yield name, "".join(seq_parts)
-                words = line[1:].split()
-                if not words:
-                    raise error(line_number, "the header has no name.")
-                name = words[0]
-                seq_parts = []
-                continue
-            if name is None:
-                raise error(line_number, "sequence data comes before the first '>' header.")
-            # Each whitespace character would otherwise count as a base and shift every
-            # codon after it.
-            bases = "".join(line.split())
-            # A digit is not missing data: it marks a numbered layout such as GenBank, and
-            # reading it as a base would shift the codons in the same way.
-            if _DIGIT.search(bases):
-                raise error(
-                    line_number,
-                    f"record {name} has a digit in its sequence. Numbered sequence lines, "
-                    "as in GenBank files, are not FASTA.",
-                )
-            seq_parts.append(bases.upper())
+    for line_number, line in _numbered_lines(path):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith(">"):
+            if name is not None:
+                yield name, "".join(seq_parts)
+            words = line[1:].split()
+            if not words:
+                raise error(line_number, "the header has no name.")
+            name = words[0]
+            seq_parts = []
+            continue
+        if name is None:
+            raise error(line_number, "sequence data comes before the first '>' header.")
+        # Each whitespace character would otherwise count as a base and shift every
+        # codon after it.
+        bases = "".join(line.split())
+        # A digit is not missing data: it marks a numbered layout such as GenBank, and
+        # reading it as a base would shift the codons in the same way.
+        if _DIGIT.search(bases):
+            raise error(
+                line_number,
+                f"record {name} has a digit in its sequence. Numbered sequence lines, "
+                "as in GenBank files, are not FASTA.",
+            )
+        seq_parts.append(bases.upper())
 
-        if name is not None:
-            yield name, "".join(seq_parts)
+    if name is not None:
+        yield name, "".join(seq_parts)
 
 
 def write_fasta(

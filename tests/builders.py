@@ -20,6 +20,22 @@ def sequence_set(
     )
 
 
+# One CDS line with GTF attributes (key "value"), which the GFF3 reader rejects.
+GTF_LINE = 'chr1\tsrc\tCDS\t1\t9\t.\t+\t0\tgene_id "gene1"; transcript_id "tx1";\n'
+# A GFF3 file with one byte that is not UTF-8.
+NON_UTF8_GFF = b"##gff-version 3\nchr1\t.\tCDS\t1\t9\t.\t+\t0\tID=c;Name=\xff\n"
+
+
+def assert_clean_error(result, *fragments: str) -> None:
+    """The command stopped with one error line that has every fragment, not a traceback."""
+    assert result.exit_code == 1, result.output
+    # An uncaught ValueError would mean the user saw a traceback.
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert "Error:" in result.output
+    for fragment in fragments:
+        assert fragment in result.output
+
+
 def write_alignment_file(path: Path, records: dict[str, str]) -> Path:
     """Write a FASTA alignment from a name-to-sequence mapping."""
     path.write_text("".join(f">{name}\n{seq}\n" for name, seq in records.items()))

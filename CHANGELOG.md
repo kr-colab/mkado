@@ -7,6 +7,19 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- `mkado vcf` with a plain `--ref` that had no `.fai` index could lose
+  most of its genes and still exit 0. Each worker opened the reference,
+  so the workers raced to build the same index; in one test run of two,
+  33 of 46 genes failed. The reference is now opened once before the
+  workers start, so the index is built once, and a `--ref` file that is
+  not an indexed FASTA stops the run with one error, not one error for
+  each gene (closes #149).
+- `mkado vcf` showed a traceback for a GTF file given as `--gff`, a GFF
+  file that cannot be read, is not UTF-8, or is not the gzip file its name
+  says, and a `--gene-list` that cannot be read. `mkado test` and `mkado
+  info` showed a traceback for a FASTA file that cannot be read or is not
+  UTF-8. Each now stops with one error line that names the file. A
+  missing file still raises `FileNotFoundError` in the Python API.
 - The FASTA reader removed whitespace only at the ends of a line, so a
   space or a tab inside a sequence line counted as a base and shifted
   every codon after it. A sequence written in blocks of 10 bases gave
