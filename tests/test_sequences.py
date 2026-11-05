@@ -343,3 +343,14 @@ class TestLengthCheck:
         message = str(excinfo.value)
         assert "and 7 more" in message
         assert "s10" not in message
+
+    def test_many_lengths_are_cut(self) -> None:
+        """An unaligned file has many lengths; the error lists the most common few."""
+        # 20 distinct lengths, and 3 sequences share the 9 bp length.
+        seqs = ["A" * n for n in range(1, 21)] + ["A" * 9] * 2
+        with pytest.raises(AlignmentLengthError) as excinfo:
+            sequence_set(seqs)
+        message = str(excinfo.value)
+        assert message.startswith("Sequences have different lengths: 9 bp (")
+        assert "and 15 more lengths" in message
+        assert len(message) < 300

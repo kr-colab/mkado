@@ -20,22 +20,33 @@ class AlignmentLengthError(ValueError):
     """Sequences that must be aligned have different lengths."""
 
 
-# A file can hold thousands of sequences, so the error names only this many for each length.
+# A file can hold thousands of sequences, and an unaligned file can have as many lengths,
+# so the error lists only this many lengths, and this many names for each length.
+_LENGTHS_SHOWN = 5
 _NAMES_PER_LENGTH = 3
 
 
+def _first_few(shown: list[str], total: int, noun: str) -> str:
+    """``shown`` joined with commas, then a count of the ``total`` items not shown."""
+    text = ", ".join(shown)
+    if total > len(shown):
+        text += f" and {total - len(shown)} more {noun}"
+    return text
+
+
 def _length_mismatch_message(sequences: list[Sequence]) -> str:
-    """Each length in ``sequences``, shortest first, with the first few names that have it."""
+    """The lengths in ``sequences``, most common first, with the first few names that have each."""
     names_by_length: dict[int, list[str]] = {}
     for seq in sequences:
         names_by_length.setdefault(len(seq), []).append(seq.name)
-    groups = []
-    for length, names in sorted(names_by_length.items()):
-        shown = ", ".join(names[:_NAMES_PER_LENGTH])
-        if len(names) > _NAMES_PER_LENGTH:
-            shown += f" and {len(names) - _NAMES_PER_LENGTH} more"
-        groups.append(f"{length} bp ({shown})")
-    return "Sequences have different lengths: " + ", ".join(groups)
+    # The most common length is usually the alignment length, so it comes first and the
+    # sequences that differ from it follow. A tie goes to the shorter length.
+    ordered = sorted(names_by_length.items(), key=lambda item: (-len(item[1]), item[0]))
+    groups = [
+        f"{length} bp ({_first_few(names[:_NAMES_PER_LENGTH], len(names), 'names')})"
+        for length, names in ordered[:_LENGTHS_SHOWN]
+    ]
+    return "Sequences have different lengths: " + _first_few(groups, len(ordered), "lengths")
 
 
 def position_bases(counts: dict[str, int], position: int) -> dict[str, int]:

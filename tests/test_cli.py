@@ -1174,7 +1174,7 @@ class TestUnequalLengths:
         outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAA"})
         outgroup2 = write_alignment_file(tmp_path / "out2.fa", {"out2": "ATGAAAC"})
         result = runner.invoke(app, ["test", str(ingroup), str(outgroup), "-p", str(outgroup2)])
-        self.assert_clean_error(result, "7 bp")
+        self.assert_clean_error(result, "outgroup2 is 7 bp")
 
     def test_info_ragged_file(self, tmp_path: Path) -> None:
         fasta = write_alignment_file(tmp_path / "ragged.fa", {"in3": "ATG", "in2": "ATGAAG"})
