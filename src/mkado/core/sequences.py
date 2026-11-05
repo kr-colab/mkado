@@ -16,6 +16,25 @@ if TYPE_CHECKING:
     pass
 
 
+def base_derived_state(
+    counts: dict[str, int], total: int, source_codons: set[str], position: int
+) -> tuple[float, int] | None:
+    """Derived (frequency, count) at one codon position, from codon counts already made.
+
+    See ``SequenceSet.position_derived_state``, which this serves; a caller that has
+    the codon counts for other work passes them here and saves a second pass.
+    """
+    bases: dict[str, int] = {}
+    for codon, count in counts.items():
+        bases[codon[position]] = bases.get(codon[position], 0) + count
+    shared = bases.keys() & {codon[position] for codon in source_codons}
+    if not shared:
+        return None
+    ancestral = min(shared, key=lambda base: (-bases[base], base))
+    derived_count = total - bases[ancestral]
+    return derived_count / total, derived_count
+
+
 @dataclass
 class Sequence:
     """Represents a single biological sequence."""
@@ -300,6 +319,31 @@ class SequenceSet:
         # sits exactly on its own frequency and a threshold comparison is not off by a
         # rounding.
         return derived_count / total, derived_count
+
+    def position_derived_state(
+        self, ancestral_source: SequenceSet, codon_index: int, position: int
+    ) -> tuple[float, int] | None:
+        """Derive the frequency and copy count of the non-ancestral bases at one codon position.
+
+        Polarizing one position, not the whole codon, means that a difference at another
+        position of the codon does not stop the ancestral state from being found. The
+        ancestral base is the one this set shares with ``ancestral_source`` at that
+        position that is most common here; a tie goes to the first base in alphabetical
+        order, so the result does not depend on the order of the sequences.
+
+        Args:
+            ancestral_source: Sequences used to infer the ancestral base.
+            codon_index: Zero-based codon index.
+            position: Position in the codon, 0, 1 or 2.
+
+        Returns:
+            Tuple of (derived frequency, derived count), or None when no base at that
+            position is shared, including when ``ancestral_source`` has no clean codon.
+        """
+        counts, total = self.site_codon_counts(codon_index)
+        return base_derived_state(
+            counts, total, ancestral_source.codon_set_clean(codon_index), position
+        )
 
     def filter_by_name(self, pattern: str) -> SequenceSet:
         """Filter sequences by name pattern (substring match).

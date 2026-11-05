@@ -86,6 +86,8 @@ class PolarizedMKResult:
 
     Diagnostic only — not part of the reported statistics.
     """
+    unpolarized_sites: int = 0
+    """Always 0: this test polarizes against its second outgroup by codon."""
 
     def __str__(self) -> str:
         ni_str = f"{self.ni_ingroup:.4f}" if self.ni_ingroup is not None else "NA"

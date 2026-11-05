@@ -13,7 +13,7 @@ from mkado.analysis.statistics import (
     neutrality_index,
     omega_decomposition,
 )
-from mkado.core.alignment import AlignedPair, passes_frequency_filter
+from mkado.core.alignment import AlignedPair, _count_path, passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import SequenceSet
 
@@ -73,6 +73,8 @@ class MKResult:
     Diagnostic only — not part of the reported statistics. See
     ``docs/omega.rst`` and ``GeneticCode.get_path``.
     """
+    unpolarized_sites: int = 0
+    """Polymorphic sites dropped because the outgroup could not polarize them."""
 
     def __str__(self) -> str:
         ni_str = f"{self.ni:.4f}" if self.ni is not None else "NA"
@@ -178,39 +180,41 @@ def mk_test(
     # Count polymorphisms
     pn = 0
     ps = 0
+    unpolarized = 0
+    filtering = min_frequency > 0 or no_singletons
 
     if pool_polymorphisms:
         # Pooled mode: count polymorphisms from both populations (libsequence convention)
         poly_sites = pair.polymorphic_sites_pooled()
-        classify_func = pair.classify_polymorphism_pooled
     else:
         # Standard mode: count only ingroup polymorphisms (DnaSP convention)
         poly_sites = pair.polymorphic_sites_ingroup()
-        classify_func = pair.classify_polymorphism
 
     for codon_idx in poly_sites:
         # Skip if also a fixed difference (shouldn't happen, but be safe)
         if codon_idx in processed_codons:
             continue
 
-        # Filtering needs the ancestral state, so a site whose state cannot be
-        # determined is only dropped when a filter is actually in use. Pooled mode
-        # has no ancestral state, so it folds ingroup and outgroup together and
-        # filters on the minor allele instead of the derived one.
-        if min_frequency > 0 or no_singletons:
-            state = (
-                pair.minor_allele_state(codon_idx)
-                if pool_polymorphisms
-                else ingroup.derived_state(outgroup, codon_idx)
-            )
+        mutations, dropped = pair.polarized_mutations(codon_idx, pooled=pool_polymorphisms)
+        unpolarized += dropped
+
+        if filtering and pool_polymorphisms:
+            # Pooled mode has no ancestral state, so it folds ingroup and outgroup
+            # together and filters the codon on its minor allele.
+            state = pair.minor_allele_state(codon_idx)
             if not passes_frequency_filter(state, min_frequency, no_singletons):
                 continue
+        elif filtering:
+            # Each mutation is filtered by its own position's derived state. Without a
+            # filter no ancestral state is needed, so a third-allele site still counts.
+            unpolarized += sum(1 for _, state in mutations if state is None)
+            mutations = [
+                m for m in mutations if passes_frequency_filter(m[1], min_frequency, no_singletons)
+            ]
 
-        result = classify_func(codon_idx)
-        if result is not None:
-            nonsyn, syn = result
-            pn += nonsyn
-            ps += syn
+        nonsyn, syn = _count_path(mutations)
+        pn += nonsyn
+        ps += syn
 
     # Calculate statistics
     p_val = fishers_exact(dn, ds, pn, ps)
@@ -233,6 +237,7 @@ def mk_test(
         ls=ls,
         omega=omega,
         stop_blocked_pairs=pair.stop_blocked_pairs,
+        unpolarized_sites=unpolarized,
     )
 
 

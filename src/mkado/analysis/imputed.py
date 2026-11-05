@@ -80,6 +80,8 @@ class ImputedMKResult:
     """``"bootstrap"`` when CI was computed, ``None`` when ``n_bootstrap=0``."""
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
+    unpolarized_sites: int = 0
+    """Polymorphic sites dropped because the outgroup could not polarize them."""
 
     # omega_a/omega_na CIs are pure arithmetic transforms of the alpha CI scaled
     # by the (constant) point-estimate omega; mirrors AsymptoticMKResult.
@@ -368,6 +370,7 @@ def imputed_mk_test(
         ln,
     )
     result.stop_blocked_pairs = gene_data.stop_blocked_pairs
+    result.unpolarized_sites = gene_data.unpolarized_sites
     if n_bootstrap > 0:
         ci = _bootstrap_imputed_alpha(
             gene_data.polymorphisms,
@@ -434,6 +437,7 @@ def imputed_mk_test_multi(
         ln,
     )
     result.stop_blocked_pairs = stop_blocked_total
+    result.unpolarized_sites = sum(g.unpolarized_sites for g in gene_data)
     if n_bootstrap > 0:
         ci = _bootstrap_imputed_alpha(
             all_polymorphisms,

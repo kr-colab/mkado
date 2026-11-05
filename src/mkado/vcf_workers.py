@@ -6,14 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mkado.batch_workers import WorkerResult
+from mkado.batch_workers import WorkerResult, _plural
 
 if TYPE_CHECKING:
     from mkado.io.vcf import GeneStats
-
-
-def _plural(count: int, noun: str) -> str:
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:

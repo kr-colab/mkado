@@ -26,7 +26,13 @@ from mkado.analysis.asymptotic import (
 )
 from mkado.analysis.mk_test import mk_test
 from mkado.analysis.polarized import polarized_mk_test
-from mkado.batch_workers import BatchTask, WorkerResult, _stop_blocked_warning, process_gene
+from mkado.batch_workers import (
+    BatchTask,
+    WorkerResult,
+    _stop_blocked_warning,
+    process_gene,
+    unpolarized_summary,
+)
 from mkado.io.output import OutputFormat, format_batch_results, format_result
 from scipy.stats import false_discovery_control
 
@@ -450,19 +456,26 @@ def run_parallel_batch(
     results: list[WorkerResult] = []
     warnings: list[str] = []
     had_error = False
+    # Every result counts toward the summary, including one that also carries a warning.
+    counted: list[object] = []
+
+    def record(worker_result: WorkerResult) -> None:
+        nonlocal had_error
+        if worker_result.result is not None:
+            counted.append(worker_result.result)
+        if worker_result.error:
+            warnings.append(worker_result.error)
+            had_error = True
+        elif worker_result.warning:
+            warnings.append(f"Warning: {worker_result.warning}")
+        elif worker_result.result is not None:
+            results.append(worker_result)
 
     if num_workers == 1:
         with create_rainbow_progress() as progress:
             task_id = progress.add_task(description, total=len(tasks))
             for task in tasks:
-                worker_result = process_gene(task)
-                if worker_result.error:
-                    warnings.append(worker_result.error)
-                    had_error = True
-                elif worker_result.warning:
-                    warnings.append(f"Warning: {worker_result.warning}")
-                elif worker_result.result is not None:
-                    results.append(worker_result)
+                record(process_gene(task))
                 progress.advance(task_id)
     else:
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
@@ -471,20 +484,16 @@ def run_parallel_batch(
                 task_id = progress.add_task(description, total=len(tasks))
                 for future in as_completed(futures):
                     try:
-                        worker_result = future.result()
-                        if worker_result.error:
-                            warnings.append(worker_result.error)
-                            had_error = True
-                        elif worker_result.warning:
-                            warnings.append(f"Warning: {worker_result.warning}")
-                        elif worker_result.result is not None:
-                            results.append(worker_result)
+                        record(future.result())
                     except Exception as e:
                         task = futures[future]
                         warnings.append(f"Error processing {task.file_path.name}: {e}")
                         had_error = True
                     progress.advance(task_id)
 
+    summary = unpolarized_summary(counted)
+    if summary:
+        warnings.append(summary)
     return results, warnings, had_error
 
 
@@ -895,6 +904,9 @@ def test(
     stop_blocked_warning = _stop_blocked_warning(fasta.stem, result)
     if stop_blocked_warning:
         typer.echo(f"Warning: {stop_blocked_warning}", err=True)
+    summary = unpolarized_summary([result])
+    if summary:
+        typer.echo(summary, err=True)
 
     write_output(format_result(result, fmt), output)
 

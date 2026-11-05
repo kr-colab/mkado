@@ -118,6 +118,26 @@ def _stop_blocked_warning(gene_id: str, result: Any) -> str | None:
     return f"{gene_id}: {n} codon pair(s) had no stop-free path and were dropped"
 
 
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def unpolarized_summary(results: list[Any]) -> str | None:
+    """One warning line for the polymorphic sites the outgroup could not polarize, or None.
+
+    Each per-gene result carries ``unpolarized_sites``. These drops are common when the
+    outgroup has missing data, so one line for the whole run replaces a line per gene.
+    """
+    counts = [result.unpolarized_sites for result in results if result.unpolarized_sites]
+    if not counts:
+        return None
+    sites, genes = sum(counts), len(counts)
+    return (
+        f"Warning: {_plural(sites, 'polymorphic site')} in {_plural(genes, 'gene')} could "
+        f"not be polarized against the outgroup and {'was' if sites == 1 else 'were'} dropped"
+    )
+
+
 def _worker_result(gene_id: str, result: Any) -> WorkerResult:
     """A successful WorkerResult, flagging a stop-blocked-pairs warning if any."""
     return WorkerResult(

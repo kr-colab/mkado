@@ -7,6 +7,7 @@ import pytest
 from mkado.analysis.asymptotic import PolymorphismData, extract_polymorphism_data
 from mkado.analysis.imputed import ImputedMKResult, imputed_mk_test, imputed_mk_test_multi
 from mkado.io.output import OutputFormat, format_result
+from tests.builders import sequence_set
 
 
 class TestImputedMKTest:
@@ -546,3 +547,12 @@ class TestImputedBootstrapRegression:
         result = imputed_mk_test_multi([gene1, gene2], cutoff=0.15, n_bootstrap=500, seed=42)
         assert result.alpha_ci_low == pytest.approx(0.4046481092436975, abs=1e-12)
         assert result.alpha_ci_high == pytest.approx(0.9233928571428571, abs=1e-12)
+
+
+class TestUnpolarizedSites:
+    def test_count_is_carried_and_summed(self) -> None:
+        data = extract_polymorphism_data(
+            sequence_set(["ATGAAA", "ATGAAG", "ATGAAA", "ATGAAG"]), sequence_set(["ACGNNN"])
+        )
+        assert imputed_mk_test(data).unpolarized_sites == 1
+        assert imputed_mk_test_multi([data, data]).unpolarized_sites == 2

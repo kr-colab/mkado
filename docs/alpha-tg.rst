@@ -107,8 +107,8 @@ Example output (TSV format, abbreviated):
 
 .. code-block:: text
 
-   Dn      Ds      Pn    Ps      alpha_TG  NI_TG     CI_low    CI_high   num_genes  ...  omega    omega_a  omega_na  omega_CI_low  omega_CI_high  ...
-   18828   49857   8150  26641   0.042379  0.957621  -0.034954 0.104385  400        ...  0.1180   0.0050   0.1130    0.1066        0.1282         ...
+   Dn      Ds      Pn      Ps      alpha_TG   NI_TG     CI_low     CI_high    num_genes  ...  omega    omega_a  omega_na  omega_CI_low  omega_CI_high  ...
+   18828   49857   15225   31363   -0.429617  1.429617  -0.527271  -0.337342  400        ...  0.1180   -0.0507  0.1687    0.1079        0.1279         ...
 
 Comparison with Other Methods
 -----------------------------
@@ -145,14 +145,14 @@ Different methods for estimating alpha correct for different biases:
      - Alpha estimate
      - 95% CI
    * - Simple mean
-     - -1.16
+     - -1.12
      - —
    * - α_TG (weighted)
-     - +0.04
-     - -0.03 to +0.10
+     - -0.43
+     - -0.53 to -0.34
    * - Asymptotic α
-     - +0.60
-     - +0.52 to +0.69
+     - +0.55
+     - +0.45 to +0.65
 
 The large gap between α_TG and asymptotic α suggests substantial slightly deleterious polymorphism — a common finding. The asymptotic method extrapolates to high frequencies where deleterious variants have been purged, revealing adaptive substitutions masked by segregating deleterious mutations.
 

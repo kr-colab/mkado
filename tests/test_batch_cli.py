@@ -266,3 +266,25 @@ class TestFindPartnerFile:
 
     def test_no_candidate_for_the_gene(self, tmp_path: Path) -> None:
         assert find_partner_file(tmp_path / "g1_ingroup.fa", [tmp_path / "g2_out.fa"]) is None
+
+
+# Gene g1 with its outgroup missing at codon 1, where the ingroup has AAA/AAG.
+G1_OUTGROUP_MISSING = {
+    **TWO_GENES,
+    "g1": {**TWO_GENES["g1"], "outgroup": ["ATGNNNCCAGGGTTTAAC"]},
+}
+
+
+class TestUnpolarizedSummary:
+    @pytest.mark.parametrize(
+        "extra", [[], *(args for args, _ in AGGREGATE_MODES)], ids=["standard", *range(3)]
+    )
+    def test_one_line_names_the_genes(self, tmp_path: Path, extra: list[str]) -> None:
+        dirs = write_two_genes(tmp_path, G1_OUTGROUP_MISSING)
+        result = batch_in(dirs, "separate", *extra)
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: 1 polymorphic site in 1 gene could not be polarized against the "
+            "outgroup and was dropped"
+        ) in result.output
+        assert result.output.count("could not be polarized") == 1

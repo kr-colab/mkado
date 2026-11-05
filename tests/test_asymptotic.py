@@ -21,6 +21,7 @@ from mkado.analysis.asymptotic import (
     asymptotic_mk_test_aggregated,
     extract_polymorphism_data,
 )
+from tests.builders import sequence_set
 
 
 class TestAsymptoticMKResult:
@@ -1263,3 +1264,29 @@ class TestAggregateVectorization:
                 expected_ps = sum(1 for g in gene_data for _, t in g.polymorphisms if t == "S")
                 assert agg.pn_total == expected_pn
                 assert agg.ps_total == expected_ps
+
+
+class TestUnpolarizedSites:
+    """Frequency-based extraction polarizes by position and counts what it drops."""
+
+    INGROUP = ["ATGAAA", "ATGAAG", "ATGAAA", "ATGAAG"]
+
+    def extract(self, outgroup: str) -> PolymorphismData:
+        return extract_polymorphism_data(sequence_set(self.INGROUP), sequence_set([outgroup]))
+
+    def test_difference_at_another_position_is_kept(self) -> None:
+        data = self.extract("ACGCAA")
+        assert data.polymorphisms == [(0.5, "S")]
+        assert data.unpolarized_sites == 0
+
+    @pytest.mark.parametrize("outgroup", ["ACGNNN", "ACGAAC"])
+    def test_unpolarizable_site_is_dropped_and_counted(self, outgroup: str) -> None:
+        data = self.extract(outgroup)
+        assert data.polymorphisms == []
+        assert data.unpolarized_sites == 1
+
+    def test_per_gene_asymptotic_result_carries_the_count(self) -> None:
+        result = asymptotic_mk_test(
+            sequence_set(self.INGROUP), sequence_set(["ACGNNN"]), bootstrap_replicates=0
+        )
+        assert result.unpolarized_sites == 1
