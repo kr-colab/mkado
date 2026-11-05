@@ -7,6 +7,7 @@ import pytest
 from mkado.core.sequences import AlignmentLengthError
 from mkado.errors import InputError
 from mkado.io.fasta import FastaFormatError, read_fasta, write_fasta
+from mkado.io.gff import GffFormatError
 
 
 def test_read_fasta(tmp_path: Path) -> None:
@@ -125,6 +126,20 @@ def test_header_without_name_raises(tmp_path: Path, header: str) -> None:
 
 def test_input_errors_are_value_errors() -> None:
     """Both input errors share one base class, and code that catches ValueError still works."""
-    for error in (FastaFormatError, AlignmentLengthError):
+    for error in (FastaFormatError, AlignmentLengthError, GffFormatError):
         assert issubclass(error, InputError)
         assert issubclass(error, ValueError)
+
+
+def test_non_utf8_raises(tmp_path: Path) -> None:
+    path = tmp_path / "latin1.fa"
+    path.write_bytes(b">a\xff\nATGAAA\n")
+    with pytest.raises(FastaFormatError, match="latin1.fa"):
+        list(read_fasta(path))
+
+
+def test_directory_raises(tmp_path: Path) -> None:
+    fasta_dir = tmp_path / "genes.fa"
+    fasta_dir.mkdir()
+    with pytest.raises(FastaFormatError, match="genes.fa"):
+        list(read_fasta(fasta_dir))

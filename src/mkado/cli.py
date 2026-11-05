@@ -1565,6 +1565,7 @@ def codes() -> None:
 
 
 @app.command()
+@report_input_errors
 def vcf(
     vcf_file: Annotated[
         Path,
@@ -1731,6 +1732,15 @@ def vcf(
     if not outgroup_vcf.exists():
         raise cli_error(f"--outgroup-vcf file not found: {outgroup_vcf}")
 
+    # Each worker opens the reference itself, so its index is built here, once, before any
+    # worker starts; a file that is not an indexed FASTA stops the run once, not per gene.
+    from mkado.io.vcf import probe_ref
+
+    try:
+        probe_ref(ref)
+    except InputError as e:
+        raise cli_error(f"--ref: {e}") from e
+
     # Every gene is read through a region query, so a VCF that cannot answer one
     # stops the run here instead of failing once per gene. The query itself
     # still raises, which covers a failure that appears mid-run and callers of
@@ -1780,11 +1790,14 @@ def vcf(
         if not gene_list.exists():
             raise cli_error(f"Gene list file not found: {gene_list}")
         gene_ids = set()
-        with open(gene_list) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    gene_ids.add(line)
+        try:
+            with open(gene_list) as f:
+                for line in f:
+                    line = line.strip()
+                    if line and not line.startswith("#"):
+                        gene_ids.add(line)
+        except (OSError, UnicodeDecodeError) as e:
+            raise cli_error(f"--gene-list: {gene_list} cannot be read: {e}") from e
         typer.echo(f"Loaded {len(gene_ids)} gene IDs from {gene_list}", err=True)
 
     cds_regions = parse_gff3(gff, gene_ids=gene_ids)

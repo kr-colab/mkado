@@ -19,6 +19,7 @@ from mkado.analysis.asymptotic import PolymorphismData
 from mkado.core.cds import CdsRegion, _COMPLEMENT
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.data.genetic_codes import CLEAN_CODONS
+from mkado.errors import InputError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -105,6 +106,26 @@ def _query_region(vcf: object, region: str) -> list:
             return list(vcf(region))
         except Exception as exc:
             raise VcfQueryError(f"region query {region} failed: {exc}") from exc
+
+
+def probe_ref(path: str | Path) -> None:
+    """Open a reference FASTA once, so that a missing index is built before any worker opens it.
+
+    pysam builds a missing .fai (and .gzi) index when it opens a FASTA. Workers that each
+    open an unindexed reference race to write the same index, and the genes they read
+    from a part-written index fail.
+
+    Raises:
+        InputError: If the file cannot be opened as an indexed FASTA.
+    """
+    import pysam
+
+    try:
+        # htslib writes its own error line to fd 2; the raised message says the same.
+        with _htslib_stderr_to_log():
+            pysam.FastaFile(str(path)).close()
+    except OSError as exc:
+        raise InputError(f"{path} cannot be opened as an indexed FASTA: {exc}") from exc
 
 
 def probe_vcf(path: str | Path) -> list[str]:

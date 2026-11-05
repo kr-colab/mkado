@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from mkado.io.gff import parse_gff3
+from mkado.io.gff import GffFormatError, parse_gff3
+from tests.builders import NON_UTF8_GFF
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +189,7 @@ def test_gtf_raises_error(tmp_path: Path):
     """)
     gff_path = tmp_path / "test.gtf"
     gff_path.write_text(content)
-    with pytest.raises(ValueError, match="(?i)gtf"):
+    with pytest.raises(GffFormatError, match="test.gtf: file appears to be GTF"):
         parse_gff3(gff_path)
 
 
@@ -692,3 +693,41 @@ def test_overlapping_cds_intervals(tmp_path: Path):
     # Should not crash; the CDS regions are accepted as-is
     regions = parse_gff3(gff_path)
     assert len(regions) == 1
+
+
+# ---------------------------------------------------------------------------
+# Files that cannot be read as GFF3
+# ---------------------------------------------------------------------------
+
+
+def test_non_utf8_raises(tmp_path: Path):
+    gff_path = tmp_path / "latin1.gff3"
+    gff_path.write_bytes(NON_UTF8_GFF)
+    with pytest.raises(GffFormatError, match="latin1.gff3"):
+        parse_gff3(gff_path)
+
+
+def test_gz_name_not_gzipped_raises(tmp_path: Path):
+    gff_path = tmp_path / "plain.gff3.gz"
+    gff_path.write_text("##gff-version 3\n")
+    with pytest.raises(GffFormatError, match="plain.gff3.gz"):
+        parse_gff3(gff_path)
+
+
+def test_directory_raises(tmp_path: Path):
+    gff_dir = tmp_path / "genes.gff3"
+    gff_dir.mkdir()
+    with pytest.raises(GffFormatError, match="genes.gff3"):
+        parse_gff3(gff_dir)
+
+
+def test_corrupt_gzip_raises(tmp_path: Path):
+    """A gzip header followed by damaged data fails inside zlib, not in the gzip module."""
+    data = bytearray(
+        gzip.compress(b"##gff-version 3\n" + b"chr1\t.\tCDS\t1\t9\t.\t+\t0\tID=c\n" * 200)
+    )
+    data[12:20] = b"\xff" * 8
+    gff_path = tmp_path / "damaged.gff3.gz"
+    gff_path.write_bytes(bytes(data))
+    with pytest.raises(GffFormatError, match="damaged.gff3.gz"):
+        parse_gff3(gff_path)

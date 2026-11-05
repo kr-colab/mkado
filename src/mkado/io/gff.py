@@ -5,12 +5,19 @@ from __future__ import annotations
 import gzip
 import logging
 import re
+import zlib
 from collections import defaultdict
+from collections.abc import Iterator
 from pathlib import Path
 
 from mkado.core.cds import CdsRegion
+from mkado.errors import InputError
 
 logger = logging.getLogger(__name__)
+
+
+class GffFormatError(InputError):
+    """A file given as GFF3 cannot be read as GFF3."""
 
 
 def _parse_attributes(attr_string: str) -> dict[str, str]:
@@ -30,6 +37,24 @@ def _looks_like_gtf(attr_string: str) -> bool:
     # GTF uses: gene_id "ENSG00000..."; transcript_id "ENST00000...";
     # GFF3 uses: ID=gene1;Parent=tx1;Name=Foo
     return bool(re.search(r'\w+\s+"[^"]*"', attr_string))
+
+
+def _numbered_lines(path: Path) -> Iterator[tuple[int, str]]:
+    """Each line of a plain or gzipped GFF3 file with its line number, counted from 1.
+
+    A file that cannot be read, is not text, or is not the gzip file its name says
+    raises GffFormatError with the file name, not an error from deep inside the reader.
+    """
+    opener = gzip.open if path.suffix == ".gz" else open
+    try:
+        with opener(path, "rt") as f:
+            yield from enumerate(f, 1)
+    except FileNotFoundError:
+        # A missing file keeps its standard error type, which callers test for.
+        raise
+    # gzip.BadGzipFile is an OSError; zlib.error comes from damaged compressed data.
+    except (OSError, UnicodeDecodeError, EOFError, zlib.error) as e:
+        raise GffFormatError(f"{path.name} cannot be read as GFF3: {e}") from e
 
 
 def parse_gff3(
@@ -62,90 +87,88 @@ def parse_gff3(
 
     gtf_checked = False
     malformed_lines = 0
-    opener = gzip.open if path.suffix == ".gz" else open
-    with opener(path, "rt") as f:
-        for line_num, line in enumerate(f, 1):
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
+    for line_num, line in _numbered_lines(path):
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
 
-            fields = line.split("\t")
-            if len(fields) < 9:
-                malformed_lines += 1
+        fields = line.split("\t")
+        if len(fields) < 9:
+            malformed_lines += 1
+            logger.debug(
+                "GFF3: skipping line %d (expected 9 tab-separated columns, got %d)",
+                line_num,
+                len(fields),
+            )
+            continue
+
+        # Detect GTF format on first data line
+        if not gtf_checked:
+            gtf_checked = True
+            if _looks_like_gtf(fields[8]):
+                raise GffFormatError(
+                    f"{path.name}: file appears to be GTF format, not GFF3 "
+                    f"(line {line_num} has GTF-style attributes: "
+                    f'key "value" instead of key=value). '
+                    f"Convert to GFF3 or use a GTF-compatible parser."
+                )
+
+        # Parse coordinates with error handling
+        try:
+            start = int(fields[3]) - 1  # GFF3 is 1-based, convert to 0-based
+            end = int(fields[4])  # GFF3 end is inclusive, but +1 for half-open
+        except ValueError:
+            malformed_lines += 1
+            logger.debug(
+                "GFF3: skipping line %d (non-integer coordinates: start=%r, end=%r)",
+                line_num,
+                fields[3],
+                fields[4],
+            )
+            continue
+
+        chrom = fields[0]
+        feature_type = fields[2]
+        strand = fields[6]
+        phase_str = fields[7]
+        attrs = _parse_attributes(fields[8])
+
+        if feature_type == "gene":
+            gid = attrs.get("ID", "")
+            if gid:
+                gene_names[gid] = attrs.get("Name", gid)
+
+        elif feature_type in ("mRNA", "transcript"):
+            tid = attrs.get("ID", "")
+            parent = attrs.get("Parent", "")
+            if tid and parent:
+                transcript_to_gene[tid] = parent
+                transcript_info[tid] = {
+                    "chrom": chrom,
+                    "strand": strand,
+                }
+
+        elif feature_type == "CDS":
+            parent = attrs.get("Parent", "")
+            if not parent:
                 logger.debug(
-                    "GFF3: skipping line %d (expected 9 tab-separated columns, got %d)",
+                    "GFF3: skipping CDS at line %d (no Parent attribute)",
                     line_num,
-                    len(fields),
                 )
                 continue
-
-            # Detect GTF format on first data line
-            if not gtf_checked:
-                gtf_checked = True
-                if _looks_like_gtf(fields[8]):
-                    raise ValueError(
-                        f"File appears to be GTF format, not GFF3 "
-                        f"(line {line_num} has GTF-style attributes: "
-                        f'key "value" instead of key=value). '
-                        f"Convert to GFF3 or use a GTF-compatible parser."
-                    )
-
-            # Parse coordinates with error handling
-            try:
-                start = int(fields[3]) - 1  # GFF3 is 1-based, convert to 0-based
-                end = int(fields[4])  # GFF3 end is inclusive, but +1 for half-open
-            except ValueError:
-                malformed_lines += 1
-                logger.debug(
-                    "GFF3: skipping line %d (non-integer coordinates: start=%r, end=%r)",
-                    line_num,
-                    fields[3],
-                    fields[4],
-                )
-                continue
-
-            chrom = fields[0]
-            feature_type = fields[2]
-            strand = fields[6]
-            phase_str = fields[7]
-            attrs = _parse_attributes(fields[8])
-
-            if feature_type == "gene":
-                gid = attrs.get("ID", "")
-                if gid:
-                    gene_names[gid] = attrs.get("Name", gid)
-
-            elif feature_type in ("mRNA", "transcript"):
-                tid = attrs.get("ID", "")
-                parent = attrs.get("Parent", "")
-                if tid and parent:
-                    transcript_to_gene[tid] = parent
-                    transcript_info[tid] = {
+            # Parent can be comma-separated in some GFF3 files
+            for pid in parent.split(","):
+                pid = pid.strip()
+                phase = int(phase_str) if phase_str in ("0", "1", "2") else 0
+                cds_by_transcript[pid].append(
+                    {
                         "chrom": chrom,
+                        "start": start,
+                        "end": end,
                         "strand": strand,
+                        "phase": phase,
                     }
-
-            elif feature_type == "CDS":
-                parent = attrs.get("Parent", "")
-                if not parent:
-                    logger.debug(
-                        "GFF3: skipping CDS at line %d (no Parent attribute)",
-                        line_num,
-                    )
-                    continue
-                # Parent can be comma-separated in some GFF3 files
-                for pid in parent.split(","):
-                    pid = pid.strip()
-                    phase = int(phase_str) if phase_str in ("0", "1", "2") else 0
-                    cds_by_transcript[pid].append(
-                        {
-                            "chrom": chrom,
-                            "start": start,
-                            "end": end,
-                            "strand": strand,
-                            "phase": phase,
-                        }
-                    )
+                )
 
     if malformed_lines > 0:
         logger.warning(

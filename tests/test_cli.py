@@ -7,7 +7,7 @@ import typer
 from typer.testing import CliRunner
 
 from mkado.cli import app, cli_error
-from tests.builders import write_alignment_file
+from tests.builders import assert_clean_error, write_alignment_file
 
 runner = CliRunner()
 
@@ -1136,16 +1136,6 @@ class TestUnpolarizedSummary:
         assert "could not be polarized" not in result.output
 
 
-def assert_clean_error(result, *fragments: str) -> None:
-    """The command stopped with one error line that has every fragment, not a traceback."""
-    assert result.exit_code == 1, result.output
-    # An uncaught ValueError would mean the user saw a traceback.
-    assert isinstance(result.exception, SystemExit), result.exception
-    assert "Error:" in result.output
-    for fragment in fragments:
-        assert fragment in result.output
-
-
 class TestUnequalLengths:
     """Sequences of different lengths stop the run with an error line, not a traceback."""
 
@@ -1213,3 +1203,9 @@ class TestFastaFormat:
         fasta.write_text(">a\nATGAAA\n>\nATGAAG\n")
         result = runner.invoke(app, ["info", str(fasta)])
         assert_clean_error(result, "noname.fa", "line 3")
+
+    def test_info_non_utf8_is_clean_error(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "latin1.fa"
+        fasta.write_bytes(b">a\xff\nATGAAA\n>b\nATGAAG\n")
+        result = runner.invoke(app, ["info", str(fasta)])
+        assert_clean_error(result, "latin1.fa")
