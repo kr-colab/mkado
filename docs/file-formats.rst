@@ -17,9 +17,13 @@ MKado reads standard FASTA format:
 
 Requirements:
 
-- Standard FASTA format with ``>`` headers
-- Sequences can span multiple lines
+- Standard FASTA format with ``>`` headers. Each header must have a name, and the file must
+  start with a header
+- Sequences can span multiple lines. MKado ignores spaces and tabs inside a sequence line, so
+  a sequence written in blocks of 10 bases reads correctly
 - Bases ``A``, ``C``, ``G`` and ``T``, in uppercase or lowercase. MKado reads any other character, such as ``N``, a gap or an ambiguity code, as missing data (see :ref:`missing-data`)
+- No digits in a sequence line. A numbered layout, as in GenBank files, is not FASTA, so MKado
+  stops with an error that gives the file and the line number
 
 Alignment Requirements
 ----------------------

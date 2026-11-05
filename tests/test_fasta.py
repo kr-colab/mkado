@@ -2,8 +2,11 @@
 
 from pathlib import Path
 
+import pytest
 
-from mkado.io.fasta import read_fasta, write_fasta
+from mkado.core.sequences import AlignmentLengthError
+from mkado.errors import InputError
+from mkado.io.fasta import FastaFormatError, read_fasta, write_fasta
 
 
 def test_read_fasta(tmp_path: Path) -> None:
@@ -74,3 +77,54 @@ def test_read_empty_fasta(tmp_path: Path) -> None:
     sequences = list(read_fasta(fasta_file))
 
     assert len(sequences) == 0
+
+
+def read(tmp_path: Path, text: str, name: str = "g.fa") -> list[tuple[str, str]]:
+    path = tmp_path / name
+    path.write_bytes(text.encode())
+    return list(read_fasta(path))
+
+
+@pytest.mark.parametrize(
+    ("line", "bases"),
+    [
+        ("ATG AAA", "ATGAAA"),
+        ("ATG\tAAA", "ATGAAA"),
+        # Some tools write a sequence in blocks of 10 bases with a space between the blocks.
+        ("ATGAAACCCG GGTTTAAACC", "ATGAAACCCGGGTTTAAACC"),
+    ],
+)
+def test_whitespace_inside_sequence_is_removed(tmp_path: Path, line: str, bases: str) -> None:
+    assert read(tmp_path, f">a\n{line}\n") == [("a", bases)]
+
+
+def test_windows_line_endings(tmp_path: Path) -> None:
+    assert read(tmp_path, ">a\r\nATGAAA\r\nCCC\r\n") == [("a", "ATGAAACCC")]
+
+
+def test_digit_raises(tmp_path: Path) -> None:
+    """A numbered sequence line is not FASTA; reading the digits as bases would shift codons."""
+    with pytest.raises(FastaFormatError) as excinfo:
+        read(tmp_path, ">a\n1 atgaaa\n", name="numbered.fa")
+    message = str(excinfo.value)
+    assert "numbered.fa" in message
+    assert "line 2" in message
+    assert "record a" in message
+
+
+def test_sequence_before_first_header_raises(tmp_path: Path) -> None:
+    with pytest.raises(FastaFormatError, match="line 1"):
+        read(tmp_path, "ATGAAA\n>a\nATGAAA\n")
+
+
+@pytest.mark.parametrize("header", [">", ">   "])
+def test_header_without_name_raises(tmp_path: Path, header: str) -> None:
+    with pytest.raises(FastaFormatError, match="line 3"):
+        read(tmp_path, f">a\nATGAAA\n{header}\nATGAAG\n")
+
+
+def test_input_errors_are_value_errors() -> None:
+    """Both input errors share one base class, and code that catches ValueError still works."""
+    for error in (FastaFormatError, AlignmentLengthError):
+        assert issubclass(error, InputError)
+        assert issubclass(error, ValueError)

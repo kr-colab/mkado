@@ -10,13 +10,14 @@ import numpy as np
 
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.data.genetic_codes import CLEAN_BASES, CLEAN_CODONS
+from mkado.errors import InputError
 from mkado.io.fasta import read_fasta
 
 if TYPE_CHECKING:
     pass
 
 
-class AlignmentLengthError(ValueError):
+class AlignmentLengthError(InputError):
     """Sequences that must be aligned have different lengths."""
 
 

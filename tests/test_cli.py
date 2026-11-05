@@ -1136,24 +1136,25 @@ class TestUnpolarizedSummary:
         assert "could not be polarized" not in result.output
 
 
+def assert_clean_error(result, *fragments: str) -> None:
+    """The command stopped with one error line that has every fragment, not a traceback."""
+    assert result.exit_code == 1, result.output
+    # An uncaught ValueError would mean the user saw a traceback.
+    assert isinstance(result.exception, SystemExit), result.exception
+    assert "Error:" in result.output
+    for fragment in fragments:
+        assert fragment in result.output
+
+
 class TestUnequalLengths:
     """Sequences of different lengths stop the run with an error line, not a traceback."""
-
-    @staticmethod
-    def assert_clean_error(result, *fragments: str) -> None:
-        assert result.exit_code == 1, result.output
-        # An uncaught ValueError would mean the user saw a traceback.
-        assert isinstance(result.exception, SystemExit), result.exception
-        assert "Error:" in result.output
-        for fragment in fragments:
-            assert fragment in result.output
 
     def test_combined_mode(self, tmp_path: Path) -> None:
         fasta = write_alignment_file(
             tmp_path / "all.fa", {"in_1": "ATGAAA", "in_2": "ATG", "out_1": "ATGAAA"}
         )
         result = runner.invoke(app, ["test", str(fasta), "-i", "in_", "-o", "out_"])
-        self.assert_clean_error(result, "all.fa", "3 bp", "6 bp")
+        assert_clean_error(result, "all.fa", "3 bp", "6 bp")
 
     def test_separate_mode_ragged_ingroup(self, tmp_path: Path) -> None:
         ingroup = write_alignment_file(
@@ -1161,22 +1162,54 @@ class TestUnequalLengths:
         )
         outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAA"})
         result = runner.invoke(app, ["test", str(ingroup), str(outgroup)])
-        self.assert_clean_error(result, "in.fa", "3 bp", "6 bp")
+        assert_clean_error(result, "in.fa", "3 bp", "6 bp")
 
     def test_separate_mode_ingroup_outgroup_mismatch(self, tmp_path: Path) -> None:
         ingroup = write_alignment_file(tmp_path / "in.fa", {"in1": "ATGAAA", "in2": "ATGAAG"})
         outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAAC"})
         result = runner.invoke(app, ["test", str(ingroup), str(outgroup)])
-        self.assert_clean_error(result, "Alignment length mismatch", "6 bp", "7 bp")
+        assert_clean_error(result, "Alignment length mismatch", "6 bp", "7 bp")
 
     def test_polarize_file_mismatch(self, tmp_path: Path) -> None:
         ingroup = write_alignment_file(tmp_path / "in.fa", {"in1": "ATGAAA", "in2": "ATGAAG"})
         outgroup = write_alignment_file(tmp_path / "out.fa", {"out": "ATGAAA"})
         outgroup2 = write_alignment_file(tmp_path / "out2.fa", {"out2": "ATGAAAC"})
         result = runner.invoke(app, ["test", str(ingroup), str(outgroup), "-p", str(outgroup2)])
-        self.assert_clean_error(result, "outgroup2 is 7 bp")
+        assert_clean_error(result, "outgroup2 is 7 bp")
 
     def test_info_ragged_file(self, tmp_path: Path) -> None:
         fasta = write_alignment_file(tmp_path / "ragged.fa", {"in3": "ATG", "in2": "ATGAAG"})
         result = runner.invoke(app, ["info", str(fasta)])
-        self.assert_clean_error(result, "ragged.fa", "3 bp", "6 bp")
+        assert_clean_error(result, "ragged.fa", "3 bp", "6 bp")
+
+
+class TestFastaFormat:
+    """Whitespace inside a sequence is ignored, and a malformed file stops with an error line."""
+
+    RECORDS = {"in_1": "ATGAAACCC", "in_2": "ATGAAGCCC", "in_3": "ATGAAACCT", "out_1": "ATGGAACCC"}
+
+    def test_spaces_give_same_result(self, tmp_path: Path) -> None:
+        plain = write_alignment_file(tmp_path / "plain.fa", self.RECORDS)
+        spaced = write_alignment_file(
+            tmp_path / "spaced.fa",
+            {name: f"{seq[:3]} {seq[3:6]}\t{seq[6:]}" for name, seq in self.RECORDS.items()},
+        )
+        results = [
+            runner.invoke(app, ["test", str(path), "-i", "in_", "-o", "out_", "-f", "tsv"])
+            for path in (plain, spaced)
+        ]
+        assert results[0].exit_code == 0, results[0].output
+        assert results[1].exit_code == 0, results[1].output
+        assert results[1].stdout == results[0].stdout
+
+    def test_digit_is_clean_error(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "numbered.fa"
+        fasta.write_text(">in_1\n1 ATGAAA\n>out_1\n1 ATGAAG\n")
+        result = runner.invoke(app, ["test", str(fasta), "-i", "in_", "-o", "out_"])
+        assert_clean_error(result, "numbered.fa", "line 2")
+
+    def test_info_header_without_name_is_clean_error(self, tmp_path: Path) -> None:
+        fasta = tmp_path / "noname.fa"
+        fasta.write_text(">a\nATGAAA\n>\nATGAAG\n")
+        result = runner.invoke(app, ["info", str(fasta)])
+        assert_clean_error(result, "noname.fa", "line 3")
