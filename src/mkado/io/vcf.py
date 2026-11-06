@@ -504,7 +504,7 @@ def extract_gene_data(
         ref_fasta_path: Path to indexed reference FASTA.
         genetic_code: Genetic code for classification (standard if None).
         min_frequency: Minimum derived allele frequency threshold.
-        no_singletons: If True, exclude sites where the derived allele is seen once.
+        no_singletons: If True, exclude each SNP whose derived allele is seen once.
         include_filtered: If True, also use records whose FILTER is not PASS or '.'.
         ingroup_vcf: Pre-opened cyvcf2.VCF handle for ingroup (optional).
         outgroup_vcf: Pre-opened cyvcf2.VCF handle for outgroup (optional).

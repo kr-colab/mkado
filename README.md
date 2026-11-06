@@ -185,7 +185,7 @@ mkado vcf --vcf VCF --outgroup-vcf VCF --ref FASTA --gff GFF3 [OPTIONS]
 **Key Options:**
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--vcf` | | Ingroup VCF (multi-sample, bgzipped+tabix recommended) |
+| `--vcf` | | Ingroup VCF (multi-sample, bgzipped and indexed) |
 | `--outgroup-vcf` | | Single-sample outgroup VCF |
 | `--ref` | | Reference FASTA (plain or bgzipped, faidx-indexed) |
 | `--gff` | | GFF3 annotation (plain or gzipped) |
@@ -242,10 +242,12 @@ Found 11 ingroup, 1 outgroup sequences
 MK Test Results:
   Divergence:    Dn=6, Ds=8
   Polymorphism:  Pn=1, Ps=8
+  Sites:         Ln=573.00, Ls=195.00
   Fisher's exact p-value: 0.176
   Neutrality Index (NI):  0.1667
   Alpha (α):              0.8333
   DoS:                    0.3175
+  omega (dN/dS):          0.2552
 ```
 
 ## Python API

@@ -30,14 +30,14 @@ class MKResult:
     - **Dn / Ds**: number of fixed differences between ingroup and outgroup
       that change (Dn) or do not change (Ds) the encoded amino acid under
       the supplied genetic code.
-    - **Pn / Ps**: number of ingroup polymorphic sites whose derived allele
-      causes a non-synonymous (Pn) or synonymous (Ps) substitution. Sites
-      are filtered by ``min_frequency`` (default ``0.0``); the
-      ``--no-singletons`` CLI flag sets this threshold to ``1/n``. When
-      ``pool_polymorphisms`` is true, polymorphic sites in the outgroup are
-      pooled into the ingroup counts, and filtering has no ancestral state to
-      work from, so it uses the folded minor-allele frequency over the
-      combined ingroup+outgroup sample instead of a derived frequency.
+    - **Pn / Ps**: number of ingroup polymorphisms (one for each mutation)
+      whose derived allele causes a non-synonymous (Pn) or synonymous (Ps)
+      substitution. Each is filtered by ``min_frequency`` (default ``0.0``);
+      ``no_singletons`` drops one whose derived base is seen once, whatever
+      the sample size. When ``pool_polymorphisms`` is true, polymorphisms in
+      the outgroup are pooled into the ingroup counts, and filtering has no
+      ancestral state to work from, so it uses the folded minor-allele
+      frequency over the combined ingroup+outgroup sample instead.
     """
 
     dn: int
@@ -74,9 +74,9 @@ class MKResult:
     ``docs/omega.rst`` and ``GeneticCode.get_path``.
     """
     internal_stop_codons: int = 0
-    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
+    """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
     unpolarized_sites: int = 0
-    """Polymorphic sites dropped because the outgroup could not polarize them."""
+    """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
     def __str__(self) -> str:
         ni_str = f"{self.ni:.4f}" if self.ni is not None else "NA"

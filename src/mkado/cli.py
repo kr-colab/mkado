@@ -712,7 +712,7 @@ def test(
         bool,
         typer.Option(
             "--no-singletons",
-            help="Exclude sites where the derived allele appears once",
+            help="Exclude each mutation whose derived base is seen in one sequence",
         ),
     ] = False,
     code_table: CodeTableOption = "standard",
@@ -1084,7 +1084,7 @@ def batch(
         bool,
         typer.Option(
             "--no-singletons",
-            help="Exclude sites where the derived allele appears once",
+            help="Exclude each mutation whose derived base is seen in one sequence",
         ),
     ] = False,
     code_table: CodeTableOption = "standard",
@@ -1588,7 +1588,7 @@ def codes() -> None:
 def vcf(
     vcf_file: Annotated[
         Path,
-        typer.Option("--vcf", help="Ingroup VCF file (multi-sample, bgzipped+tabix recommended)"),
+        typer.Option("--vcf", help="Ingroup VCF file (multi-sample, bgzipped and indexed)"),
     ],
     ref: Annotated[
         Path,
@@ -1711,7 +1711,7 @@ def vcf(
 
     REQUIREMENTS:
 
-    - Ingroup VCF: multi-sample population VCF (bgzipped+tabix recommended)
+    - Ingroup VCF: multi-sample population VCF (bgzipped and indexed)
     - Reference FASTA: genome assembly the VCF was called against (plain or bgzipped, faidx-indexed)
     - GFF3 annotation: gene models with CDS features (plain or gzipped)
     - Outgroup VCF: single-sample VCF of outgroup (for divergence)

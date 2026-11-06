@@ -119,10 +119,10 @@ Running MK Tests
    result = mk_test(ingroup, outgroup)
 
    # Access results
-   print(f"Dn={result.Dn}, Ds={result.Ds}")
-   print(f"Pn={result.Pn}, Ps={result.Ps}")
+   print(f"Dn={result.dn}, Ds={result.ds}")
+   print(f"Pn={result.pn}, Ps={result.ps}")
    print(f"P-value: {result.p_value}")
-   print(f"NI: {result.NI}")
+   print(f"NI: {result.ni}")
    print(f"Alpha: {result.alpha}")
 
 A ``SequenceSet`` keeps the reading frame it was built with, for example

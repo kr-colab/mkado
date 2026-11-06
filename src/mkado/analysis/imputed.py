@@ -81,9 +81,9 @@ class ImputedMKResult:
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
     internal_stop_codons: int = 0
-    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
+    """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
     unpolarized_sites: int = 0
-    """Polymorphic sites dropped because the outgroup could not polarize them."""
+    """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
     # omega_a/omega_na CIs are pure arithmetic transforms of the alpha CI scaled
     # by the (constant) point-estimate omega; mirrors AsymptoticMKResult.

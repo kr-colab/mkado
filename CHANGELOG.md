@@ -8,13 +8,25 @@
 - `mkado vcf --include-filtered` uses every record whatever its FILTER
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
+### Changed
+- The end-of-run warning about polymorphisms the outgroup could not
+  polarize now says "polymorphisms", not "polymorphic sites". It counts
+  one for each mutation, the same unit as Pn and Ps.
+
 ### Fixed
+- The docs said wrong or unclear things about missing data, polarization
+  and some filters: how VCF input reads a heterozygous outgroup call or an
+  outgroup third allele, how leftover bases in a FASTA alignment are
+  handled, that an uncompressed VCF works, how `--no-singletons` counts,
+  and what the unpolarized and internal stop codon counts count. They now
+  match the code (closes #140).
 - `--pool-polymorphisms` with `--asymptotic`, `--imputed` or `--alpha-tg`
   used only the ingroup's polymorphisms and lost those in the outgroup,
-  and did not report how many. These tests need each polymorphism's derived frequency,
-  and a pooled polymorphism has no ancestral state to give one. The
-  combination now stops with an error, and `extract_polymorphism_data` and
-  `asymptotic_mk_test` raise `ValueError` for `pool_polymorphisms=True`.
+  and did not report how many. These tests need each polymorphism's
+  derived frequency, and a pooled polymorphism has no ancestral state to
+  give one. The combination now stops with an error, and
+  `extract_polymorphism_data` and `asymptotic_mk_test` raise `ValueError`
+  for `pool_polymorphisms=True`.
 - The GFF3 parser dropped a CDS line with a start or end that is not a
   whole number, but built its transcript from the other CDS lines, with a
   gap. Such a transcript is now skipped, and its gene uses its longest

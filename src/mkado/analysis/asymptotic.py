@@ -41,9 +41,9 @@ class PolymorphismData:
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
     internal_stop_codons: int = 0
-    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
+    """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
     unpolarized_sites: int = 0
-    """Polymorphic sites dropped because the outgroup could not polarize them."""
+    """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
 
 def sum_site_totals(
@@ -91,7 +91,7 @@ class AsymptoticMKResult:
     """Results from an asymptotic McDonald-Kreitman test.
 
     ``Pn_total`` and ``Ps_total`` follow the standard MK definition: ingroup
-    polymorphic sites whose derived allele causes a non-synonymous (Pn) or
+    polymorphisms (one per mutation) whose derived allele causes a non-synonymous (Pn) or
     synonymous (Ps) substitution. The asymptotic test uses the full SFS
     with no ``min_frequency`` filter; frequency cutoffs apply only to the
     ``alpha(x)`` curve fit, not to the SFS counts themselves.
@@ -151,9 +151,9 @@ class AsymptoticMKResult:
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
     internal_stop_codons: int = 0
-    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
+    """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
     unpolarized_sites: int = 0
-    """Polymorphic sites dropped because the outgroup could not polarize them."""
+    """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
     # Dn, Ds, Ln, Ls are constants under the asymptotic Monte Carlo procedure,
     # so omega has no sampling distribution. The CIs on omega_a and omega_na
