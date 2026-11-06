@@ -364,7 +364,10 @@ class AlignedPair:
         return _count_path(self._mutations_against_major(counts))
 
     def polarized_mutations(
-        self, codon_index: int, pooled: bool = False
+        self,
+        codon_index: int,
+        pooled: bool = False,
+        ancestral_codons: set[str] | None = None,
     ) -> tuple[list[tuple[str, tuple[float, int] | None]], int]:
         """Each polymorphic mutation at a codon with its derived state, and how many were dropped.
 
@@ -376,13 +379,21 @@ class AlignedPair:
         rule as for divergence and ``count_total_sites``; elsewhere every mutation is
         dropped and returned as the drop count. Pooled mode lists the mutations over both
         groups, as ``classify_polymorphism_pooled`` does, but polarizes the ingroup.
+
+        ``ancestral_codons`` gives the codons whose bases name the ancestral base, the
+        outgroup's clean codons by default. The drop rule always reads the pair's own
+        outgroup, because that is the rule for divergence and the site counts.
         """
         ingroup_counts, total = self.ingroup.site_codon_counts(codon_index)
         counts = self.combined_codon_counts(codon_index) if pooled else ingroup_counts
         mutations = self._mutations_against_major(counts)
-        source_codons = self.outgroup.codon_set_clean(codon_index)
-        if not (ingroup_counts and source_codons):
+        if not (ingroup_counts and self.outgroup.codon_set_clean(codon_index)):
             return [], len(mutations)
+        source_codons = (
+            self.outgroup.codon_set_clean(codon_index)
+            if ancestral_codons is None
+            else ancestral_codons
+        )
         by_position = {}
         for position in {position for _, position, _, _ in mutations}:
             bases = position_bases(ingroup_counts, position)
@@ -399,6 +410,41 @@ class AlignedPair:
                 state = (count / total, count)
             polarized.append((change_type, state))
         return polarized, 0
+
+    def filtered_polymorphism(
+        self,
+        codon_index: int,
+        min_frequency: float = 0.0,
+        no_singletons: bool = False,
+        *,
+        pooled: bool = False,
+        ancestral_codons: set[str] | None = None,
+    ) -> tuple[int, int, int]:
+        """(nonsyn, syn, dropped) for the polymorphism at a codon, after the frequency filters.
+
+        Each mutation is filtered by its own position's derived state. Without a filter no
+        ancestral state is needed, so a third-allele site still counts; with one, a mutation
+        with no derived state cannot be judged and is dropped. Pooled mode has no ancestral
+        state, so it folds both groups together and filters the codon on its minor allele.
+        ``dropped`` also counts the mutations of a codon with no clean outgroup codon.
+        """
+        mutations, dropped = self.polarized_mutations(
+            codon_index, pooled=pooled, ancestral_codons=ancestral_codons
+        )
+        if min_frequency > 0 or no_singletons:
+            if pooled:
+                state = self.minor_allele_state(codon_index)
+                if not passes_frequency_filter(state, min_frequency, no_singletons):
+                    return 0, 0, dropped
+            else:
+                dropped += sum(1 for _, state in mutations if state is None)
+                mutations = [
+                    m
+                    for m in mutations
+                    if passes_frequency_filter(m[1], min_frequency, no_singletons)
+                ]
+        nonsyn, syn = _count_path(mutations)
+        return nonsyn, syn, dropped
 
     def classify_polymorphism(self, codon_index: int) -> tuple[int, int] | None:
         """Classify a polymorphism as synonymous/non-synonymous.
@@ -456,7 +502,8 @@ class PolarizedAlignedPair(AlignedPair):
 
         Returns:
             Tuple of (lineage, (nonsyn, syn)) where lineage is 'ingroup' or
-            'outgroup', or None if cannot be polarized
+            'outgroup', or None if cannot be polarized. A stop-blocked pair also gives
+            None and is counted here, so a caller must not classify it again.
         """
         if self.outgroup2 is None or not self.is_fixed_between(codon_index):
             return None
@@ -502,6 +549,17 @@ class PolarizedAlignedPair(AlignedPair):
             Tuple of (non_synonymous_count, synonymous_count) if the
             polymorphism is derived in ingroup, None if cannot polarize
         """
+        if self.ingroup_ancestral_codons(codon_index) is None:
+            return None
+        return self.classify_polymorphism(codon_index)
+
+    def ingroup_ancestral_codons(self, codon_index: int) -> set[str] | None:
+        """The ancestral codons of an ingroup polymorphism on the ingroup lineage, or None.
+
+        None when the polymorphism cannot be put on the ingroup lineage; see
+        ``polarize_ingroup_polymorphism`` for the rules. The returned codons are the ones
+        that name the ancestral base at each position when the polymorphism is filtered.
+        """
         if self.outgroup2 is None:
             return None
 
@@ -509,25 +567,13 @@ class PolarizedAlignedPair(AlignedPair):
         out1_codons = self.outgroup.codon_set_clean(codon_index)
         out2_codons = self.outgroup2.codon_set_clean(codon_index)
 
-        if not in_codons or len(in_codons) < 2:
-            return None  # Not polymorphic in ingroup
-
-        if not out2_codons:
-            return None  # No outgroup2 data - cannot polarize
-
-        # Check if outgroup2 has all ingroup alleles (ancestral polymorphism)
+        if len(in_codons) < 2 or not out2_codons:
+            return None  # Not polymorphic in the ingroup, or no outgroup2 data
         if in_codons <= out2_codons:
-            return None  # Ancestral polymorphism - don't count for ingroup lineage
+            return None  # Ancestral polymorphism: not on the ingroup lineage
 
-        # Check if we can determine ancestral state
-        # Preferred: outgroup1 and outgroup2 agree (both have same allele)
-        if out1_codons and (out1_codons & out2_codons):
-            # outgroup1 and outgroup2 share an allele - that's the ancestral state
-            return self.classify_polymorphism(codon_index)
-
-        # Alternative: outgroup2 shares some (but not all) alleles with ingroup
-        if in_codons & out2_codons:
-            # The shared allele is ancestral, others are derived in ingroup
-            return self.classify_polymorphism(codon_index)
-
-        return None  # Cannot polarize
+        # Preferred: outgroup1 and outgroup2 agree on the ancestral codon.
+        if shared := out1_codons & out2_codons:
+            return shared
+        # Alternative: outgroup2 shares some (but not all) alleles with the ingroup.
+        return (in_codons & out2_codons) or None

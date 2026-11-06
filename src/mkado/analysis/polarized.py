@@ -13,7 +13,7 @@ from mkado.analysis.statistics import (
     neutrality_index,
     omega_decomposition,
 )
-from mkado.core.alignment import PolarizedAlignedPair, passes_frequency_filter
+from mkado.core.alignment import PolarizedAlignedPair
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import SequenceSet, as_sequence_set
 
@@ -89,7 +89,8 @@ class PolarizedMKResult:
     internal_stop_codons: int = 0
     """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
     unpolarized_sites: int = 0
-    """Always 0: this test polarizes against its second outgroup by codon."""
+    """Polymorphic sites dropped: at a codon with no clean first-outgroup codon, or with no
+    derived state that a frequency filter can judge."""
 
     def __str__(self) -> str:
         ni_str = f"{self.ni_ingroup:.4f}" if self.ni_ingroup is not None else "NA"
@@ -208,15 +209,17 @@ def polarized_mk_test(
 
     for codon_idx in range(pair.num_codons):
         if pair.is_fixed_between(codon_idx):
+            # Classify first so a stop-blocked pair is counted once and skipped.
+            result = pair.classify_fixed_difference(codon_idx)
+            if result is None:
+                continue
             polarization = pair.polarize_fixed_difference(codon_idx)
 
             if polarization is None:
                 # Cannot polarize - count as unpolarized
-                result = pair.classify_fixed_difference(codon_idx)
-                if result is not None:
-                    nonsyn, syn = result
-                    dn_unpol += nonsyn
-                    ds_unpol += syn
+                nonsyn, syn = result
+                dn_unpol += nonsyn
+                ds_unpol += syn
             else:
                 lineage, (nonsyn, syn) = polarization
                 if lineage == "ingroup":
@@ -226,58 +229,40 @@ def polarized_mk_test(
                     dn_out += nonsyn
                     ds_out += syn
 
-    # Count polymorphisms with polarization
+    # Count polymorphisms with polarization, through the same filter-and-count rule as the
+    # standard MK test.
     pn_in = 0
     ps_in = 0
     pn_unpol = 0
     ps_unpol = 0
+    unpolarized = 0
 
     if pool_polymorphisms:
-        # Pooled mode: count polymorphisms from both populations (libsequence convention)
-        # Note: polarization is not applied in pooled mode as it's unclear which
-        # lineage to attribute shared polymorphisms to
-        poly_sites = pair.polymorphic_sites_pooled()
-        for codon_idx in poly_sites:
-            # Pooled mode has no ancestral state, so filtering folds ingroup and
-            # outgroup together and uses the minor allele instead of the derived one.
-            if min_frequency > 0 or no_singletons:
-                state = pair.minor_allele_state(codon_idx)
-                if not passes_frequency_filter(state, min_frequency, no_singletons):
-                    continue
-
-            result = pair.classify_polymorphism_pooled(codon_idx)
-            if result is not None:
-                nonsyn, syn = result
-                pn_in += nonsyn
-                ps_in += syn
-    else:
-        # Standard mode: count only ingroup polymorphisms (DnaSP convention)
-        # Apply polarization to determine if polymorphism arose on ingroup lineage
-        poly_sites = pair.polymorphic_sites_ingroup()
-
-        for codon_idx in poly_sites:
-            # First, try to polarize the polymorphism
-            result = pair.polarize_ingroup_polymorphism(codon_idx)
-
-            if result is None:
-                # Could not polarize - count as unpolarized
-                unpol_result = pair.classify_polymorphism(codon_idx)
-                if unpol_result is not None:
-                    nonsyn, syn = unpol_result
-                    pn_unpol += nonsyn
-                    ps_unpol += syn
-                continue
-
-            # Polymorphism is polarized to ingroup lineage. The second outgroup carries
-            # the ancestral state here, as it does for the polarization itself.
-            if min_frequency > 0 or no_singletons:
-                state = pair.ingroup.derived_state(pair.outgroup2, codon_idx)
-                if not passes_frequency_filter(state, min_frequency, no_singletons):
-                    continue
-
-            nonsyn, syn = result
+        # Pooled mode: count polymorphisms from both populations (libsequence convention).
+        # It has no ancestral state, so polarization does not apply.
+        for codon_idx in pair.polymorphic_sites_pooled():
+            nonsyn, syn, dropped = pair.filtered_polymorphism(
+                codon_idx, min_frequency, no_singletons, pooled=True
+            )
+            unpolarized += dropped
             pn_in += nonsyn
             ps_in += syn
+    else:
+        # Standard mode: count only ingroup polymorphisms (DnaSP convention). A polymorphism
+        # on the ingroup lineage takes its ancestral base from the codons that put it there;
+        # an unpolarized one takes it from outgroup1, as in the standard test.
+        for codon_idx in pair.polymorphic_sites_ingroup():
+            ancestral = pair.ingroup_ancestral_codons(codon_idx)
+            nonsyn, syn, dropped = pair.filtered_polymorphism(
+                codon_idx, min_frequency, no_singletons, ancestral_codons=ancestral
+            )
+            unpolarized += dropped
+            if ancestral is None:
+                pn_unpol += nonsyn
+                ps_unpol += syn
+            else:
+                pn_in += nonsyn
+                ps_in += syn
 
     # Calculate statistics for ingroup lineage
     p_val = fishers_exact(dn_in, ds_in, pn_in, ps_in)
@@ -307,4 +292,5 @@ def polarized_mk_test(
         omega=omega,
         stop_blocked_pairs=pair.stop_blocked_pairs,
         internal_stop_codons=pair.internal_stop_codons,
+        unpolarized_sites=unpolarized,
     )
