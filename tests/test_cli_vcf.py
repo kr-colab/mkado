@@ -529,7 +529,8 @@ class TestOptions:
         assert result.exit_code == 0
         table_rows = rows(result.stdout)
         assert table_rows["g_minus"] == (0, 2, 1, 1)
-        assert table_rows["g_plus"] == (1, 1, 2, 1)
+        # Under table 2, AGA is a stop codon, so the AAA to AGA polymorphism is not counted.
+        assert table_rows["g_plus"] == (1, 1, 1, 1)
 
     def test_min_freq(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "--min-freq", "0.2")

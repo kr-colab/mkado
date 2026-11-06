@@ -31,7 +31,7 @@ from mkado.analysis.polarized import polarized_mk_test
 from mkado.batch_workers import (
     BatchTask,
     WorkerResult,
-    _stop_blocked_warning,
+    _gene_warning,
     process_gene,
     unpolarized_summary,
 )
@@ -921,9 +921,9 @@ def test(
                 genetic_code=genetic_code,
             )
 
-    stop_blocked_warning = _stop_blocked_warning(fasta.stem, result)
-    if stop_blocked_warning:
-        typer.echo(f"Warning: {stop_blocked_warning}", err=True)
+    gene_warning = _gene_warning(fasta.stem, result)
+    if gene_warning:
+        typer.echo(f"Warning: {gene_warning}", err=True)
     summary = unpolarized_summary([result])
     if summary:
         typer.echo(summary, err=True)

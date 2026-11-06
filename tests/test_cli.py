@@ -1209,3 +1209,24 @@ class TestFastaFormat:
         fasta.write_bytes(b">a\xff\nATGAAA\n>b\nATGAAG\n")
         result = runner.invoke(app, ["info", str(fasta)])
         assert_clean_error(result, "latin1.fa")
+
+
+class TestStopCodonWarning:
+    """An internal stop codon is missing data, and the run says how many there were."""
+
+    def run(self, tmp_path: Path, ingroup_first: str):
+        fasta = write_alignment_file(
+            tmp_path / "g.fa",
+            {"in_1": ingroup_first, "in_2": "ATGAAGCCCTAA", "out_1": "ATGAAACCCTAA"},
+        )
+        return runner.invoke(app, ["test", str(fasta), "-i", "in_", "-o", "out_"])
+
+    def test_internal_stop_warns(self, tmp_path: Path) -> None:
+        result = self.run(tmp_path, "ATGTAACCCTAA")
+        assert result.exit_code == 0, result.output
+        assert "1 internal stop codon" in result.output
+
+    def test_terminal_stop_does_not_warn(self, tmp_path: Path) -> None:
+        result = self.run(tmp_path, "ATGAAACCCTAA")
+        assert result.exit_code == 0, result.output
+        assert "stop codon" not in result.output

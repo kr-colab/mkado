@@ -226,15 +226,15 @@ The adjusted p-values are reported alongside the raw Fisher's exact test p-value
 - **p_value**: Raw p-value from Fisher's exact test for each gene
 - **p_value_adjusted**: BH-adjusted p-value accounting for multiple comparisons
 
-Example output (TSV format), three of the 401 genes in ``examples/anopheles_batch``
+Example output (TSV format), three of the 400 genes in ``examples/anopheles_batch``
 run with ``-i gamb -o afun``:
 
 .. code-block:: text
 
-   gene        Dn  Ds  Pn  Ps  p_value      p_value_adjusted  NI        alpha      DoS        Ln          Ls          omega
-   AGAP000150  12  28  17  18  0.15342      0.298145          2.203704  -1.203704  -0.185714  263.611111  81.388889   0.132320
-   AGAP000432  12  59  15  14  0.000904438  0.00623751        5.267857  -4.267857  -0.348227  316.416667  106.583333  0.068511
-   AGAP001364  2   19  3   19  1            1                 1.500000  -0.500000  -0.041126  198.750000  65.250000   0.034558
+   gene        Dn  Ds  Pn  Ps  p_value     p_value_adjusted  NI        alpha      DoS        Ln          Ls          omega
+   AGAP000150  12  27  16  18  0.227522    0.390107          2.000000  -1.000000  -0.162896  260.527778  81.472222   0.138987
+   AGAP000432  12  59  14  14  0.00178081  0.0114891         4.916667  -3.916667  -0.330986  313.166667  106.833333  0.069384
+   AGAP001364  0   19  3   19  0.235366    0.397242          NA        NA         -0.136364  195.750000  65.250000   0.000000
 
 Use ``p_value_adjusted`` when interpreting significance across multiple genes to control for false discoveries.
 

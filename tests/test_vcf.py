@@ -891,7 +891,7 @@ class TestRecordWithoutCalledAlt:
 
     def extract(self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotypes):
         """Ingroup record in codon 3 at position 7; outgroup fixed for G at position 8."""
-        ingroup = write_vcf(tmp_path / "in", [f"chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t{genotypes}"])
+        ingroup = write_vcf(tmp_path / "in", [f"chr1\t7\t.\tA\tC\t30\tPASS\t.\tGT\t{genotypes}"])
         outgroup = write_vcf(
             tmp_path / "out", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
         )
@@ -1213,3 +1213,77 @@ class TestUnresolvedOutgroupCall:
         poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
         assert poly.dn == dn
         assert stats.outgroup_skipped == 0
+
+
+# Position 7 (1-based) is the first base of AAA, so A to T makes the stop codon TAA.
+AAA_TO_TAA = "chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"
+
+
+class TestStopCodons:
+    """A change to or from a stop codon is skipped and counted, in both polymorphism and divergence."""
+
+    def test_snp_that_makes_a_stop_is_skipped(self, tmp_path, write_vcf, synthetic_ref, simple_cds):
+        ingroup = write_vcf(tmp_path / "in_stop", [AAA_TO_TAA])
+        poly, stats = extract_gene_data(ingroup, None, simple_cds, synthetic_ref)
+        assert poly.polymorphisms == []
+        assert stats.skipped_stop == 1
+
+    def test_fixed_difference_to_a_stop_is_counted(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds
+    ):
+        ingroup = write_vcf(tmp_path / "in_empty", [])
+        outgroup = write_vcf(
+            tmp_path / "out_stop",
+            ["chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t1/1"],
+            samples=OUTGROUP,
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.skipped_stop == 1
+
+    def test_snp_that_makes_a_stop_does_not_void_the_codon(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds
+    ):
+        """The stop allele is missing data, so the ingroup codon is AAA, as in the FASTA path."""
+        ingroup = write_vcf(tmp_path / "in_stop", [AAA_TO_TAA])
+        # The outgroup is fixed for AGA (Arg) in the same codon: one replacement from AAA (Lys).
+        outgroup = write_vcf(
+            tmp_path / "out_arg", ["chr1\t8\t.\tA\tG\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert poly.polymorphisms == []
+        assert (poly.dn, poly.ds) == (1, 0)
+        assert stats.skipped_stop == 1
+
+    def test_ref_stop_with_non_stop_alt_matches_fasta(self, tmp_path, write_vcf):
+        """The REF stop carriers are missing data, so the ingroup codon is the ALT codon.
+
+        REF codon 1 is TAA. One ingroup copy carries TCA (Ser); the outgroup is fixed for
+        CAA (Gln). TCA to CAA is two replacements, the same as the FASTA path counts.
+        """
+        from mkado.analysis.mk_test import mk_test
+        from tests.builders import sequence_set
+
+        ref = tmp_path / "ref.fa"
+        ref.write_text(">chr1\nATGTAAGCCTTTTTTTTTTTTTTTTTTTTTTT\n")
+        pysam.faidx(str(ref))
+        cds = CdsRegion(gene_id="g", transcript_id="t", chrom="chr1", exons=[(0, 9)], strand="+")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t5\t.\tA\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+
+        fasta = mk_test(
+            sequence_set(["ATGTAAGCC"] * 7 + ["ATGTCAGCC"]), sequence_set(["ATGCAAGCC"])
+        )
+        assert (poly.dn, poly.ds) == (fasta.dn, fasta.ds) == (2, 0)
+        assert poly.polymorphisms == []
+        assert stats.skipped_stop == 1
+
+    def test_warning_counts_stop_skips(self):
+        from mkado.vcf_workers import _skip_warning
+
+        assert "2 with stop codons" in _skip_warning("g", GeneStats(skipped_stop=2))

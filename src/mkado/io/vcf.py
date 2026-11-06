@@ -206,6 +206,8 @@ class GeneStats:
     skipped_missing: int = 0
     stop_blocked_pairs: int = 0
     """Fixed differences with no stop-free mutational ordering, dropped from Dn/Ds."""
+    skipped_stop: int = 0
+    """SNPs and fixed differences dropped because a codon is a stop codon."""
     skipped_ambiguous: int = 0
     """SNPs and fixed differences dropped because a codon has a base other than A, C, G or T."""
     skipped_filtered: int = 0
@@ -567,6 +569,12 @@ def extract_gene_data(
 
     # === Polymorphism extraction ===
     polymorphisms: list[tuple[float, str]] = []
+    # Positions of SNPs with a stop codon allele. The stop allele is missing data, so such a
+    # position does not make its codon polymorphic for divergence either.
+    stop_allele_positions: set[int] = set()
+    # SNPs whose REF codon is a stop and whose ALT codon is not. The REF carriers are
+    # missing data, so the ALT base is the ingroup's base there, as in the FASTA path.
+    alt_of_ref_stop: dict[int, str] = {}
 
     for snp in ingroup_snps:
         # Skip sites fixed for ALT in ingroup (these are potential divergence, not polymorphism)
@@ -587,8 +595,12 @@ def extract_gene_data(
             stats.skipped_ambiguous += 1
             continue
 
-        # Skip stop codons in reference
-        if code.translate(ref_codon) == "*":
+        # A stop codon is missing data, so a change to or from one is not a polymorphism.
+        if {ref_codon, alt_codon} & code.stop_codons:
+            stats.skipped_stop += 1
+            stop_allele_positions.add(snp.pos)
+            if alt_codon not in code.stop_codons:
+                alt_of_ref_stop[snp.pos] = snp.alt
             continue
 
         # Classify the change
@@ -622,11 +634,11 @@ def extract_gene_data(
         # including a third-allele outgroup base there, voids the whole codon, not just
         # that one base. A position with no outgroup record is the reference.
         fixed_alt = {s.pos: s.alt for s in ingroup_snps if s.is_fixed_alt}
-        polymorphic = {s.pos for s in ingroup_snps if not s.is_fixed_alt}
+        polymorphic = {s.pos for s in ingroup_snps if not s.is_fixed_alt} - stop_allele_positions
         poly_codons = {cds.genomic_pos_to_codon_index(pos) for pos in polymorphic}
 
         def in_fetch(chrom: str, pos: int) -> str:
-            return fixed_alt.get(pos) or ref_fetch(chrom, pos)
+            return fixed_alt.get(pos) or alt_of_ref_stop.get(pos) or ref_fetch(chrom, pos)
 
         def out_fetch(chrom: str, pos: int) -> str:
             return outgroup_alleles.get(pos) or ref_fetch(chrom, pos)
@@ -646,7 +658,8 @@ def extract_gene_data(
             if not {in_codon, out_codon} <= CLEAN_CODONS:
                 stats.skipped_ambiguous += 1
                 continue
-            if code.translate(in_codon) == "*" or code.translate(out_codon) == "*":
+            if {in_codon, out_codon} & code.stop_codons:
+                stats.skipped_stop += 1
                 continue
             # get_path handles codons that differ at more than one position.
             path = code.get_path(in_codon, out_codon)

@@ -29,6 +29,8 @@ def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
         parts.append(f"{stats.stop_blocked_pairs} stop-blocked codon pairs")
     if stats.skipped_ambiguous > 0:
         parts.append(f"{stats.skipped_ambiguous} with ambiguous bases")
+    if stats.skipped_stop > 0:
+        parts.append(f"{stats.skipped_stop} with stop codons")
     if stats.outgroup_skipped > 0:
         parts.append(_plural(stats.outgroup_skipped, "outgroup record"))
     clauses = [f"skipped {', '.join(parts)}"] if parts else []

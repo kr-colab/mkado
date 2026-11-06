@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numbers
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,6 +17,10 @@ from mkado.io.fasta import read_fasta
 
 if TYPE_CHECKING:
     pass
+
+
+# A base that counts as data, used to find whether a sequence goes on after a stop codon.
+_BASE = re.compile("[ACGT]")
 
 
 class AlignmentLengthError(InputError):
@@ -423,6 +428,51 @@ class SequenceSet:
             return None
         derived_count = total - bases[ancestral]
         return derived_count / total, derived_count
+
+    def with_stops_masked(self, genetic_code: GeneticCode) -> tuple[SequenceSet, set[int]]:
+        """A copy with each stop codon of ``genetic_code`` as NNN, and the internal stop codons.
+
+        NNN is missing data wherever a codon is counted, so a stop codon then adds nothing
+        to divergence, polymorphism or the site counts. The length does not change.
+
+        A stop codon is internal when its own sequence has a later codon with an A, C, G or
+        T base. A stop that only gaps or N follow is that sequence's terminal stop, even when
+        another sequence goes on.
+        """
+        n_codons = self.num_codons
+        if not genetic_code.stop_codons or not self.sequences or n_codons == 0:
+            return self, set()
+        start = self.reading_frame - 1
+        # One array pass over all sequences, because the set is masked for every pair that
+        # an analysis builds. A character that is not ASCII becomes one "?" byte, so the
+        # positions do not move.
+        raw = "".join(seq.sequence for seq in self.sequences).encode("ascii", "replace")
+        frame = np.frombuffer(raw, dtype=np.uint8).reshape(len(self.sequences), -1)
+        codon_bytes = frame[:, start : start + 3 * n_codons].reshape(len(self.sequences), -1, 3)
+        codons = np.ascontiguousarray(codon_bytes).view("S3")[..., 0]
+        is_stop = np.isin(codons, [codon.encode() for codon in genetic_code.stop_codons])
+        if not is_stop.any():
+            return self, set()
+
+        sequences = list(self.sequences)
+        internal: set[int] = set()
+        end = start + 3 * n_codons
+        rows, stop_codons = np.nonzero(is_stop)
+        # Most sequences carry one stop, the terminal one, so slicing around each stop is
+        # cheaper than rebuilding the sequence from a list of bases. np.nonzero gives the
+        # stops of a row in order, so a later stop is not masked yet when an earlier one is
+        # tested, and its bases make the earlier stop internal.
+        for row, codon in zip(rows.tolist(), stop_codons.tolist(), strict=True):
+            text = sequences[row].sequence
+            pos = start + 3 * codon
+            if _BASE.search(text, pos + 3, end):
+                internal.add(codon)
+            sequences[row] = Sequence(sequences[row].name, text[:pos] + "NNN" + text[pos + 3 :])
+
+        masked = SequenceSet(
+            sequences=sequences, reading_frame=self.reading_frame, genetic_code=self.genetic_code
+        )
+        return masked, internal
 
     def filter_by_name(self, pattern: str) -> SequenceSet:
         """Filter sequences by name pattern (substring match).

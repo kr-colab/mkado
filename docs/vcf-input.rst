@@ -230,6 +230,7 @@ The line lists only the kinds with a count above zero, in this order:
 - ``with no called genotype``: ingroup records where no sample has a called allele
 - ``stop-blocked codon pairs``: fixed differences where every mutational path passes through a stop codon (see :ref:`counting-differences`)
 - ``with ambiguous bases``: SNPs and fixed differences in a codon with a reference base other than A, C, G or T
+- ``with stop codons``: SNPs and fixed differences where one of the two codons is a stop codon of the genetic code (see :ref:`stop-codons`)
 - ``outgroup records``: outgroup records skipped for any of the reasons above, records with no genotype, and records whose call is missing, partly missing or heterozygous (such a call is read as the reference base)
 
 After the skips, a second part reports the records that were used with REF and ALT swapped, for example ``skipped 1 indel; used 3 with REF and ALT swapped``. Many swaps in one file usually mean that the VCF was called against a different version of the reference.
@@ -249,9 +250,10 @@ Polymorphism Extraction
 3. For each SNP, map it to a codon using the CDS coordinates
 4. Reconstruct the reference and alternative codons from the reference FASTA
 5. For minus-strand genes, reverse complement the codons
-6. Classify each change as synonymous or nonsynonymous using the genetic code
-7. Compute the derived allele frequency from genotype counts
-8. If the outgroup is homozygous for the ALT allele, flip the polarization (derived frequency = 1 - ALT frequency); a heterozygous outgroup genotype cannot resolve a single allele, so it does not flip the polarization
+6. Skip the SNP if the reference or the alternative codon is a stop codon. The stop allele is missing data, so the SNP also does not make its codon polymorphic for divergence. When only the reference codon is a stop codon, the alternative base is the ingroup's base at that position for divergence, as in FASTA input
+7. Classify each change as synonymous or nonsynonymous using the genetic code
+8. Compute the derived allele frequency from genotype counts
+9. If the outgroup is homozygous for the ALT allele, flip the polarization (derived frequency = 1 - ALT frequency); a heterozygous outgroup genotype cannot resolve a single allele, so it does not flip the polarization
 
 Divergence Extraction
 ^^^^^^^^^^^^^^^^^^^^^
@@ -259,7 +261,7 @@ Divergence Extraction
 1. Build the ingroup codon: the reference codon with the ALT base at each position where every called ingroup allele is ALT. Missing calls are not counted, so one called ``1/1`` sample with all others ``./.`` makes the position fixed for ALT
 2. Build the outgroup codon: the reference codon with the outgroup allele at each position the outgroup VCF reports a homozygous-ALT genotype
 3. A codon needs one clean codon per group to be a fixed difference: if any position in the codon is polymorphic in the ingroup, the whole codon is excluded, not just that position
-4. Skip codons that are identical, or that are stop codons in either group
+4. Skip codons that are identical, or that are stop codons in either group. A skipped stop codon is counted in the warning
 5. Classify using the minimum-replacement path (see :ref:`counting-differences`) (via ``GeneticCode.get_path()``)
 
 The output is ``PolymorphismData`` (the same intermediate format used by the FASTA-based pipeline), which feeds directly into all existing analysis functions.
@@ -278,7 +280,7 @@ Edge Cases
 - **Outgroup third allele at a polymorphic site**: Ignored for divergence, and the polymorphism is not polarized
 - **Codon with an ingroup polymorphism and an outgroup difference at another position**: The whole codon is excluded from divergence, matching the FASTA path's requirement of one clean codon per group
 - **Overlapping genes**: Each gene processed independently; the same variant can contribute to multiple genes
-- **Stop codons**: Reference stop codons skipped; premature stop-creating variants treated as nonsynonymous
+- **Stop codons**: A stop codon is missing data, the same as in FASTA input. A SNP or a fixed difference where either codon is a stop codon is skipped and counted as ``with stop codons``. A SNP that makes a premature stop codon is therefore not counted as nonsynonymous
 - **Incomplete CDS**: Genes where CDS length % 3 != 0 are skipped
 - **CDS past the end of its contig**: The gene fails with an error, because the annotation does not match the reference
 

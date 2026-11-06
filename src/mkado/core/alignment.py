@@ -55,8 +55,26 @@ class AlignedPair:
     """Codon pairs where every mutational ordering passed through a stop codon
     and were dropped from the counts. See GeneticCode.get_path."""
 
+    _internal_stops: set[int] = field(default_factory=set, init=False, repr=False)
+
     def __post_init__(self) -> None:
         self._check_aligned("outgroup", self.outgroup)
+        # A stop codon is missing data: it adds nothing to divergence, polymorphism or the
+        # site counts. The pair's code is used, because a set can carry the standard code
+        # while the analysis uses another one.
+        self.ingroup = self._masked(self.ingroup)
+        self.outgroup = self._masked(self.outgroup)
+
+    def _masked(self, group: SequenceSet) -> SequenceSet:
+        """``group`` with its stop codons as NNN, recording the internal ones."""
+        masked, internal = group.with_stops_masked(self.genetic_code)
+        self._internal_stops |= internal
+        return masked
+
+    @property
+    def internal_stop_codons(self) -> int:
+        """Codons with an internal stop codon, one that is not its sequence's terminal stop."""
+        return len(self._internal_stops)
 
     def _check_aligned(self, label: str, other: SequenceSet) -> None:
         """Raise if ``other`` and the ingroup differ in length or in reading frame.
@@ -422,6 +440,7 @@ class PolarizedAlignedPair(AlignedPair):
         super().__post_init__()
         if self.outgroup2 is not None:
             self._check_aligned("outgroup2", self.outgroup2)
+            self.outgroup2 = self._masked(self.outgroup2)
 
     def polarize_fixed_difference(self, codon_index: int) -> tuple[str, tuple[int, int]] | None:
         """Polarize a fixed difference to determine which lineage changed.

@@ -105,17 +105,21 @@ class WorkerResult:
     """Warning message if there were issues."""
 
 
-def _stop_blocked_warning(gene_id: str, result: Any) -> str | None:
-    """Warn when a result carries codon pairs dropped for having no stop-free path.
+def _gene_warning(gene_id: str, result: Any) -> str | None:
+    """One warning line for a result with internal stop codons or stop-blocked pairs, or None.
 
-    Every per-gene result type declares this diagnostic field (default 0), so
+    Every per-gene result type declares both diagnostic fields (default 0), so
     one check here covers standard, asymptotic, imputed, polarized, and
     extract-only (PolymorphismData) results alike.
     """
-    n = result.stop_blocked_pairs
-    if not n:
+    clauses = []
+    if stops := result.internal_stop_codons:
+        clauses.append(f"{stops} internal stop codon(s) treated as missing data")
+    if blocked := result.stop_blocked_pairs:
+        clauses.append(f"{blocked} codon pair(s) had no stop-free path and were dropped")
+    if not clauses:
         return None
-    return f"{gene_id}: {n} codon pair(s) had no stop-free path and were dropped"
+    return f"{gene_id}: {'; '.join(clauses)}"
 
 
 def _plural(count: int, noun: str) -> str:
@@ -139,10 +143,8 @@ def unpolarized_summary(results: list[Any]) -> str | None:
 
 
 def _worker_result(gene_id: str, result: Any) -> WorkerResult:
-    """A successful WorkerResult, flagging a stop-blocked-pairs warning if any."""
-    return WorkerResult(
-        gene_id=gene_id, result=result, warning=_stop_blocked_warning(gene_id, result)
-    )
+    """A successful WorkerResult, with the per-gene stop-codon warning if there is one."""
+    return WorkerResult(gene_id=gene_id, result=result, warning=_gene_warning(gene_id, result))
 
 
 def process_gene(task: BatchTask) -> WorkerResult:

@@ -118,11 +118,31 @@ MKado uses a codon only if all three bases are ``A``, ``C``, ``G`` or ``T``. Any
 - If the ingroup or the outgroup has no clean sequence at a codon, MKado leaves that codon out of divergence (Dn, Ds), polymorphism (Pn, Ps) and the site counts (Ln, Ls). The dropped polymorphisms are counted and reported (see :ref:`Unpolarizable sites <unpolarizable-sites>`). The polarized MK test does not use this rule for polymorphism yet.
 - Lowercase bases are read as uppercase.
 
+.. _stop-codons:
+
 Stop Codons
 ^^^^^^^^^^^
 
-- Internal stop codons are flagged but not automatically excluded
-- Check your alignments if you see unexpected results
+MKado reads a stop codon of the genetic code (``--code-table``) as missing data, the same as a
+codon with an ``N``:
+
+- A stop codon adds nothing to divergence (Dn, Ds), polymorphism (Pn, Ps) or the site counts
+  (Ln, Ls). The terminal stop codon of a gene is left out in the same way.
+- A stop codon in one sequence is missing data for that sequence only. The other sequences
+  at that codon are counted, and the frequency of each allele is taken over them.
+- A change to or from a stop codon is therefore not counted. A premature stop codon is not
+  a nonsynonymous polymorphism.
+
+Each gene with an internal stop codon gets one warning line with the count, for example::
+
+   Warning: AGAP000704: 2 internal stop codon(s) treated as missing data
+
+A stop codon is internal when its own sequence has a later codon with an A, C, G or T base. A
+stop codon that only gaps or ``N`` follow is the terminal stop of that sequence, so a sequence
+that ends early in a gap-padded alignment does not give a warning.
+
+An internal stop codon in many sequences can mean a pseudogene, a wrong reading frame or an
+alignment error, so check such genes. The VCF path uses the same rule (see :doc:`vcf-input`).
 
 Common Problems
 ---------------
