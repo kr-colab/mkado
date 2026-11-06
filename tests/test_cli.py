@@ -1307,3 +1307,37 @@ class TestPooledFrequencyTests:
             app, ["test", str(fasta), "-i", "in_", "-o", "out_", "--pool-polymorphisms"]
         )
         assert result.exit_code == 0, result.output
+
+
+class TestTrailingBases:
+    """Bases after the last full codon are not read, so each gene with some gets a warning."""
+
+    @pytest.mark.parametrize(
+        ("records", "extra", "expected"),
+        [
+            ({"in_1": "ATGAAAC", "in_2": "ATGAAGC", "out_1": "ATGAAAC"}, [], 1),
+            ({"in_1": "ATGAAACG", "in_2": "ATGAAGCG", "out_1": "ATGAAACG"}, [], 2),
+            ({"in_1": "ATGAAA", "in_2": "ATGAAG", "out_1": "ATGAAA"}, [], 0),
+            ({"in_1": "CATGAAA", "in_2": "CATGAAG", "out_1": "CATGAAA"}, ["-r", "2"], 0),
+        ],
+        ids=["one_base", "two_bases", "whole_codons", "frame_2"],
+    )
+    def test_test_command(self, tmp_path: Path, records, extra, expected):
+        fasta = write_alignment_file(tmp_path / "g.fa", records)
+        result = runner.invoke(app, ["test", str(fasta), "-i", "in_", "-o", "out_", *extra])
+        assert result.exit_code == 0, result.output
+        if expected:
+            noun = "base" if expected == 1 else "bases"
+            assert f"g: {expected} {noun} after the last full codon ignored" in result.output
+        else:
+            assert "after the last full codon" not in result.output
+
+    def test_batch_command(self, tmp_path: Path):
+        genes = tmp_path / "genes"
+        genes.mkdir()
+        write_alignment_file(
+            genes / "g.fa", {"in_1": "ATGAAAC", "in_2": "ATGAAGC", "out_1": "ATGAAAC"}
+        )
+        result = runner.invoke(app, ["batch", str(genes), "-i", "in_", "-o", "out_"])
+        assert result.exit_code == 0, result.output
+        assert "g: 1 base after the last full codon ignored" in result.output

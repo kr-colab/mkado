@@ -44,7 +44,9 @@ MKado analyzes coding sequences at the codon level. Your alignment should:
 
 - Start at the first position of a codon
 - Have an aligned length, gaps included, that is a multiple of 3. MKado reads codons from the
-  aligned length and ignores any bases left over at the end, with no message
+  aligned length and ignores any bases left over at the end. It prints a warning for such a
+  gene, for example ``g: 1 base after the last full codon ignored``, because a length that is
+  not whole codons often means a wrong reading frame
 - Maintain reading frame throughout
 
 Example of proper codon alignment:

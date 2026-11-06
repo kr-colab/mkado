@@ -14,6 +14,19 @@
   one for each mutation, the same unit as Pn and Ps.
 
 ### Fixed
+- VCF input took REF as ancestral when the outgroup base was a third
+  allele, neither REF nor ALT, and did not report it. As in FASTA input,
+  `--min-freq`, `--no-singletons` and the asymptotic, imputed and α_TG
+  tests now drop such a polymorphism and count it in the end-of-run
+  "could not be polarized" line, which `mkado vcf` now prints too.
+- VCF input read a heterozygous outgroup call as the reference base. It now
+  gives both bases, as two outgroup sequences do in FASTA input. An
+  outgroup codon that is a stop codon is missing data; of the clean
+  outgroup codons, the shared base with more ingroup copies is ancestral,
+  and a codon with two is not a fixed difference. Such a call is no longer
+  counted in `outgroup records`.
+- A FASTA alignment whose length is not whole codons lost its last bases
+  with no message. `test` and `batch` now print a warning for such a gene.
 - The docs said wrong or unclear things about missing data, polarization
   and some filters: how VCF input reads a heterozygous outgroup call or an
   outgroup third allele, how leftover bases in a FASTA alignment are

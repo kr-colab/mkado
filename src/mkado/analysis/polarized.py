@@ -88,6 +88,8 @@ class PolarizedMKResult:
     """
     internal_stop_codons: int = 0
     """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
+    trailing_bases: int = 0
+    """Bases after the last full codon, which no codon reads."""
     unpolarized_sites: int = 0
     """Polymorphisms (one per mutation) dropped: at a codon with no clean first-outgroup
     codon, or with no derived state that a frequency filter can judge."""
@@ -292,5 +294,6 @@ def polarized_mk_test(
         omega=omega,
         stop_blocked_pairs=pair.stop_blocked_pairs,
         internal_stop_codons=pair.internal_stop_codons,
+        trailing_bases=pair.trailing_bases,
         unpolarized_sites=unpolarized,
     )

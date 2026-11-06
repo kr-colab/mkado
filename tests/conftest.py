@@ -223,7 +223,7 @@ OUTGROUP_RECORDS = [
     _rec("chr1", 7, "A", "G,T", ["1/1"]),  # multi-allelic, ignored
     _rec("chr1", 9, "A", "<DEL>", ["1/1"], "SVTYPE=DEL"),  # symbolic, ignored
     _rec("chr1", 12, "C", "T", ["1/1"]),  # TTC>TTT  ds
-    _rec("chr1", 14, "G", "A", ["0/1"]),  # GGA>GAA, heterozygous outgroup, discarded
+    _rec("chr1", 14, "G", "A", ["0/1"]),  # GGA>GAA, heterozygous outgroup, no divergence
     _rec("chr1", 17, "T", "C", ["1/1"]),  # shared with an ingroup polymorphism, discarded
     _rec("chr1", 18, "G", "A", ["1/1"]),  # CTG>CTA  ds
     _rec("chr1", 19, "A", "G", ["0/0"]),  # homozygous reference, ignored
@@ -281,11 +281,11 @@ EXPECTED = {
         ds=1,
         skipped=(2, 1, 1),
         stop=3,
-        outgroup=4,
+        outgroup=3,
         swapped=1,
         warning=(
             "g_plus: skipped 2 indels, 1 multi-allelic, 1 with no called genotype, "
-            "3 with stop codons, 4 outgroup records; used 1 with REF and ALT swapped"
+            "3 with stop codons, 3 outgroup records; used 1 with REF and ALT swapped"
         ),
     ),
     "g_minus": Expected(((0.125, "S"), (0.375, "N")), dn=1, ds=1),

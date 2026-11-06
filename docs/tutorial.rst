@@ -196,7 +196,7 @@ If the outgroup has codon CAA, it differs from the ingroup at position 1, but at
 Some polymorphisms cannot be polarized:
 
 - **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in every test on FASTA input. The polarized MK test applies this rule to its first outgroup. VCF input reads a missing outgroup call as the reference base, so this case does not occur there.
-- **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps. With ``--pool-polymorphisms``, ``--min-freq`` and ``--no-singletons`` use the minor allele over both groups, not the ancestral state, so they keep such a site.
+- **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). This rule is the same for FASTA and VCF input. Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps. With ``--pool-polymorphisms``, ``--min-freq`` and ``--no-singletons`` use the minor allele over both groups, not the ancestral state, so they keep such a site.
 
 MKado counts the polymorphisms it drops for either reason, one for each mutation, and prints one line at the end of the run, for example:
 

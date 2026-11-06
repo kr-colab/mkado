@@ -666,3 +666,49 @@ class TestGenotypeChecks:
     def test_include_filtered_is_accepted(self, genome, gff_chr1):
         result = invoke(genome, gff_chr1, "--include-filtered", "-f", "tsv")
         assert result.exit_code == 0, result.output
+
+
+class TestThirdAlleleSummary:
+    """A SNP the outgroup cannot polarize is dropped under a frequency filter, and the
+    vcf command reports it in one summary line, as test and batch do."""
+
+    def test_min_freq_prints_the_summary(self, tmp_path: Path, write_vcf):
+        import pysam
+
+        ref = tmp_path / "ref.fa"
+        ref.write_text(">chr1\nATGGCCAAATTTTTTTTTTTTTTTTTTTTTT\n")
+        pysam.faidx(str(ref))
+        gff = tmp_path / "a.gff3"
+        gff.write_text(
+            "##gff-version 3\n"
+            "chr1\t.\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+            "chr1\t.\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
+            "chr1\t.\tCDS\t1\t9\t.\t+\t0\tID=c1;Parent=t1\n"
+        )
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"], samples=["outgroup"]
+        )
+        result = runner.invoke(
+            app,
+            [
+                "vcf",
+                "--vcf",
+                str(ingroup),
+                "--outgroup-vcf",
+                str(outgroup),
+                "--ref",
+                str(ref),
+                "--gff",
+                str(gff),
+                "--min-freq",
+                "0.1",
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: 1 polymorphism in 1 gene could not be polarized against the "
+            "outgroup and was dropped"
+        ) in result.output

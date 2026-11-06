@@ -82,6 +82,8 @@ class ImputedMKResult:
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
     internal_stop_codons: int = 0
     """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
+    trailing_bases: int = 0
+    """Bases after the last full codon, which no codon reads."""
     unpolarized_sites: int = 0
     """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
@@ -373,6 +375,7 @@ def imputed_mk_test(
     )
     result.stop_blocked_pairs = gene_data.stop_blocked_pairs
     result.internal_stop_codons = gene_data.internal_stop_codons
+    result.trailing_bases = gene_data.trailing_bases
     result.unpolarized_sites = gene_data.unpolarized_sites
     if n_bootstrap > 0:
         ci = _bootstrap_imputed_alpha(

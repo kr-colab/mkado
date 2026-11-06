@@ -106,9 +106,10 @@ class WorkerResult:
 
 
 def _gene_warning(gene_id: str, result: Any) -> str | None:
-    """One warning line for a result with internal stop codons or stop-blocked pairs, or None.
+    """One warning line for a result with internal stop codons, stop-blocked pairs or bases
+    after the last full codon, or None.
 
-    Every per-gene result type declares both diagnostic fields (default 0), so
+    Every per-gene result type declares each of these diagnostic fields (default 0), so
     one check here covers standard, asymptotic, imputed, polarized, and
     extract-only (PolymorphismData) results alike.
     """
@@ -117,6 +118,9 @@ def _gene_warning(gene_id: str, result: Any) -> str | None:
         clauses.append(f"{stops} internal stop codon(s) treated as missing data")
     if blocked := result.stop_blocked_pairs:
         clauses.append(f"{blocked} codon pair(s) had no stop-free path and were dropped")
+    # A length that is not whole codons often means a wrong reading frame.
+    if trailing := result.trailing_bases:
+        clauses.append(f"{_plural(trailing, 'base')} after the last full codon ignored")
     if not clauses:
         return None
     return f"{gene_id}: {'; '.join(clauses)}"
