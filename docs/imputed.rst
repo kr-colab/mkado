@@ -169,10 +169,10 @@ Example output (pretty format):
      Alpha:         0.5154
      p-value:       0.0891
      Alpha 95% CI [bootstrap]: (0.3210, 0.7050)
-     Sites:         Ln=576.00, Ls=195.00
-     omega:         0.2539 (omega_a=0.1308, omega_na=0.1230)
-       omega_a 95% CI:  (0.0815, 0.1790)
-       omega_na 95% CI: (0.0749, 0.1724)
+     Sites:         Ln=573.00, Ls=195.00
+     omega:         0.2552 (omega_a=0.1315, omega_na=0.1237)
+       omega_a 95% CI:  (0.0819, 0.1799)
+       omega_na 95% CI: (0.0753, 0.1733)
 
 Comparison with Other Methods
 -----------------------------

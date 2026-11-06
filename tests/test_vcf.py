@@ -9,8 +9,10 @@ from pathlib import Path
 import pysam
 import pytest
 
+from mkado.analysis.mk_test import mk_test
 from mkado.core.cds import CdsRegion
 from mkado.core.codons import GeneticCode
+from tests.builders import sequence_set
 from mkado.io.vcf import (
     GeneStats,
     VcfQueryError,
@@ -1215,6 +1217,26 @@ class TestUnresolvedOutgroupCall:
         assert stats.outgroup_skipped == 0
 
 
+def ref_with_codon(tmp_path, codon: str):
+    """A reference whose 3-codon CDS is ATG, ``codon``, GCC, on the plus strand."""
+    ref = tmp_path / "ref_codon.fa"
+    ref.write_text(f">chr1\nATG{codon}GCC{'T' * 23}\n")
+    pysam.faidx(str(ref))
+    cds = CdsRegion(gene_id="g", transcript_id="t", chrom="chr1", exons=[(0, 9)], strand="+")
+    return ref, cds
+
+
+def fasta_counts(ingroup: list[str], outgroup: list[str]) -> tuple[int, int, int, int]:
+    """(Dn, Ds, Pn, Ps) of the FASTA path for the same codons."""
+    result = mk_test(sequence_set(ingroup), sequence_set(outgroup))
+    return result.dn, result.ds, result.pn, result.ps
+
+
+def vcf_counts(poly) -> tuple[int, int, int, int]:
+    pn = sum(1 for _, kind in poly.polymorphisms if kind == "N")
+    return poly.dn, poly.ds, pn, len(poly.polymorphisms) - pn
+
+
 # Position 7 (1-based) is the first base of AAA, so A to T makes the stop codon TAA.
 AAA_TO_TAA = "chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"
 
@@ -1261,13 +1283,7 @@ class TestStopCodons:
         REF codon 1 is TAA. One ingroup copy carries TCA (Ser); the outgroup is fixed for
         CAA (Gln). TCA to CAA is two replacements, the same as the FASTA path counts.
         """
-        from mkado.analysis.mk_test import mk_test
-        from tests.builders import sequence_set
-
-        ref = tmp_path / "ref.fa"
-        ref.write_text(">chr1\nATGTAAGCCTTTTTTTTTTTTTTTTTTTTTTT\n")
-        pysam.faidx(str(ref))
-        cds = CdsRegion(gene_id="g", transcript_id="t", chrom="chr1", exons=[(0, 9)], strand="+")
+        ref, cds = ref_with_codon(tmp_path, "TAA")
         ingroup = write_vcf(
             tmp_path / "in", ["chr1\t5\t.\tA\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
         )
@@ -1282,6 +1298,112 @@ class TestStopCodons:
         assert (poly.dn, poly.ds) == (fasta.dn, fasta.ds) == (2, 0)
         assert poly.polymorphisms == []
         assert stats.skipped_stop == 1
+
+    def test_two_snps_in_a_ref_stop_codon_make_no_difference(self, tmp_path, write_vcf):
+        """One sample carries CAA and another TAC; no sample carries CAC, so no difference.
+
+        Without the sample of each allele, a codon with two variants cannot be built, so
+        the REF stop codon stays missing data.
+        """
+        ref, cds = ref_with_codon(tmp_path, "TAA")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+                "chr1\t6\t.\tA\tC\t30\tPASS\t.\tGT\t0/0\t0/1\t0/0\t0/0",
+            ],
+        )
+        # The outgroup is TTA (Leu). Building CAC from both ALTs would count a difference.
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t5\t.\tA\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_fixed_alt_and_snp_in_a_ref_stop_codon_make_no_difference(self, tmp_path, write_vcf):
+        """Every sample is fixed for TAC and one also carries CAC; the outgroup is TAC."""
+        ref, cds = ref_with_codon(tmp_path, "TAA")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+                "chr1\t6\t.\tA\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+            ],
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t6\t.\tA\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+    def test_outgroup_stop_drops_the_polymorphism(
+        self, tmp_path, write_vcf, synthetic_ref, simple_cds
+    ):
+        """The outgroup codon is TAA, so it has no clean codon to polarize AAA/AAG, as in FASTA."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t9\t.\tA\tG\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+
+        fasta = mk_test(
+            sequence_set(["ATGGCCAAG"] + ["ATGGCCAAA"] * 7), sequence_set(["ATGGCCTAA"])
+        )
+        assert (fasta.pn, fasta.ps) == (0, 0)
+        assert poly.polymorphisms == []
+        # Two stop skips: the polymorphism, and the outgroup's AAA to TAA difference.
+        assert stats.skipped_stop == 2
+
+    def test_snp_on_a_fixed_alt_background_reaches_a_ref_stop(self, tmp_path, write_vcf):
+        """REF TAA, every sample fixed for TAC, one copy CAC: a TAC/CAC polymorphism (Pn)."""
+        ref, cds = ref_with_codon(tmp_path, "TAA")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+                "chr1\t6\t.\tA\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+            ],
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t6\t.\tA\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
+        expected = fasta_counts(["ATGTACGCC"] * 7 + ["ATGCACGCC"], ["ATGTACGCC"])
+        assert vcf_counts(poly) == expected == (0, 0, 1, 0)
+
+    def test_fixed_alt_that_makes_a_stop_is_missing_data(self, tmp_path, write_vcf):
+        """REF TAC, every sample fixed for TAA (stop), one copy CAA: the ingroup codon is CAA."""
+        ref, cds = ref_with_codon(tmp_path, "TAC")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+                "chr1\t6\t.\tC\tA\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+            ],
+        )
+        outgroup = write_vcf(tmp_path / "out", [], samples=OUTGROUP)
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
+        expected = fasta_counts(["ATGTAAGCC"] * 7 + ["ATGCAAGCC"], ["ATGTACGCC"])
+        assert vcf_counts(poly) == expected == (2, 0, 0, 0)
+
+    def test_snp_is_classified_on_the_fixed_alt_background(self, tmp_path, write_vcf):
+        """REF AGA, every sample fixed for CGA (Arg), one copy CGT (Arg): synonymous."""
+        ref, cds = ref_with_codon(tmp_path, "AGA")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tA\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+                "chr1\t6\t.\tA\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+            ],
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t4\t.\tA\tC\t30\tPASS\t.\tGT\t1/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
+        expected = fasta_counts(["ATGCGAGCC"] * 7 + ["ATGCGTGCC"], ["ATGCGAGCC"])
+        assert vcf_counts(poly) == expected == (0, 0, 0, 1)
 
     def test_warning_counts_stop_skips(self):
         from mkado.vcf_workers import _skip_warning

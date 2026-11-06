@@ -5,6 +5,8 @@ from __future__ import annotations
 import numbers
 import re
 from dataclasses import dataclass, field
+from itertools import groupby
+from operator import itemgetter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -458,16 +460,20 @@ class SequenceSet:
         internal: set[int] = set()
         end = start + 3 * n_codons
         rows, stop_codons = np.nonzero(is_stop)
-        # Most sequences carry one stop, the terminal one, so slicing around each stop is
-        # cheaper than rebuilding the sequence from a list of bases. np.nonzero gives the
-        # stops of a row in order, so a later stop is not masked yet when an earlier one is
-        # tested, and its bases make the earlier stop internal.
-        for row, codon in zip(rows.tolist(), stop_codons.tolist(), strict=True):
+        # np.nonzero gives the stops row by row, in order, so each sequence is rebuilt once
+        # from the pieces between its stops. A later stop is still in the original text when
+        # an earlier one is tested, and its bases make the earlier stop internal.
+        for row, stops in groupby(zip(rows.tolist(), stop_codons.tolist()), key=itemgetter(0)):
             text = sequences[row].sequence
-            pos = start + 3 * codon
-            if _BASE.search(text, pos + 3, end):
-                internal.add(codon)
-            sequences[row] = Sequence(sequences[row].name, text[:pos] + "NNN" + text[pos + 3 :])
+            pieces, done = [], 0
+            for _, codon in stops:
+                pos = start + 3 * codon
+                if _BASE.search(text, pos + 3, end):
+                    internal.add(codon)
+                pieces += [text[done:pos], "NNN"]
+                done = pos + 3
+            pieces.append(text[done:])
+            sequences[row] = Sequence(sequences[row].name, "".join(pieces))
 
         masked = SequenceSet(
             sequences=sequences, reading_frame=self.reading_frame, genetic_code=self.genetic_code

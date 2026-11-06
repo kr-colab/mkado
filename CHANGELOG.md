@@ -24,7 +24,15 @@
   codon allele.** On `examples/anopheles_batch`, Ln falls by about 3 in
   each gene, Dn/Ds/Pn/Ps change in 260 of 400 genes, and 188 genes have
   internal stop codons: 325 in all, 301 of them in one sequence only
-  (closes #137).
+  (closes #137). In a VCF codon with two or more SNPs, the VCF path cannot
+  always follow the FASTA rule, because it does not know which samples
+  carry each allele (see `docs/vcf-input.rst`).
+- `mkado vcf` classified a SNP against the reference codon, also where the
+  ingroup is fixed for an ALT base in the same codon. Every sample carries
+  that base, so the SNP is now classified against the reference codon with
+  the fixed ALT bases, as in FASTA input. For example, with reference `AGA`,
+  a fixed `CGA` and a SNP to `CGT`, the SNP was counted as nonsynonymous
+  (`AGA` to `AGT`) and is now synonymous (`CGA` to `CGT`).
 - In the Python API, the groups of a test could be `SequenceSet` objects
   in different reading frames. Each group read its codons in its own
   frame, so the test compared codons at different columns and gave wrong
