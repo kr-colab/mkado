@@ -341,6 +341,7 @@ This option **excludes** rare polymorphisms below a frequency threshold from the
 - **Applies to**: Standard MK test, Polarized MK test, α_TG estimator
 - **Purpose**: Filter out singletons or very rare variants that may be sequencing errors or very recent mutations
 - **How it works**: Polymorphisms with derived allele frequency < ``min_freq`` are not counted. With ``--pool-polymorphisms`` there is no ancestral state, so this is the minor allele frequency over the combined ingroup+outgroup sample instead
+- **Not with pooled mode**: ``--pool-polymorphisms`` cannot be used with the asymptotic, imputed or α_TG tests. They need each polymorphism's derived frequency, and a polymorphism pooled over both groups has no ancestral state to give one
 
 .. code-block:: bash
 

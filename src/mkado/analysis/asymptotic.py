@@ -664,6 +664,19 @@ def _mask_to_frequency_cutoffs(
     return x_data[mask], y_data[mask]
 
 
+POOLED_HAS_NO_DERIVED_FREQUENCY = (
+    "Pooled polymorphisms have no ancestral state, so they have no derived frequency."
+)
+"""Why the frequency-based analyses cannot use polymorphisms pooled over both groups."""
+
+
+def _reject_pooled(pool_polymorphisms: bool) -> None:
+    if pool_polymorphisms:
+        raise ValueError(
+            f"pool_polymorphisms=True is not supported. {POOLED_HAS_NO_DERIVED_FREQUENCY}"
+        )
+
+
 def _polarized_polymorphisms(
     pair: AlignedPair,
     codon_indices: list[int],
@@ -716,9 +729,8 @@ def extract_polymorphism_data(
             A SequenceSet keeps its own frame, and a different value here raises
             ValueError.
         genetic_code: Genetic code for translation (uses standard if None)
-        pool_polymorphisms: If True, consider sites polymorphic in either
-            population (libsequence convention). Frequencies are still
-            calculated from ingroup only.
+        pool_polymorphisms: Must be False. True raises ValueError, because pooled
+            polymorphisms have no derived frequency.
         gene_id: Identifier for this gene
         min_frequency: Minimum derived allele frequency for polymorphisms
             (polymorphisms below this threshold are excluded)
@@ -726,6 +738,7 @@ def extract_polymorphism_data(
     Returns:
         PolymorphismData containing polymorphisms with frequencies and divergence counts
     """
+    _reject_pooled(pool_polymorphisms)
     code = genetic_code or DEFAULT_CODE
 
     ingroup = as_sequence_set(ingroup, reading_frame, code)
@@ -746,12 +759,7 @@ def extract_polymorphism_data(
                 dn += nonsyn
                 ds += syn
 
-    # Get polymorphic sites based on mode
-    if pool_polymorphisms:
-        poly_sites = pair.polymorphic_sites_pooled()
-    else:
-        poly_sites = pair.polymorphic_sites_ingroup()
-
+    poly_sites = pair.polymorphic_sites_ingroup()
     poly_data, unpolarized = _polarized_polymorphisms(
         pair, poly_sites, min_frequency=min_frequency, no_singletons=no_singletons
     )
@@ -1175,16 +1183,14 @@ def asymptotic_mk_test(
         num_bins: Number of frequency bins (default 10)
         bootstrap_replicates: Number of bootstrap replicates for CI (default 100)
         frequency_cutoffs: (low, high) frequency range for fitting (default 0.1-0.9)
-        pool_polymorphisms: If True, consider sites polymorphic in either
-            population (libsequence convention). Frequencies are still
-            calculated from ingroup only. If False (default), only consider
-            ingroup polymorphisms (DnaSP/original MK convention).
+        pool_polymorphisms: Must be False. True raises ValueError, because pooled
+            polymorphisms have no derived frequency.
 
     Returns:
         AsymptoticMKResult containing test statistics
     """
     _validate_sfs_mode(sfs_mode)
-
+    _reject_pooled(pool_polymorphisms)
     code = genetic_code or DEFAULT_CODE
 
     ingroup = as_sequence_set(ingroup, reading_frame, code)
@@ -1206,12 +1212,7 @@ def asymptotic_mk_test(
                 dn += nonsyn
                 ds += syn
 
-    # Get polymorphic sites based on mode
-    if pool_polymorphisms:
-        poly_sites = pair.polymorphic_sites_pooled()
-    else:
-        poly_sites = pair.polymorphic_sites_ingroup()
-
+    poly_sites = pair.polymorphic_sites_ingroup()
     poly_data, unpolarized = _polarized_polymorphisms(pair, poly_sites)
 
     # Create frequency bins

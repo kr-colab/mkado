@@ -1269,3 +1269,41 @@ class TestInfoStopCodons:
     def test_unknown_code_table(self, tmp_path: Path) -> None:
         result = self.info(tmp_path, ["ATGTGG"], "--code-table", "99")
         assert_clean_error(result, "Error: Unknown genetic code table 99.")
+
+
+class TestPooledFrequencyTests:
+    """Pooled polymorphisms have no ancestral state, so the frequency-based tests reject them."""
+
+    @staticmethod
+    def combined_file(tmp_path: Path) -> Path:
+        return write_alignment_file(
+            tmp_path / "g.fa", {"in_1": "ATGAAA", "in_2": "ATGAAG", "out_1": "ATGAAA"}
+        )
+
+    @pytest.mark.parametrize(("flag", "name"), [("-a", "--asymptotic"), ("--imputed", "--imputed")])
+    def test_test_command_rejects_the_combination(self, tmp_path: Path, flag: str, name: str):
+        fasta = self.combined_file(tmp_path)
+        result = runner.invoke(
+            app, ["test", str(fasta), "-i", "in_", "-o", "out_", "--pool-polymorphisms", flag]
+        )
+        assert_clean_error(result, f"--pool-polymorphisms cannot be used with {name}")
+
+    @pytest.mark.parametrize(
+        ("flag", "name"),
+        [("-a", "--asymptotic"), ("--imputed", "--imputed"), ("--alpha-tg", "--alpha-tg")],
+    )
+    def test_batch_command_rejects_the_combination(self, tmp_path: Path, flag: str, name: str):
+        directory = tmp_path / "genes"
+        directory.mkdir()
+        self.combined_file(directory)
+        result = runner.invoke(
+            app, ["batch", str(directory), "-i", "in_", "-o", "out_", "--pool-polymorphisms", flag]
+        )
+        assert_clean_error(result, f"--pool-polymorphisms cannot be used with {name}")
+
+    def test_pooled_standard_test_still_runs(self, tmp_path: Path):
+        fasta = self.combined_file(tmp_path)
+        result = runner.invoke(
+            app, ["test", str(fasta), "-i", "in_", "-o", "out_", "--pool-polymorphisms"]
+        )
+        assert result.exit_code == 0, result.output
