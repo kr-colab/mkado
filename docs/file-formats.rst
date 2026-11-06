@@ -142,7 +142,9 @@ stop codon that only gaps or ``N`` follow is the terminal stop of that sequence,
 that ends early in a gap-padded alignment does not give a warning.
 
 An internal stop codon in many sequences can mean a pseudogene, a wrong reading frame or an
-alignment error, so check such genes. The VCF path uses the same rule (see :doc:`vcf-input`).
+alignment error, so check such genes. ``mkado info`` prints the number of internal stop codons
+in a file, and its count of polymorphic codons leaves stop codons out in the same way. Give it
+the same ``--code-table`` as the analysis. The VCF path uses the same rule (see :doc:`vcf-input`).
 
 Common Problems
 ---------------

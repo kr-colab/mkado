@@ -230,7 +230,7 @@ mkado codes
 Display information about a FASTA file.
 
 ```bash
-mkado info FASTA [-r READING_FRAME]
+mkado info FASTA [-r READING_FRAME] [--code-table CODE]
 ```
 
 ## Example Output

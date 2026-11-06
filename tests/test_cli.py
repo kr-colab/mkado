@@ -1230,3 +1230,42 @@ class TestStopCodonWarning:
         result = self.run(tmp_path, "ATGAAACCCTAA")
         assert result.exit_code == 0, result.output
         assert "stop codon" not in result.output
+
+
+class TestInfoStopCodons:
+    """info reads stop codons as missing data, as the analyses do, and counts internal ones."""
+
+    @staticmethod
+    def info(tmp_path: Path, seqs: list[str], *options: str):
+        fasta = write_alignment_file(tmp_path / "g.fa", {f"s{i}": s for i, s in enumerate(seqs)})
+        return runner.invoke(app, ["info", str(fasta), *options])
+
+    def test_stop_allele_is_not_polymorphic(self, tmp_path: Path) -> None:
+        result = self.info(tmp_path, ["ATGTACGCC", "ATGTAAGCC"])
+        assert result.exit_code == 0, result.output
+        assert "Polymorphic codons: 0" in result.output
+
+    def test_internal_stop_count(self, tmp_path: Path) -> None:
+        result = self.info(tmp_path, ["ATGTACGCC", "ATGTAAGCC"])
+        assert "Internal stop codons: 1" in result.output
+
+    def test_terminal_stops_are_not_internal(self, tmp_path: Path) -> None:
+        result = self.info(tmp_path, ["ATGAAATAA", "ATGAAGTAA"])
+        assert "Internal stop codons: 0" in result.output
+        assert "Polymorphic codons: 1" in result.output
+
+    def test_standard_code_by_default(self, tmp_path: Path) -> None:
+        """TGA is a stop codon in the standard code, so TGG/TGA is not a polymorphism."""
+        result = self.info(tmp_path, ["ATGTGG", "ATGTGA"])
+        assert "Polymorphic codons: 0" in result.output
+
+    @pytest.mark.parametrize("table", ["2", "vertebrate-mito"])
+    def test_code_table(self, tmp_path: Path, table: str) -> None:
+        """TGA is tryptophan under table 2, so TGG/TGA is a polymorphism."""
+        result = self.info(tmp_path, ["ATGTGG", "ATGTGA"], "--code-table", table)
+        assert result.exit_code == 0, result.output
+        assert "Polymorphic codons: 1" in result.output
+
+    def test_unknown_code_table(self, tmp_path: Path) -> None:
+        result = self.info(tmp_path, ["ATGTGG"], "--code-table", "99")
+        assert_clean_error(result, "Error: Unknown genetic code table 99.")
