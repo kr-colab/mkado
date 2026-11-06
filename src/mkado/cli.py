@@ -124,6 +124,15 @@ CIMethodOption = Annotated[
     ),
 ]
 
+CodeTableOption = Annotated[
+    str,
+    typer.Option(
+        "--code-table",
+        help="Genetic code: name (e.g. vertebrate-mito) or NCBI table ID. "
+        "Run 'mkado codes' to list options.",
+    ),
+]
+
 SfsModeOption = Annotated[
     str,
     typer.Option(
@@ -687,14 +696,7 @@ def test(
             help="Exclude sites where the derived allele appears once",
         ),
     ] = False,
-    code_table: Annotated[
-        str,
-        typer.Option(
-            "--code-table",
-            help="Genetic code: name (e.g. vertebrate-mito) or NCBI table ID. "
-            "Run 'mkado codes' to list options.",
-        ),
-    ] = "standard",
+    code_table: CodeTableOption = "standard",
     plot_asymptotic: Annotated[
         Optional[Path],
         typer.Option(
@@ -1068,14 +1070,7 @@ def batch(
             help="Exclude sites where the derived allele appears once",
         ),
     ] = False,
-    code_table: Annotated[
-        str,
-        typer.Option(
-            "--code-table",
-            help="Genetic code: name (e.g. vertebrate-mito) or NCBI table ID. "
-            "Run 'mkado codes' to list options.",
-        ),
-    ] = "standard",
+    code_table: CodeTableOption = "standard",
     workers: Annotated[
         int,
         typer.Option("--workers", "-w", min=0, help="Parallel workers (0=auto, 1=sequential)"),
@@ -1529,11 +1524,14 @@ def info(
         int,
         typer.Option("--reading-frame", "-r", min=1, max=3, help="Reading frame (1-3)"),
     ] = 1,
+    code_table: CodeTableOption = "standard",
 ) -> None:
     """Display information about a FASTA file."""
+    from mkado.core.codons import GeneticCode
     from mkado.core.sequences import SequenceSet
 
-    seqs = SequenceSet.from_fasta(fasta, reading_frame=reading_frame)
+    code = GeneticCode(table_id=resolve_code_table_or_exit(code_table))
+    seqs = SequenceSet.from_fasta(fasta, reading_frame=reading_frame, genetic_code=code)
 
     typer.echo(f"File: {fasta.name}")
     typer.echo(f"Sequences: {len(seqs)}")
@@ -1543,8 +1541,11 @@ def info(
         typer.echo(f"Codons: {seqs.num_codons}")
         typer.echo(f"Reading frame: {reading_frame}")
 
-        poly_sites = seqs.polymorphic_codons()
-        typer.echo(f"Polymorphic codons: {len(poly_sites)}")
+        # Mask stop codons as missing data, as the analyses do, so a stop allele is not a
+        # polymorphism.
+        masked, internal_stops = seqs.with_stops_masked(code)
+        typer.echo(f"Polymorphic codons: {len(masked.polymorphic_codons())}")
+        typer.echo(f"Internal stop codons: {len(internal_stops)}")
 
         typer.echo("\nSequences:")
         for seq in seqs.sequences:
@@ -1656,13 +1657,7 @@ def vcf(
         bool,
         typer.Option("--include-filtered", help="Also use records whose FILTER is not PASS or '.'"),
     ] = False,
-    code_table: Annotated[
-        str,
-        typer.Option(
-            "--code-table",
-            help="Genetic code: name or NCBI table ID",
-        ),
-    ] = "standard",
+    code_table: CodeTableOption = "standard",
     # === Plot options ===
     plot_asymptotic: Annotated[
         Optional[Path],
