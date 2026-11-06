@@ -13,7 +13,7 @@ from mkado.analysis.statistics import (
     neutrality_index,
     omega_decomposition,
 )
-from mkado.core.alignment import AlignedPair, _count_path, passes_frequency_filter
+from mkado.core.alignment import AlignedPair
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
 from mkado.core.sequences import SequenceSet, as_sequence_set
 
@@ -182,7 +182,6 @@ def mk_test(
     pn = 0
     ps = 0
     unpolarized = 0
-    filtering = min_frequency > 0 or no_singletons
 
     if pool_polymorphisms:
         # Pooled mode: count polymorphisms from both populations (libsequence convention)
@@ -196,24 +195,10 @@ def mk_test(
         if codon_idx in processed_codons:
             continue
 
-        mutations, dropped = pair.polarized_mutations(codon_idx, pooled=pool_polymorphisms)
+        nonsyn, syn, dropped = pair.filtered_polymorphism(
+            codon_idx, min_frequency, no_singletons, pooled=pool_polymorphisms
+        )
         unpolarized += dropped
-
-        if filtering and pool_polymorphisms:
-            # Pooled mode has no ancestral state, so it folds ingroup and outgroup
-            # together and filters the codon on its minor allele.
-            state = pair.minor_allele_state(codon_idx)
-            if not passes_frequency_filter(state, min_frequency, no_singletons):
-                continue
-        elif filtering:
-            # Each mutation is filtered by its own position's derived state. Without a
-            # filter no ancestral state is needed, so a third-allele site still counts.
-            unpolarized += sum(1 for _, state in mutations if state is None)
-            mutations = [
-                m for m in mutations if passes_frequency_filter(m[1], min_frequency, no_singletons)
-            ]
-
-        nonsyn, syn = _count_path(mutations)
         pn += nonsyn
         ps += syn
 

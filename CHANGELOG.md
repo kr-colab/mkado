@@ -9,6 +9,17 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- The polarized MK test did not apply `--min-freq` or `--no-singletons` to
+  the polymorphisms it could not polarize. They are now filtered as in
+  the standard test, each mutation by its own derived base (closes #138).
+- Under a filter, the polarized MK test dropped a polymorphism from every
+  count, with no report, when the filter could not judge it. Such a
+  mutation is now counted as an unpolarizable site.
+- The polarized MK test now drops and counts a polymorphism at a codon
+  where the first outgroup has no clean codon, the rule the other tests
+  already use. Without a filter, this is the only change to its counts.
+- The polarized MK test counted a stop-blocked fixed difference twice in
+  `stop_blocked_pairs`. It is now counted once.
 - `mkado info` counted a stop codon allele as a polymorphic codon, so its
   count did not agree with the analyses, which read a stop codon as
   missing data. It now leaves stop codons out, with the stop codons of

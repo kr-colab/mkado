@@ -195,7 +195,7 @@ If the outgroup has codon CAA, it differs from the ingroup at position 1, but at
 
 Some polymorphic sites cannot be polarized:
 
-- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in the standard, asymptotic, imputed and α_TG tests. The polarized MK test does not use this rule yet, and still counts such a polymorphism.
+- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in every test. The polarized MK test applies this rule to its first outgroup.
 - **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps. With ``--pool-polymorphisms``, ``--min-freq`` and ``--no-singletons`` use the minor allele over both groups, not the ancestral state, so they keep such a site.
 
 MKado counts the sites it drops for either reason and prints one line at the end of the run, for example:
@@ -297,6 +297,13 @@ Unpolarized polymorphisms include:
 
 - Ancestral polymorphisms (present in outgroup2)
 - Polymorphisms where the ancestral state cannot be determined
+
+``--min-freq`` and ``--no-singletons`` filter both kinds of polymorphism, each mutation by its
+own derived base. A polymorphism on the ingroup lineage takes its ancestral base from the codon
+that put it there: the codon the two outgroups share, or else the one outgroup2 shares with the
+ingroup. An unpolarized polymorphism takes it from outgroup1, as in the standard test. A mutation
+that the filter cannot judge, because it has no derived base, is dropped and counted as an
+unpolarizable site.
 
 Only the **ingroup lineage** statistics are used to calculate alpha. This provides a cleaner estimate of selection on the ingroup lineage by excluding ancestral variation.
 

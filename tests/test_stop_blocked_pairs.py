@@ -71,9 +71,7 @@ class TestAsymptoticStopBlocked:
 class TestPolarizedStopBlocked:
     def test_full_pipeline(self, tmp_path) -> None:
         # outgroup1 and outgroup2 agree on TGG (ancestral), ingroup's AAA is
-        # derived: a blocked pair on the ingroup lineage. polarize_fixed_difference
-        # and the unpolarized classify_fixed_difference fallback each attempt
-        # (and each fail on) the same AAA<->TGG path, so this counts twice.
+        # derived: a blocked pair on the ingroup lineage, counted once.
         ingroup_fa = _write_fasta(tmp_path, "ingroup.fa", [("i1", "AAA")])
         outgroup1_fa = _write_fasta(tmp_path, "outgroup1.fa", [("o1", "TGG")])
         outgroup2_fa = _write_fasta(tmp_path, "outgroup2.fa", [("o2", "TGG")])
@@ -83,7 +81,7 @@ class TestPolarizedStopBlocked:
         )
         assert (result.dn_ingroup, result.ds_ingroup) == (0, 0)
         assert (result.dn_unpolarized, result.ds_unpolarized) == (0, 0)
-        assert result.stop_blocked_pairs == 2
+        assert result.stop_blocked_pairs == 1
 
 
 class TestImputedStopBlocked:

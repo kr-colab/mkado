@@ -115,7 +115,7 @@ MKado uses a codon only if all three bases are ``A``, ``C``, ``G`` or ``T``. Any
 
 - MKado removes the sequence from that codon only. The other sequences at that codon are still used, and that sequence is still used at all other codons.
 - Allele frequencies at that codon use only the sequences that remain.
-- If the ingroup or the outgroup has no clean sequence at a codon, MKado leaves that codon out of divergence (Dn, Ds), polymorphism (Pn, Ps) and the site counts (Ln, Ls). The dropped polymorphisms are counted and reported (see :ref:`Unpolarizable sites <unpolarizable-sites>`). The polarized MK test does not use this rule for polymorphism yet.
+- If the ingroup or the outgroup has no clean sequence at a codon, MKado leaves that codon out of divergence (Dn, Ds), polymorphism (Pn, Ps) and the site counts (Ln, Ls). The dropped polymorphisms are counted and reported (see :ref:`Unpolarizable sites <unpolarizable-sites>`). The polarized MK test applies this rule to its first outgroup.
 - Lowercase bases are read as uppercase.
 
 .. _stop-codons:
