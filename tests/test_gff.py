@@ -868,3 +868,102 @@ class TestEmptyIntervalsAndConflictingPhases:
     def test_copies_with_two_invalid_phases_are_not_one_line(self, tmp_path):
         path = gff(tmp_path, "chr1 1 30 + 0", "chr1 41 70 + .", "chr1 41 70 + 3")
         assert parse_gff3(path) == []
+
+
+GENE_G1 = "chr1\t.\tgene\t1\t110\t.\t+\t.\tID=g1;Name=GENE1\n"
+MRNA_T1 = "chr1\t.\tmRNA\t1\t110\t.\t+\t.\tID=t1;Parent=g1\n"
+
+
+def cds_row(start: str, end: str, parent: str = "Parent=t1") -> str:
+    return f"chr1\t.\tCDS\t{start}\t{end}\t.\t+\t0\t{parent}\n"
+
+
+def write_gff(tmp_path: Path, *rows: str) -> Path:
+    path = tmp_path / "genes.gff3"
+    path.write_text("##gff-version 3\n" + "".join(rows))
+    return path
+
+
+class TestUnreadableLines:
+    """A line that cannot be read must not leave a silent gap or change a gene."""
+
+    def test_cds_with_bad_coordinates_skips_its_transcript(self, tmp_path, caplog):
+        path = write_gff(
+            tmp_path, GENE_G1, MRNA_T1, cds_row("1", "30"), cds_row("41", "x"), cds_row("81", "110")
+        )
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            assert parse_gff3(path) == []
+        assert "cannot be read" in warning_text(caplog)
+
+    def test_gene_falls_back_when_a_cds_line_cannot_be_read(self, tmp_path):
+        """t1 is longer, but one of its CDS lines cannot be read, so the shorter t2 is used."""
+        path = write_gff(
+            tmp_path,
+            GENE_G1,
+            MRNA_T1,
+            cds_row("1", "60"),
+            cds_row("71", "x"),
+            "chr1\t.\tmRNA\t1\t110\t.\t+\t.\tID=t2;Parent=g1\n",
+            cds_row("1", "30", "Parent=t2"),
+        )
+        (region,) = parse_gff3(path)
+        assert region.transcript_id == "t2"
+
+    def test_bad_cds_line_with_two_parents_marks_both(self, tmp_path):
+        path = write_gff(
+            tmp_path,
+            GENE_G1,
+            MRNA_T1,
+            "chr1\t.\tmRNA\t1\t110\t.\t+\t.\tID=t2;Parent=g1\n",
+            cds_row("1", "30", "Parent=t1,t2"),
+            cds_row("41", "x", "Parent=t1,t2"),
+        )
+        assert parse_gff3(path) == []
+
+    def test_mrna_with_bad_coordinates_keeps_its_gene(self, tmp_path):
+        """An mRNA's coordinates are never used, so a bad one must not cut it from its gene."""
+        path = write_gff(
+            tmp_path,
+            GENE_G1,
+            "chr1\t.\tmRNA\t1\tx\t.\t+\t.\tID=t1;Parent=g1\n",
+            cds_row("1", "30"),
+        )
+        (region,) = parse_gff3(path)
+        assert (region.gene_id, region.transcript_id) == ("g1", "t1")
+
+    def test_gene_with_bad_coordinates_keeps_its_name(self, tmp_path):
+        path = write_gff(
+            tmp_path,
+            "chr1\t.\tgene\t1\tx\t.\t+\t.\tID=g1;Name=GENE1\n",
+            MRNA_T1,
+            cds_row("1", "30"),
+        )
+        (region,) = parse_gff3(path, gene_ids={"GENE1"})
+        assert region.gene_id == "g1"
+
+    @pytest.mark.parametrize(
+        "orphan",
+        [
+            "chr1\t.\tCDS\t41\t70\t.\t+\t0\n",
+            "chr1\t.\tCDS\t41\t70\t.\t+\t0\tID=c2\n",
+        ],
+    )
+    def test_cds_line_without_parent_is_reported(self, tmp_path, caplog, orphan):
+        """The line cannot be tied to a transcript, so the warning says a gene may have a gap."""
+        path = write_gff(
+            tmp_path, GENE_G1, MRNA_T1, cds_row("1", "30"), orphan, cds_row("81", "110")
+        )
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            (region,) = parse_gff3(path)
+        assert region.transcript_id == "t1"
+        text = warning_text(caplog)
+        assert "1 CDS line with no Parent" in text
+        assert "gap" in text
+
+
+def test_unreadable_cds_parented_to_the_gene_is_reported(tmp_path, caplog):
+    """CDS lines may name the gene as Parent; when they all cannot be read, the gene is counted."""
+    path = write_gff(tmp_path, GENE_G1, cds_row("1", "x", "Parent=g1"))
+    with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+        assert parse_gff3(path) == []
+    assert "cannot be read" in warning_text(caplog)

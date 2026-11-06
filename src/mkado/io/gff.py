@@ -57,6 +57,10 @@ def _numbered_lines(path: Path) -> Iterator[tuple[int, str]]:
         raise GffFormatError(f"{path.name} cannot be read as GFF3: {e}") from e
 
 
+# Stands in for a CDS line whose coordinates cannot be read, under each of its parents.
+_UNREADABLE_CDS: dict = {"unreadable": True}
+
+
 def _check_transcript(cds_list: list[dict]) -> tuple[list[dict], int, int, str | None]:
     """A transcript's CDS lines sorted by start, the phase used, the duplicates removed, a reason.
 
@@ -69,6 +73,8 @@ def _check_transcript(cds_list: list[dict]) -> tuple[list[dict], int, int, str |
     A line that repeats another exactly is removed. Two copies of one interval that
     disagree on the phase are not one line: they overlap, so the transcript is skipped.
     """
+    if _UNREADABLE_CDS in cds_list:
+        return [], 0, 0, "with a CDS line that cannot be read"
     seen: set[tuple] = set()
     unique = []
     for cds in cds_list:
@@ -127,6 +133,8 @@ def parse_gff3(
 
     gtf_checked = False
     malformed_lines = 0
+    # CDS lines that cannot be tied to a transcript, so their gene may be built with a gap.
+    orphan_cds_lines = 0
     for line_num, line in _numbered_lines(path):
         line = line.strip()
         if not line or line.startswith("#"):
@@ -135,6 +143,8 @@ def parse_gff3(
         fields = line.split("\t")
         if len(fields) < 9:
             malformed_lines += 1
+            if len(fields) > 2 and fields[2] == "CDS":
+                orphan_cds_lines += 1
             logger.debug(
                 "GFF3: skipping line %d (expected 9 tab-separated columns, got %d)",
                 line_num,
@@ -152,20 +162,6 @@ def parse_gff3(
                     f'key "value" instead of key=value). '
                     f"Convert to GFF3 or use a GTF-compatible parser."
                 )
-
-        # Parse coordinates with error handling
-        try:
-            start = int(fields[3]) - 1  # GFF3 is 1-based, convert to 0-based
-            end = int(fields[4])  # GFF3 end is inclusive, but +1 for half-open
-        except ValueError:
-            malformed_lines += 1
-            logger.debug(
-                "GFF3: skipping line %d (non-integer coordinates: start=%r, end=%r)",
-                line_num,
-                fields[3],
-                fields[4],
-            )
-            continue
 
         chrom = fields[0]
         feature_type = fields[2]
@@ -189,16 +185,33 @@ def parse_gff3(
                 }
 
         elif feature_type == "CDS":
-            parent = attrs.get("Parent", "")
-            if not parent:
+            # Parent can be comma-separated in some GFF3 files
+            parents = [pid.strip() for pid in attrs.get("Parent", "").split(",") if pid.strip()]
+            if not parents:
+                orphan_cds_lines += 1
                 logger.debug(
                     "GFF3: skipping CDS at line %d (no Parent attribute)",
                     line_num,
                 )
                 continue
-            # Parent can be comma-separated in some GFF3 files
-            for pid in parent.split(","):
-                pid = pid.strip()
+            # Only CDS coordinates are used, so only a CDS line is dropped for bad ones.
+            try:
+                start = int(fields[3]) - 1  # GFF3 is 1-based, convert to 0-based
+                end = int(fields[4])  # GFF3 end is inclusive, but +1 for half-open
+            except ValueError:
+                malformed_lines += 1
+                # A marker, so _check_transcript skips the transcript: building it from its
+                # other CDS lines would leave a gap.
+                for pid in parents:
+                    cds_by_transcript[pid].append(_UNREADABLE_CDS)
+                logger.debug(
+                    "GFF3: skipping line %d (non-integer coordinates: start=%r, end=%r)",
+                    line_num,
+                    fields[3],
+                    fields[4],
+                )
+                continue
+            for pid in parents:
                 cds_by_transcript[pid].append(
                     {
                         "chrom": chrom,
@@ -215,6 +228,16 @@ def parse_gff3(
         logger.warning(
             "GFF3: %d malformed line(s) skipped (see debug log for details)",
             malformed_lines,
+        )
+    if orphan_cds_lines > 0:
+        one = orphan_cds_lines == 1
+        logger.warning(
+            "GFF3: %d CDS line%s with no Parent skipped; %s cannot be tied to a transcript, "
+            "so %s may have a gap",
+            orphan_cds_lines,
+            "" if one else "s",
+            "it" if one else "they",
+            "its gene" if one else "their genes",
         )
 
     # Group transcripts by gene, select longest

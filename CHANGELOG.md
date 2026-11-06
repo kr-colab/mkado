@@ -9,6 +9,15 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- The GFF3 parser dropped a CDS line with a start or end that is not a
+  whole number, but built its transcript from the other CDS lines, with a
+  gap. Such a transcript is now skipped, and its gene uses its longest
+  valid transcript (closes #157).
+- The GFF3 parser dropped a gene or mRNA line with a bad start or end,
+  though it does not use those coordinates. A transcript whose mRNA line
+  was dropped became a gene of its own. Such lines are now kept.
+- A CDS line with no `Parent`, which cannot be tied to a transcript, is
+  now counted in a warning that says its gene may have a gap.
 - The GFF3 parser accepted the CDS lines of a transcript with no check. A
   CDS line given twice put each of its positions in the coding sequence
   twice, so a SNP there was counted twice. A duplicate CDS line is now
