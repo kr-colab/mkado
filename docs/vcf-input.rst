@@ -61,7 +61,15 @@ A GFF3 file defining gene models with CDS features. Both plain text and gzip-com
    # Gzipped GFF3
    mkado vcf --gff annotation.gff3.gz ...
 
-The parser extracts CDS features, groups them by transcript (via the ``Parent`` attribute), and selects the longest transcript per gene. Genes where the total CDS length is not divisible by 3 are skipped.
+The parser extracts CDS features and groups them by transcript (via the ``Parent`` attribute). It joins the CDS lines of a transcript into one coding sequence, so it checks them first:
+
+- A CDS line that is given twice is used once.
+- A transcript is skipped if its CDS lines are on more than one contig or strand, or if a strand is not ``+`` or ``-``.
+- A transcript is skipped if two of its own CDS lines overlap. Overlap between genes, or between transcripts of one gene, is not checked.
+- A transcript is skipped if the CDS first in coding order has a phase that is not 0, 1 or 2.
+- A transcript is skipped if its CDS length after that phase is not a multiple of 3.
+
+The parser then uses the longest transcript of each gene that passes the checks. A warning gives the count of each kind of problem.
 
 .. warning::
 

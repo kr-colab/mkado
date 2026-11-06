@@ -1241,6 +1241,27 @@ def vcf_counts(poly) -> tuple[int, int, int, int]:
 AAA_TO_TAA = "chr1\t7\t.\tA\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"
 
 
+class TestDuplicateCdsLine:
+    def test_duplicate_cds_line_counts_a_snp_once(self, tmp_path, write_vcf, synthetic_ref):
+        """A CDS line given twice must not put each position in the coding sequence twice."""
+        from mkado.io.gff import parse_gff3
+
+        annotation = tmp_path / "dup.gff3"
+        annotation.write_text(
+            "##gff-version 3\n"
+            "chr1\t.\tgene\t1\t9\t.\t+\t.\tID=g1\n"
+            "chr1\t.\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
+            + "chr1\t.\tCDS\t1\t9\t.\t+\t0\tParent=t1\n"
+            * 2
+        )
+        (cds,) = parse_gff3(annotation)
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
+        )
+        poly, _ = extract_gene_data(ingroup, None, cds, synthetic_ref)
+        assert len(poly.polymorphisms) == 1
+
+
 class TestStopCodons:
     """A change to or from a stop codon is skipped and counted, in both polymorphism and divergence."""
 

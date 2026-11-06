@@ -31,6 +31,16 @@ class CdsRegion:
 
     def __post_init__(self) -> None:
         self.exons = sorted(self.exons, key=lambda e: e[0])
+        # The exons are joined and read in one frame, so a base read twice, or an unknown
+        # strand or phase, would put every codon after it in the wrong place.
+        if self.strand not in ("+", "-"):
+            raise ValueError(
+                f"{self.transcript_id}: strand must be '+' or '-', not {self.strand!r}"
+            )
+        if self.phase not in (0, 1, 2) or isinstance(self.phase, bool):
+            raise ValueError(f"{self.transcript_id}: phase must be 0, 1 or 2, not {self.phase!r}")
+        if any(nxt[0] < prev[1] for prev, nxt in zip(self.exons, self.exons[1:])):
+            raise ValueError(f"{self.transcript_id}: CDS exons overlap: {self.exons}")
 
     def _build_positions(self) -> None:
         if self._positions is not None:

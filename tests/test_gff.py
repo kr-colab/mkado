@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from mkado.core.cds import CdsRegion
 from mkado.io.gff import GffFormatError, parse_gff3
 from tests.builders import NON_UTF8_GFF
 
@@ -679,22 +680,6 @@ def test_no_orphan_warning_when_cds_parents_gene_directly(tmp_path: Path, caplog
     assert not any("no mRNA/transcript features found" in msg for msg in caplog.messages)
 
 
-def test_overlapping_cds_intervals(tmp_path: Path):
-    """Overlapping CDS intervals should still be parsed (even if biologically odd)."""
-    content = textwrap.dedent("""\
-        ##gff-version 3
-        chr1\t.\tgene\t1\t100\t.\t+\t.\tID=gene1
-        chr1\t.\tmRNA\t1\t100\t.\t+\t.\tID=tx1;Parent=gene1
-        chr1\t.\tCDS\t1\t9\t.\t+\t0\tID=cds1;Parent=tx1
-        chr1\t.\tCDS\t4\t12\t.\t+\t0\tID=cds2;Parent=tx1
-    """)
-    gff_path = tmp_path / "overlap.gff3"
-    gff_path.write_text(content)
-    # Should not crash; the CDS regions are accepted as-is
-    regions = parse_gff3(gff_path)
-    assert len(regions) == 1
-
-
 # ---------------------------------------------------------------------------
 # Files that cannot be read as GFF3
 # ---------------------------------------------------------------------------
@@ -731,3 +716,137 @@ def test_corrupt_gzip_raises(tmp_path: Path):
     gff_path.write_bytes(bytes(data))
     with pytest.raises(GffFormatError, match="damaged.gff3.gz"):
         parse_gff3(gff_path)
+
+
+# ---------------------------------------------------------------------------
+# Checks on the CDS features of one transcript
+# ---------------------------------------------------------------------------
+
+
+def gff(tmp_path: Path, *cds: str, strand: str = "+", extra: str = "") -> Path:
+    """One gene g1 with transcript t1 and the given CDS rows (chrom, start, end, strand, phase)."""
+    rows = [
+        "##gff-version 3",
+        f"chr1\t.\tgene\t1\t90\t.\t{strand}\t.\tID=g1",
+        f"chr1\t.\tmRNA\t1\t90\t.\t{strand}\t.\tID=t1;Parent=g1",
+    ]
+    for row in cds:
+        chrom, start, end, cds_strand, phase = row.split()
+        rows.append(f"{chrom}\t.\tCDS\t{start}\t{end}\t.\t{cds_strand}\t{phase}\tParent=t1")
+    path = tmp_path / "genes.gff3"
+    path.write_text("\n".join(rows) + "\n" + extra)
+    return path
+
+
+def warning_text(caplog) -> str:
+    return " ".join(r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING)
+
+
+class TestTranscriptChecks:
+    """A transcript's own CDS lines must give one clean coding sequence."""
+
+    def test_duplicate_cds_line_is_removed(self, tmp_path, caplog):
+        path = gff(tmp_path, "chr1 1 30 + 0", "chr1 1 30 + 0")
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            regions = parse_gff3(path)
+        assert [r.exons for r in regions] == [[(0, 30)]]
+        assert "1 duplicate CDS line" in warning_text(caplog)
+
+    def test_overlapping_cds_skips_the_transcript(self, tmp_path, caplog):
+        path = gff(tmp_path, "chr1 1 30 + 0", "chr1 28 60 + 0")
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            assert parse_gff3(path) == []
+        assert "overlapping CDS" in warning_text(caplog)
+
+    @pytest.mark.parametrize("phase", [".", "3"])
+    def test_invalid_used_phase_skips_the_transcript(self, tmp_path, caplog, phase):
+        path = gff(tmp_path, f"chr1 1 30 + {phase}")
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            assert parse_gff3(path) == []
+        assert "invalid phase" in warning_text(caplog)
+
+    def test_invalid_phase_on_another_cds_is_not_used(self, tmp_path):
+        """Only the first CDS in coding order gives the phase, so a bad later one is harmless."""
+        (region,) = parse_gff3(gff(tmp_path, "chr1 1 30 + 0", "chr1 41 70 + ."))
+        assert region.exons == [(0, 30), (40, 70)]
+        assert region.phase == 0
+
+    def test_minus_strand_uses_the_highest_cds_phase(self, tmp_path):
+        bad_first = gff(tmp_path, "chr1 1 30 - 0", "chr1 41 70 - .", strand="-")
+        assert parse_gff3(bad_first) == []
+        bad_last = gff(tmp_path, "chr1 1 30 - .", "chr1 41 70 - 0", strand="-")
+        assert [r.exons for r in parse_gff3(bad_last)] == [[(0, 30), (40, 70)]]
+
+    def test_cds_on_two_contigs_skips_the_transcript(self, tmp_path, caplog):
+        path = gff(tmp_path, "chr1 1 30 + 0", "chr2 1 30 + 0")
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            assert parse_gff3(path) == []
+        assert "more than one contig or strand" in warning_text(caplog)
+
+    def test_cds_on_two_strands_skips_the_transcript(self, tmp_path):
+        assert parse_gff3(gff(tmp_path, "chr1 1 30 + 0", "chr1 31 60 - 0")) == []
+
+    def test_strand_dot_skips_the_transcript(self, tmp_path):
+        assert parse_gff3(gff(tmp_path, "chr1 1 30 . 0", strand=".")) == []
+
+    def test_gene_falls_back_to_a_valid_transcript(self, tmp_path):
+        """t1 is the longer transcript, but its CDS lines overlap, so the shorter t2 is used."""
+        extra = (
+            "chr1\t.\tmRNA\t1\t90\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\t.\tCDS\t1\t30\t.\t+\t0\tParent=t2\n"
+        )
+        path = gff(tmp_path, "chr1 1 30 + 0", "chr1 28 60 + 0", extra=extra)
+        (region,) = parse_gff3(path)
+        assert region.transcript_id == "t2"
+        assert region.exons == [(0, 30)]
+
+    def test_overlap_between_genes_is_kept(self, tmp_path):
+        """Only CDS lines of one transcript are compared; other genes may overlap."""
+        extra = (
+            "chr1\t.\tgene\t1\t90\t.\t+\t.\tID=g2\n"
+            "chr1\t.\tmRNA\t1\t90\t.\t+\t.\tID=t2;Parent=g2\n"
+            "chr1\t.\tCDS\t16\t45\t.\t+\t0\tParent=t2\n"
+        )
+        path = gff(tmp_path, "chr1 1 30 + 0", extra=extra)
+        assert sorted(r.gene_id for r in parse_gff3(path)) == ["g1", "g2"]
+
+
+class TestTranscriptChecksAtTheRightLayer:
+    """Each check runs on every transcript, and CdsRegion rejects data no transcript can have."""
+
+    def test_length_check_falls_back_to_a_valid_transcript(self, tmp_path):
+        """t1 is longer but 31 bp is not a multiple of 3, so the 30 bp t2 is used."""
+        extra = (
+            "chr1\t.\tmRNA\t1\t90\t.\t+\t.\tID=t2;Parent=g1\n"
+            "chr1\t.\tCDS\t1\t30\t.\t+\t0\tParent=t2\n"
+        )
+        (region,) = parse_gff3(gff(tmp_path, "chr1 1 31 + 0", extra=extra))
+        assert region.transcript_id == "t2"
+
+    @pytest.mark.parametrize("phases", [("0", "."), (".", "0")])
+    def test_copies_with_different_phases_skip_whatever_the_order(self, tmp_path, phases):
+        """Two copies that disagree on the phase are not one line; the result must not
+        depend on which copy comes first."""
+        first, second = phases
+        path = gff(tmp_path, f"chr1 1 30 + {first}", f"chr1 1 30 + {second}")
+        assert parse_gff3(path) == []
+
+    @pytest.mark.parametrize(
+        ("exons", "strand", "phase"),
+        [
+            ([(0, 30), (0, 30)], "+", 0),
+            ([(0, 30), (27, 60)], "+", 0),
+            ([(0, 30)], ".", 0),
+            ([(0, 30)], "+", 3),
+        ],
+    )
+    def test_cds_region_rejects_what_no_transcript_can_have(self, exons, strand, phase):
+        with pytest.raises(ValueError):
+            CdsRegion(
+                gene_id="g",
+                transcript_id="t",
+                chrom="chr1",
+                exons=exons,
+                strand=strand,
+                phase=phase,
+            )
