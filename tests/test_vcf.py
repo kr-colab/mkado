@@ -1321,7 +1321,10 @@ class TestStopCodons:
         assert (poly.dn, poly.ds) == (0, 0)
 
     def test_fixed_alt_and_snp_in_a_ref_stop_codon_make_no_difference(self, tmp_path, write_vcf):
-        """Every sample is fixed for TAC and one also carries CAC; the outgroup is TAC."""
+        """Every sample is fixed for TAC and one also carries CAC; the outgroup is TAC.
+
+        The codon makes no fixed difference; its TAC/CAC polymorphism is counted.
+        """
         ref, cds = ref_with_codon(tmp_path, "TAA")
         ingroup = write_vcf(
             tmp_path / "in",
@@ -1404,6 +1407,42 @@ class TestStopCodons:
         poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
         expected = fasta_counts(["ATGCGAGCC"] * 7 + ["ATGCGTGCC"], ["ATGCGAGCC"])
         assert vcf_counts(poly) == expected == (0, 0, 0, 1)
+
+    def test_fixed_alt_over_an_ambiguous_base_still_skips(self, tmp_path, write_vcf):
+        """REF TAN with a fixed ALT C: the ingroup codon is clean, the outgroup codon is not.
+
+        The outgroup keeps the N, so it cannot polarize the SNP, and FASTA input drops it.
+        """
+        ref, cds = ref_with_codon(tmp_path, "TAN")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/1\t0/0\t0/0",
+                "chr1\t6\t.\tN\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+            ],
+        )
+        outgroup = write_vcf(tmp_path / "out", [], samples=OUTGROUP)
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert poly.polymorphisms == []
+        assert stats.skipped_ambiguous == 1
+        assert stats.skipped_stop == 0
+
+    def test_no_outgroup_vcf_reads_no_outgroup_stop(self, tmp_path, write_vcf):
+        """Without an outgroup VCF there is no outgroup codon, so the REF stop TAG is not one.
+
+        Every sample is fixed for TAC, so no ingroup copy is a stop: TAC/CAC is Pn.
+        """
+        ref, cds = ref_with_codon(tmp_path, "TAG")
+        ingroup = write_vcf(
+            tmp_path / "in",
+            [
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+                "chr1\t6\t.\tG\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+            ],
+        )
+        poly, stats = extract_gene_data(ingroup, None, cds, ref)
+        assert poly.polymorphisms == [(pytest.approx(0.125), "N")]
+        assert stats.skipped_stop == 0
 
     def test_warning_counts_stop_skips(self):
         from mkado.vcf_workers import _skip_warning

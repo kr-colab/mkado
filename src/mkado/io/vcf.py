@@ -542,7 +542,8 @@ def extract_gene_data(
 
     outgroup_alleles: dict[int, str] = {}
     outgroup_swapped_at: set[int] = set()
-    if outgroup_vcf is not None or outgroup_vcf_path is not None:
+    has_outgroup = outgroup_vcf is not None or outgroup_vcf_path is not None
+    if has_outgroup:
         vcf = outgroup_vcf or _open_vcf(outgroup_vcf_path)
         outgroup_alleles, outgroup_mismatched, outgroup_swapped_at = _query_outgroup_genotype(
             vcf, cds, stats, ref_fetch, include_filtered
@@ -592,10 +593,13 @@ def extract_gene_data(
         cds.genomic_pos_to_codon_index(s.pos) for s in ingroup_snps if not s.is_fixed_alt
     )
     # Where neither the outgroup nor a fixed ALT changes a codon, the outgroup codon is the
-    # background codon, so only these codons need their own outgroup stop check.
-    outgroup_differs = {
-        cds.genomic_pos_to_codon_index(pos) for pos in outgroup_alleles.keys() | fixed_alt.keys()
-    }
+    # background codon, so only these codons need their own outgroup codon check. Without an
+    # outgroup VCF there is no outgroup codon to check.
+    outgroup_differs = (
+        {cds.genomic_pos_to_codon_index(pos) for pos in outgroup_alleles.keys() | fixed_alt.keys()}
+        if has_outgroup
+        else set()
+    )
 
     for snp in ingroup_snps:
         # Skip sites fixed for ALT in ingroup (these are potential divergence, not polymorphism)
@@ -624,16 +628,18 @@ def extract_gene_data(
                 alt_of_ref_stop[snp.pos] = snp.alt
             continue
 
-        # An outgroup stop codon is missing data, so the outgroup cannot polarize the
-        # polymorphism, and the FASTA path drops it. Divergence in this codon then meets
-        # the same stop codon and is skipped too.
-        if (
-            codon_idx in outgroup_differs
-            and cds.extract_codon(codon_idx, out_fetch) in code.stop_codons
-        ):
-            stats.skipped_stop += 1
-            stop_allele_positions.add(snp.pos)
-            continue
+        # An outgroup codon that is a stop or has an ambiguous base is missing data, so the
+        # outgroup cannot polarize the polymorphism, and the FASTA path drops it.
+        if codon_idx in outgroup_differs:
+            out_codon = cds.extract_codon(codon_idx, out_fetch)
+            if out_codon not in CLEAN_CODONS:
+                stats.skipped_ambiguous += 1
+                continue
+            if out_codon in code.stop_codons:
+                # Divergence in this codon then meets the same stop codon and is skipped too.
+                stats.skipped_stop += 1
+                stop_allele_positions.add(snp.pos)
+                continue
 
         # Classify the change
         is_syn = code.is_synonymous_change(ref_codon, alt_codon)
@@ -660,7 +666,7 @@ def extract_gene_data(
     dn = 0
     ds = 0
 
-    if outgroup_vcf_path is not None or outgroup_vcf is not None:
+    if has_outgroup:
         # The ingroup codon carries ALT where the ingroup is fixed for it. A codon needs
         # one clean codon per group to be a fixed difference, so any polymorphic position,
         # including a third-allele outgroup base there, voids the whole codon, not just
