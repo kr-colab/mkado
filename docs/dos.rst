@@ -75,12 +75,12 @@ DoS is automatically included in all MK test outputs:
    MK Test Results:
      Divergence:    Dn=6, Ds=8
      Polymorphism:  Pn=1, Ps=8
-     Sites:         Ln=576.00, Ls=195.00
+     Sites:         Ln=573.00, Ls=195.00
      Fisher's exact p-value: 0.176
      Neutrality Index (NI):  0.1667
      Alpha (α):              0.8333
      DoS:                    0.3175
-     omega (dN/dS):          0.2539
+     omega (dN/dS):          0.2552
 
 **JSON format:**
 
@@ -95,9 +95,9 @@ DoS is automatically included in all MK test outputs:
      "ni": 0.1667,
      "alpha": 0.8333,
      "dos": 0.3175,
-     "ln": 576.0,
+     "ln": 573.0,
      "ls": 195.0,
-     "omega": 0.2539
+     "omega": 0.2552
    }
 
 **TSV format:**
@@ -105,7 +105,7 @@ DoS is automatically included in all MK test outputs:
 .. code-block:: text
 
    Dn  Ds  Pn  Ps  p_value   NI        alpha     DoS       Ln          Ls          omega
-   6   8   1   8   0.175957  0.166667  0.833333  0.317460  576.000000  195.000000  0.253906
+   6   8   1   8   0.175957  0.166667  0.833333  0.317460  573.000000  195.000000  0.255236
 
 Example Calculation
 -------------------

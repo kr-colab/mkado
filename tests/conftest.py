@@ -252,6 +252,7 @@ class Expected:
     ds: int
     skipped: tuple[int, int, int] = (0, 0, 0)  # indels, multi-allelic, missing
     ambiguous: int = 0  # SNPs and differences in a codon with an ambiguous base
+    stop: int = 0  # SNPs and differences to or from a stop codon
     outgroup: int = 0  # outgroup records skipped for any reason
     swapped: int = 0  # records used with REF and ALT swapped
     warning: str | None = None
@@ -261,6 +262,7 @@ class Expected:
         return GeneStats(
             *self.skipped,
             skipped_ambiguous=self.ambiguous,
+            skipped_stop=self.stop,
             outgroup_skipped=self.outgroup,
             swapped_ref_alt=self.swapped,
         )
@@ -278,11 +280,12 @@ EXPECTED = {
         dn=1,
         ds=1,
         skipped=(2, 1, 1),
+        stop=3,
         outgroup=4,
         swapped=1,
         warning=(
             "g_plus: skipped 2 indels, 1 multi-allelic, 1 with no called genotype, "
-            "4 outgroup records; used 1 with REF and ALT swapped"
+            "3 with stop codons, 4 outgroup records; used 1 with REF and ALT swapped"
         ),
     ),
     "g_minus": Expected(((0.125, "S"), (0.375, "N")), dn=1, ds=1),

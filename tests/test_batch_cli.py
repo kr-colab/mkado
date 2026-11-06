@@ -322,3 +322,20 @@ class TestUnequalLengths:
         assert "Error processing g1_ingroup.fa" in result.output
         genes_in_table = [row[0] for row in rows(result.stdout)[1:]]
         assert genes_in_table == ["g2_ingroup"]
+
+
+class TestStopCodonWarning:
+    def test_only_the_gene_with_an_internal_stop_warns(self, tmp_path: Path) -> None:
+        g1 = TWO_GENES["g1"]
+        # Codon 1 of the first g1 ingroup sequence becomes TAA.
+        first = g1["ingroup"][0]
+        genes = {
+            **TWO_GENES,
+            "g1": {**g1, "ingroup": [first[:3] + "TAA" + first[6:], *g1["ingroup"][1:]]},
+        }
+        dirs = write_two_genes(tmp_path, genes)
+        result = batch(dirs.separate)
+        assert result.exit_code == 0, result.output
+        warnings = [line for line in result.output.splitlines() if "internal stop codon" in line]
+        assert len(warnings) == 1
+        assert "g1_ingroup" in warnings[0]

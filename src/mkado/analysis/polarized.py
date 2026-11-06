@@ -86,6 +86,8 @@ class PolarizedMKResult:
 
     Diagnostic only — not part of the reported statistics.
     """
+    internal_stop_codons: int = 0
+    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
     unpolarized_sites: int = 0
     """Always 0: this test polarizes against its second outgroup by codon."""
 
@@ -269,7 +271,7 @@ def polarized_mk_test(
             # Polymorphism is polarized to ingroup lineage. The second outgroup carries
             # the ancestral state here, as it does for the polarization itself.
             if min_frequency > 0 or no_singletons:
-                state = ingroup.derived_state(outgroup2, codon_idx)
+                state = pair.ingroup.derived_state(pair.outgroup2, codon_idx)
                 if not passes_frequency_filter(state, min_frequency, no_singletons):
                     continue
 
@@ -304,4 +306,5 @@ def polarized_mk_test(
         ls=ls,
         omega=omega,
         stop_blocked_pairs=pair.stop_blocked_pairs,
+        internal_stop_codons=pair.internal_stop_codons,
     )

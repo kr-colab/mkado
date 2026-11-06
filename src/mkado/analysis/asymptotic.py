@@ -40,6 +40,8 @@ class PolymorphismData:
     """Total synonymous sites (Nei-Gojobori) over analyzed codons."""
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
+    internal_stop_codons: int = 0
+    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
     unpolarized_sites: int = 0
     """Polymorphic sites dropped because the outgroup could not polarize them."""
 
@@ -148,6 +150,8 @@ class AsymptoticMKResult:
     ``"above"`` (Uricchio et al. 2019, inclusive right-tail cumulative count)."""
     stop_blocked_pairs: int = 0
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
+    internal_stop_codons: int = 0
+    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
     unpolarized_sites: int = 0
     """Polymorphic sites dropped because the outgroup could not polarize them."""
 
@@ -762,6 +766,7 @@ def extract_polymorphism_data(
         ln=ln,
         ls=ls,
         stop_blocked_pairs=pair.stop_blocked_pairs,
+        internal_stop_codons=pair.internal_stop_codons,
         unpolarized_sites=unpolarized,
     )
 
@@ -1265,6 +1270,7 @@ def asymptotic_mk_test(
             ci_method="bootstrap",
             sfs_mode=sfs_mode,
             stop_blocked_pairs=pair.stop_blocked_pairs,
+            internal_stop_codons=pair.internal_stop_codons,
             unpolarized_sites=unpolarized,
         )
         return _attach_omega(result, ln_total, ls_total)
@@ -1339,6 +1345,7 @@ def asymptotic_mk_test(
         ci_method="bootstrap",
         sfs_mode=sfs_mode,
         stop_blocked_pairs=pair.stop_blocked_pairs,
+        internal_stop_codons=pair.internal_stop_codons,
         unpolarized_sites=unpolarized,
     )
     return _attach_omega(result, ln_total, ls_total)

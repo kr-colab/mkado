@@ -54,6 +54,7 @@ class GeneticCode:
         # bound methods is deliberate — that pattern keeps `self` alive via the
         # cache key, leaking instances (regression test in tests/test_codons.py).
         self._translate_cache: dict[str, str] = dict(self.code)
+        self.stop_codons: frozenset[str] = frozenset(c for c, aa in self.code.items() if aa == "*")
         self._syn_sites_cache: dict[str, float] = {
             codon: self._compute_syn_sites(codon) for codon in self.code
         }

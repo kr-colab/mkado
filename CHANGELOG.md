@@ -7,6 +7,32 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- Stop codons are now missing data in FASTA and VCF input, the same as a
+  codon with an `N`. Before, FASTA input counted a stop codon as data: a
+  difference to or from a stop counted in Dn/Ds and Pn/Ps, and each stop
+  codon added 3 to Ln, so the terminal stop of almost every gene did. VCF
+  input dropped a fixed difference with a stop codon without a count, but
+  counted a SNP that makes a premature stop as nonsynonymous. Now a stop
+  codon adds nothing to Dn/Ds, Pn/Ps or Ln/Ls in either path. A stop in one
+  sequence is missing data for that sequence only. Each gene with an
+  internal stop codon gets one warning line with the count. A stop is
+  internal when its own sequence has a later codon with a base, so a stop
+  before gap padding is a terminal stop. The VCF warning counts the SNPs
+  and differences skipped `with stop codons`. The docs said that internal
+  stops were flagged, but nothing flagged them.
+  **This changes Ln on most data, and Dn/Ds/Pn/Ps for genes with a stop
+  codon allele.** On `examples/anopheles_batch`, Ln falls by about 3 in
+  each gene, Dn/Ds/Pn/Ps change in 260 of 400 genes, and 188 genes have
+  internal stop codons: 325 in all, 301 of them in one sequence only
+  (closes #137). In a VCF codon with two or more SNPs, the VCF path cannot
+  always follow the FASTA rule, because it does not know which samples
+  carry each allele (see `docs/vcf-input.rst`).
+- `mkado vcf` classified a SNP against the reference codon, also where the
+  ingroup is fixed for an ALT base in the same codon. Every sample carries
+  that base, so the SNP is now classified against the reference codon with
+  the fixed ALT bases, as in FASTA input. For example, with reference `AGA`,
+  a fixed `CGA` and a SNP to `CGT`, the SNP was counted as nonsynonymous
+  (`AGA` to `AGT`) and is now synonymous (`CGA` to `CGT`).
 - In the Python API, the groups of a test could be `SequenceSet` objects
   in different reading frames. Each group read its codons in its own
   frame, so the test compared codons at different columns and gave wrong
