@@ -138,8 +138,8 @@ PoolPolymorphismsOption = Annotated[
     bool,
     typer.Option(
         "--pool-polymorphisms",
-        help="Pool polymorphisms from both populations. Not with --asymptotic, "
-        "--imputed or --alpha-tg, which need a derived frequency",
+        help="Pool polymorphisms from both populations. Not with the asymptotic, imputed "
+        "or alpha-TG tests, which need a derived frequency",
     ),
 ]
 
