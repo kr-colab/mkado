@@ -87,10 +87,10 @@ class PolarizedMKResult:
     Diagnostic only — not part of the reported statistics.
     """
     internal_stop_codons: int = 0
-    """Codons, not counting the last, with a stop codon in some sequence; read as missing data."""
+    """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
     unpolarized_sites: int = 0
-    """Polymorphic sites dropped: at a codon with no clean first-outgroup codon, or with no
-    derived state that a frequency filter can judge."""
+    """Polymorphisms (one per mutation) dropped: at a codon with no clean first-outgroup
+    codon, or with no derived state that a frequency filter can judge."""
 
     def __str__(self) -> str:
         ni_str = f"{self.ni_ingroup:.4f}" if self.ni_ingroup is not None else "NA"

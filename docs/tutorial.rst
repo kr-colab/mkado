@@ -193,16 +193,16 @@ If the outgroup has codon CAA, it differs from the ingroup at position 1, but at
 
 **Unpolarizable sites:**
 
-Some polymorphic sites cannot be polarized:
+Some polymorphisms cannot be polarized:
 
-- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in every test. The polarized MK test applies this rule to its first outgroup.
+- **No outgroup data**: every outgroup sequence is missing data at the codon (see :ref:`missing-data`). The codon is also left out of divergence and of Ln/Ls, so MKado drops its polymorphisms in every test on FASTA input. The polarized MK test applies this rule to its first outgroup. VCF input reads a missing outgroup call as the reference base, so this case does not occur there.
 - **No shared base**: the outgroup has a base at the varying position that no ingroup sequence has (a third allele). Frequency-based analyses (the asymptotic, imputed and α_TG tests, ``--min-freq`` and ``--no-singletons``) drop the site. The standard MK test with no frequency filter needs no ancestral state, so it still counts the site in Pn/Ps. With ``--pool-polymorphisms``, ``--min-freq`` and ``--no-singletons`` use the minor allele over both groups, not the ancestral state, so they keep such a site.
 
-MKado counts the sites it drops for either reason and prints one line at the end of the run, for example:
+MKado counts the polymorphisms it drops for either reason, one for each mutation, and prints one line at the end of the run, for example:
 
 .. code-block:: text
 
-   Warning: 2386 polymorphic sites in 209 genes could not be polarized against the outgroup and were dropped
+   Warning: 11143 polymorphisms in 397 genes could not be polarized against the outgroup and were dropped
 
 Polarized MK Test
 -----------------
@@ -236,7 +236,10 @@ For each fixed difference between ingroup and outgroup1, MKado applies a **major
      - Mutation on **outgroup1** lineage
    * - All three differ
      - Cannot determine
-     - **Unpolarizable** — excluded from lineage-specific counts
+     - **Unpolarizable** — counted in the unpolarized Dn/Ds
+   * - outgroup2 has both codons, or only missing data
+     - Cannot determine
+     - **Unpolarizable** — counted in the unpolarized Dn/Ds
 
 **Example:**
 
@@ -261,10 +264,10 @@ Polarizing Polymorphisms
 
 Polymorphisms in the ingroup are also polarized to determine if they arose on the ingroup lineage. The logic mirrors fixed difference polarization:
 
-1. **Check for ancestral polymorphism**: If outgroup2 contains ALL the ingroup alleles, the polymorphism existed at the common ancestor and cannot be attributed to the ingroup lineage → excluded
+1. **Check for ancestral polymorphism**: If outgroup2 contains ALL the ingroup alleles, the polymorphism existed at the common ancestor and cannot be attributed to the ingroup lineage → counted as unpolarized
 2. **Determine ancestral state**: If outgroup1 and outgroup2 share an allele, that allele is ancestral
 3. **Verify derived allele**: If the ingroup has alleles not present in outgroup2, those are derived on the ingroup lineage → counted as ingroup polymorphism
-4. **Cannot polarize**: If no clear ancestral state can be determined → excluded
+4. **Cannot polarize**: If no clear ancestral state can be determined → counted as unpolarized
 
 **Example:**
 
@@ -359,10 +362,10 @@ This option **excludes** rare polymorphisms below a frequency threshold from the
 ``--no-singletons`` (Standard MK, Polarized MK, and α_TG)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Excludes singletons, meaning sites where the derived allele appears in exactly one sequence.
+Excludes singletons, meaning mutations whose derived base appears in exactly one sequence.
 
 - **Applies to**: Standard MK test, Polarized MK test, α_TG estimator
-- **How it works**: Counts the sequences that differ from the ancestral codon and drops the site when that count is one. With ``--pool-polymorphisms``, which only the standard and polarized tests accept, there is no ancestral state, so this counts the minor allele over the combined ingroup+outgroup sample instead
+- **How it works**: Counts the copies of each mutation's derived base at its own position, and drops that mutation when the count is one. With ``--pool-polymorphisms``, which only the standard and polarized tests accept, there is no ancestral state, so this counts the minor allele over the combined ingroup+outgroup sample instead
 - **Sample size**: Not used. Counting the copies keeps the rule the same whatever the sample size, whether some sequences are missing data at that codon, and whether ``--pool-polymorphisms`` is set
 
 .. code-block:: bash

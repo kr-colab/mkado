@@ -1111,7 +1111,7 @@ def test_batch_with_no_results_succeeds(tmp_path: Path) -> None:
 
 
 class TestUnpolarizedSummary:
-    """One summary line reports polymorphic sites the outgroup cannot polarize."""
+    """One summary line reports the polymorphisms the outgroup cannot polarize."""
 
     def write(self, tmp_path: Path, outgroup: str) -> Path:
         fasta = tmp_path / "gene.fa"
@@ -1125,7 +1125,7 @@ class TestUnpolarizedSummary:
         result = runner.invoke(app, ["test", str(fasta), "-i", "speciesA", "-o", "speciesB"])
         assert result.exit_code == 0, result.output
         assert (
-            "Warning: 1 polymorphic site in 1 gene could not be polarized against the "
+            "Warning: 1 polymorphism in 1 gene could not be polarized against the "
             "outgroup and was dropped"
         ) in result.output
 

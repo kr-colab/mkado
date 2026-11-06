@@ -86,8 +86,8 @@ frequency filters, so the count also includes pairs at sites that ``--min-freq``
 ``--no-singletons`` or a frequency-based analysis would drop anyway.
 
 VCF input does not use this rule for polymorphism. Each variant is classified on
-its own against the reference codon, so a codon carrying two SNPs contributes
-two independent single-position changes.
+its own against the reference codon with the bases the ingroup is fixed for, so a
+codon carrying two SNPs contributes two independent single-position changes.
 
 A codon carrying more than two alleles is not a pair. Every allele is compared
 with the most common one, and a mutation is identified by the position it

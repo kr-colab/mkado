@@ -58,7 +58,7 @@ class BatchTask:
     """Minimum derived allele frequency for polymorphisms."""
 
     no_singletons: bool = False
-    """Exclude singletons (automatically calculate 1/n threshold)."""
+    """Exclude each mutation whose derived base is seen in one sequence."""
 
     use_imputed: bool = False
     """Use imputed MK test instead of standard."""
@@ -127,7 +127,7 @@ def _plural(count: int, noun: str) -> str:
 
 
 def unpolarized_summary(results: list[Any]) -> str | None:
-    """One warning line for the polymorphic sites the outgroup could not polarize, or None.
+    """One warning line for the polymorphisms the outgroup could not polarize, or None.
 
     Each per-gene result carries ``unpolarized_sites``. These drops are common when the
     outgroup has missing data, so one line for the whole run replaces a line per gene.
@@ -137,7 +137,7 @@ def unpolarized_summary(results: list[Any]) -> str | None:
         return None
     sites, genes = sum(counts), len(counts)
     return (
-        f"Warning: {_plural(sites, 'polymorphic site')} in {_plural(genes, 'gene')} could "
+        f"Warning: {_plural(sites, 'polymorphism')} in {_plural(genes, 'gene')} could "
         f"not be polarized against the outgroup and {'was' if sites == 1 else 'were'} dropped"
     )
 

@@ -284,7 +284,7 @@ class TestUnpolarizedSummary:
         result = batch_in(dirs, "separate", *extra)
         assert result.exit_code == 0, result.output
         assert (
-            "Warning: 1 polymorphic site in 1 gene could not be polarized against the "
+            "Warning: 1 polymorphism in 1 gene could not be polarized against the "
             "outgroup and was dropped"
         ) in result.output
         assert result.output.count("could not be polarized") == 1

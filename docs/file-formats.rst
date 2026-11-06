@@ -43,7 +43,8 @@ Codon Alignment
 MKado analyzes coding sequences at the codon level. Your alignment should:
 
 - Start at the first position of a codon
-- Be a multiple of 3 nucleotides (excluding gaps)
+- Have an aligned length, gaps included, that is a multiple of 3. MKado reads codons from the
+  aligned length and ignores any bases left over at the end, with no message
 - Maintain reading frame throughout
 
 Example of proper codon alignment:
@@ -96,7 +97,8 @@ Selection Guidelines
 
 - Outgroup should be close enough to have reliable alignments
 - But distant enough to have accumulated fixed differences
-- Multiple outgroup sequences can be used (consensus is taken)
+- Multiple outgroup sequences can be used. A codon is a fixed difference only when every clean
+  outgroup sequence has the same codon; a codon where the outgroup varies adds no divergence
 
 For polarized tests:
 
@@ -133,18 +135,19 @@ codon with an ``N``:
 - A change to or from a stop codon is therefore not counted. A premature stop codon is not
   a nonsynonymous polymorphism.
 
-Each gene with an internal stop codon gets one warning line with the count, for example::
+Each gene with an internal stop codon gets one warning line, for example::
 
    Warning: AGAP000704: 2 internal stop codon(s) treated as missing data
 
 A stop codon is internal when its own sequence has a later codon with an A, C, G or T base. A
 stop codon that only gaps or ``N`` follow is the terminal stop of that sequence, so a sequence
-that ends early in a gap-padded alignment does not give a warning.
+that ends early in a gap-padded alignment does not give a warning. The count is of codon
+positions: a position with an internal stop in several sequences counts once.
 
 An internal stop codon in many sequences can mean a pseudogene, a wrong reading frame or an
-alignment error, so check such genes. ``mkado info`` prints the number of internal stop codons
-in a file, and its count of polymorphic codons leaves stop codons out in the same way. Give it
-the same ``--code-table`` as the analysis. The VCF path uses the same rule (see :doc:`vcf-input`).
+alignment error, so check such genes. ``mkado info`` prints the number of codon positions with
+an internal stop in a file, and its count of polymorphic codons leaves stop codons out in the
+same way. Give it the same ``--code-table`` as the analysis. The VCF path uses the same rule (see :doc:`vcf-input`).
 
 Common Problems
 ---------------
@@ -193,7 +196,7 @@ VCF Files
 
 Both the ingroup (``--vcf``) and outgroup (``--outgroup-vcf``) inputs are standard VCF files:
 
-- Bgzipped + tabix-indexed is recommended for performance, but uncompressed VCF also works
+- Both VCFs must be bgzipped and indexed (see :doc:`vcf-input`)
 - The ingroup VCF should be a multi-sample population VCF with genotype fields
 - The outgroup VCF should be a single-sample VCF called against the **same reference genome**
 - Multi-allelic sites should be decomposed beforehand with for example ``bcftools norm -m-``
@@ -215,7 +218,8 @@ A GFF3 file defining gene models (``--gff``):
 - Must contain ``gene``, ``mRNA``/``transcript``, and ``CDS`` features linked by ``Parent`` attributes
 - Both plain text and gzip-compressed (``.gff3.gz``) files are supported
 - MKado selects the longest transcript per gene automatically
-- Genes where the total CDS length is not divisible by 3 are skipped
+- A transcript whose CDS length, after the phase of its first CDS, is not a multiple of 3 is
+  skipped, and the gene uses its longest valid transcript (see :doc:`vcf-input` for all checks)
 - **GTF format is not supported** — MKado requires GFF3 (``key=value`` attributes, not GTF's ``key "value"`` style). Convert with ``gffread annotation.gtf -o annotation.gff3`` if needed.
 
 Example Data

@@ -247,6 +247,8 @@ The line lists only the kinds with a count above zero, in this order:
 
 After the skips, a second part reports the records that were used with REF and ALT swapped, for example ``skipped 1 indel; used 3 with REF and ALT swapped``. Many swaps in one file usually mean that the VCF was called against a different version of the reference.
 
+The warning does not count polymorphisms that ``--min-freq`` or ``--no-singletons`` remove, because they are filtered, not lost. A polymorphism whose outgroup base is a third allele is kept, so it is not counted either (see the edge cases below).
+
 Records with no ALT (``.``, as in an all-sites VCF) and ingroup records with no called ALT allele are invariant sites. They read as the reference base and are not counted, because no data is lost.
 
 How It Works
@@ -288,12 +290,12 @@ Edge Cases
 - **Two SNPs in the same codon**: Each SNP classified independently (standard MK convention, avoids phasing issues). The VCF path does not know which samples carry each allele, so in a codon with two or more SNPs it cannot always follow the FASTA rule for stop codons. A stop codon with two or more SNPs stays missing data, but FASTA input counts the samples without the stop. The frequency of a SNP is taken over all called alleles, including copies that carry a stop codon because of another SNP in the codon. FASTA input leaves those copies out. For such codons the two paths can give different counts
 - **Records with no called ALT allele**: Treated the same as no record, so the ingroup carries the reference base there. Such records are common after ``bcftools view -s`` without ``-a``
 - **Sites fixed for ALT in the ingroup**: A fixed difference when the outgroup carries the reference base; no difference when the outgroup carries the same ALT
-- **Heterozygous outgroup genotype**: Unresolved, treated the same as a missing outgroup record — not used for divergence, and does not polarize a polymorphism at that position
-- **Outgroup third allele at a polymorphic site**: Ignored for divergence, and the polymorphism is not polarized
+- **Heterozygous outgroup genotype**: Read as the reference base (see ``--outgroup-vcf`` above) and counted in ``outgroup records``. The reference base is then taken as ancestral for a polymorphism at that position
+- **Outgroup third allele at a polymorphic site**: The outgroup base is neither REF nor ALT. It adds no divergence, and the reference base is taken as ancestral for the polymorphism, which is kept. FASTA input cannot polarize such a site, so ``--min-freq``, ``--no-singletons`` and the frequency-based tests drop it there; the two inputs can then give different counts
 - **Codon with an ingroup polymorphism and an outgroup difference at another position**: The whole codon is excluded from divergence, matching the FASTA path's requirement of one clean codon per group
 - **Overlapping genes**: Each gene processed independently; the same variant can contribute to multiple genes
 - **Stop codons**: A stop codon is missing data, the same as in FASTA input. A SNP or a fixed difference where either codon is a stop codon is skipped and counted as ``with stop codons``. A SNP that makes a premature stop codon is therefore not counted as nonsynonymous
-- **Incomplete CDS**: Genes where CDS length % 3 != 0 are skipped
+- **Incomplete CDS**: A transcript whose CDS length, after the phase, is not a multiple of 3 is skipped, and the gene uses its longest valid transcript
 - **CDS past the end of its contig**: The gene fails with an error, because the annotation does not match the reference
 
 Parallel Processing

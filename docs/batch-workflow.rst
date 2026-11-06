@@ -84,7 +84,7 @@ Usage:
 Asymptotic Batch Analysis
 -------------------------
 
-The asymptotic MK test bins polymorphisms by **derived allele frequency** and extrapolates alpha to remove the bias from slightly deleterious mutations. Derived alleles are identified by comparison with the outgroup: alleles shared between ingroup and outgroup are ancestral, and the derived frequency is calculated within the ingroup. See :doc:`tutorial` for details on polarization.
+The asymptotic MK test bins polymorphisms by **derived allele frequency** and extrapolates alpha to remove the bias from slightly deleterious mutations. Derived alleles are identified by comparison with the outgroup: at each mutation's position, the base shared with the outgroup is ancestral, and the derived frequency is calculated within the ingroup. See :doc:`tutorial` for details on polarization.
 
 For asymptotic MK tests, you can either:
 
