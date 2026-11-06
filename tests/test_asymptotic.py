@@ -1327,3 +1327,19 @@ class TestTriallelicPosition:
         ingroup = ["AAG"] * 5 + ["AAA"] * 3 + ["AAC"] * 2
         data = extract_polymorphism_data(sequence_set(ingroup), sequence_set(["AAA"]))
         assert sorted(data.polymorphisms) == [(0.2, "N"), (0.5, "S")]
+
+
+class TestPooledModeIsRejected:
+    """These functions need each polymorphism's derived frequency, which pooled mode lacks."""
+
+    def test_extract_polymorphism_data_raises(self) -> None:
+        with pytest.raises(ValueError, match="pool_polymorphisms"):
+            extract_polymorphism_data(
+                sequence_set(["AAA", "AAA"]), sequence_set(["AAA", "AAG"]), pool_polymorphisms=True
+            )
+
+    def test_asymptotic_mk_test_raises(self) -> None:
+        with pytest.raises(ValueError, match="pool_polymorphisms"):
+            asymptotic_mk_test(
+                sequence_set(["AAA", "AAG"]), sequence_set(["AAA"]), pool_polymorphisms=True
+            )

@@ -9,6 +9,12 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- `--pool-polymorphisms` with `--asymptotic`, `--imputed` or `--alpha-tg`
+  used only the ingroup's polymorphisms and lost those in the outgroup,
+  and did not report how many. These tests need each polymorphism's derived frequency,
+  and a pooled polymorphism has no ancestral state to give one. The
+  combination now stops with an error, and `extract_polymorphism_data` and
+  `asymptotic_mk_test` raise `ValueError` for `pool_polymorphisms=True`.
 - The GFF3 parser dropped a CDS line with a start or end that is not a
   whole number, but built its transcript from the other CDS lines, with a
   gap. Such a transcript is now skipped, and its gene uses its longest

@@ -23,6 +23,7 @@ from rich.style import Style
 
 from mkado import __version__
 from mkado.analysis.asymptotic import (
+    POOLED_HAS_NO_DERIVED_FREQUENCY,
     asymptotic_mk_test,
     asymptotic_mk_test_aggregated,
 )
@@ -133,6 +134,15 @@ CodeTableOption = Annotated[
     ),
 ]
 
+PoolPolymorphismsOption = Annotated[
+    bool,
+    typer.Option(
+        "--pool-polymorphisms",
+        help="Pool polymorphisms from both populations. Not with the asymptotic, imputed "
+        "or alpha-TG tests, which need a derived frequency",
+    ),
+]
+
 SfsModeOption = Annotated[
     str,
     typer.Option(
@@ -172,6 +182,7 @@ def validate_option_compatibility(
     no_singletons: bool,
     min_freq: float,
     alpha_tg: bool = False,
+    pool_polymorphisms: bool = False,
 ) -> None:
     """Reject combinations of frequency-filter and alpha-method flags that conflict.
 
@@ -203,6 +214,17 @@ def validate_option_compatibility(
             "--no-singletons and --min-freq cannot be used together. "
             "--no-singletons filters by allele count instead."
         )
+    if pool_polymorphisms:
+        for used, flag in (
+            (use_asymptotic, "--asymptotic"),
+            (use_imputed, "--imputed"),
+            (alpha_tg, "--alpha-tg"),
+        ):
+            if used:
+                raise cli_error(
+                    f"--pool-polymorphisms cannot be used with {flag}. "
+                    f"{POOLED_HAS_NO_DERIVED_FREQUENCY}"
+                )
 
 
 def validate_polarize_compatibility(
@@ -681,10 +703,7 @@ def test(
         int,
         typer.Option("--reading-frame", "-r", min=1, max=3, help="Reading frame (1-3)"),
     ] = 1,
-    pool_polymorphisms: Annotated[
-        bool,
-        typer.Option("--pool-polymorphisms", help="Pool polymorphisms from both populations"),
-    ] = False,
+    pool_polymorphisms: PoolPolymorphismsOption = False,
     min_freq: Annotated[
         float,
         typer.Option("--min-freq", help="Min derived allele frequency (0.0-1.0)"),
@@ -753,6 +772,7 @@ def test(
         no_singletons=no_singletons,
         min_freq=min_freq,
         alpha_tg=False,
+        pool_polymorphisms=pool_polymorphisms,
     )
 
     imputed_cutoff = resolve_imputed_cutoff(use_imputed=use_imputed, min_freq=min_freq)
@@ -1055,10 +1075,7 @@ def batch(
         int,
         typer.Option("--reading-frame", "-r", min=1, max=3, help="Reading frame (1-3)"),
     ] = 1,
-    pool_polymorphisms: Annotated[
-        bool,
-        typer.Option("--pool-polymorphisms", help="Pool polymorphisms from both populations"),
-    ] = False,
+    pool_polymorphisms: PoolPolymorphismsOption = False,
     min_freq: Annotated[
         float,
         typer.Option("--min-freq", help="Min derived allele frequency"),
@@ -1143,6 +1160,7 @@ def batch(
         no_singletons=no_singletons,
         min_freq=min_freq,
         alpha_tg=alpha_tg,
+        pool_polymorphisms=pool_polymorphisms,
     )
 
     imputed_cutoff = resolve_imputed_cutoff(use_imputed=use_imputed, min_freq=min_freq)
