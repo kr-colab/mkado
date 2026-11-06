@@ -838,6 +838,8 @@ class TestTranscriptChecksAtTheRightLayer:
             ([(0, 30), (27, 60)], "+", 0),
             ([(0, 30)], ".", 0),
             ([(0, 30)], "+", 3),
+            ([(0, 30), (40, 40)], "+", 0),
+            ([(0, 30), (45, 40)], "+", 0),
         ],
     )
     def test_cds_region_rejects_what_no_transcript_can_have(self, exons, strand, phase):
@@ -850,3 +852,19 @@ class TestTranscriptChecksAtTheRightLayer:
                 strand=strand,
                 phase=phase,
             )
+
+
+class TestEmptyIntervalsAndConflictingPhases:
+    """A reversed CDS interval, and copies whose phase tokens differ but are both invalid."""
+
+    @pytest.mark.parametrize("bad", ["chr1 11 9 + 0", "chr1 11 10 + 0"])
+    def test_reversed_or_empty_cds_skips_the_transcript(self, tmp_path, caplog, bad):
+        """Lengths of 7 and -1 add to 6, but the region would hold 7 positions."""
+        path = gff(tmp_path, "chr1 1 7 + 0", bad)
+        with caplog.at_level(logging.WARNING, logger="mkado.io.gff"):
+            assert parse_gff3(path) == []
+        assert "empty or reversed" in warning_text(caplog)
+
+    def test_copies_with_two_invalid_phases_are_not_one_line(self, tmp_path):
+        path = gff(tmp_path, "chr1 1 30 + 0", "chr1 41 70 + .", "chr1 41 70 + 3")
+        assert parse_gff3(path) == []

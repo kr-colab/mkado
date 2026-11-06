@@ -65,6 +65,7 @@ The parser extracts CDS features and groups them by transcript (via the ``Parent
 
 - A CDS line that is given twice is used once.
 - A transcript is skipped if its CDS lines are on more than one contig or strand, or if a strand is not ``+`` or ``-``.
+- A transcript is skipped if a CDS line is empty or reversed (end before start).
 - A transcript is skipped if two of its own CDS lines overlap. Overlap between genes, or between transcripts of one gene, is not checked.
 - A transcript is skipped if the CDS first in coding order has a phase that is not 0, 1 or 2.
 - A transcript is skipped if its CDS length after that phase is not a multiple of 3.

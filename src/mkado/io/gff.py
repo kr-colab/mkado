@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
-from mkado.core.cds import CdsRegion
+from mkado.core.cds import CdsRegion, exon_problem
 from mkado.errors import InputError
 
 logger = logging.getLogger(__name__)
@@ -82,11 +82,12 @@ def _check_transcript(cds_list: list[dict]) -> tuple[list[dict], int, int, str |
     if len({cds["chrom"] for cds in unique}) > 1 or len(strands) > 1 or not strands <= {"+", "-"}:
         return [], 0, removed, "on more than one contig or strand"
     by_start = sorted(unique, key=lambda cds: cds["start"])
-    if any(nxt["start"] < prev["end"] for prev, nxt in zip(by_start, by_start[1:])):
-        return [], 0, removed, "with overlapping CDS"
-    phase = (by_start[-1] if strands == {"-"} else by_start[0])["phase"]
-    if phase is None:
+    if problem := exon_problem([(cds["start"], cds["end"]) for cds in by_start]):
+        return [], 0, removed, f"with {problem} CDS"
+    phase_text = (by_start[-1] if strands == {"-"} else by_start[0])["phase"]
+    if phase_text not in ("0", "1", "2"):
         return [], 0, removed, "with an invalid phase"
+    phase = int(phase_text)
     if (_cds_length(by_start) - phase) % 3:
         return [], 0, removed, "with CDS length not divisible by 3"
     return by_start, phase, removed, None
@@ -198,16 +199,15 @@ def parse_gff3(
             # Parent can be comma-separated in some GFF3 files
             for pid in parent.split(","):
                 pid = pid.strip()
-                # None marks a phase that is not valid; it matters only on the CDS whose
-                # phase is used, which _check_transcript reads.
-                phase = int(phase_str) if phase_str in ("0", "1", "2") else None
                 cds_by_transcript[pid].append(
                     {
                         "chrom": chrom,
                         "start": start,
                         "end": end,
                         "strand": strand,
-                        "phase": phase,
+                        # The raw text: only the phase of the CDS first in coding order is
+                        # used, and _check_transcript reads it there.
+                        "phase": phase_str,
                     }
                 )
 
@@ -259,7 +259,6 @@ def parse_gff3(
             )
 
     results: list[CdsRegion] = []
-    skipped_no_cds = 0
     skipped_no_valid = 0
     duplicates_removed = 0
     skipped_transcripts: dict[str, int] = defaultdict(int)
@@ -289,10 +288,6 @@ def parse_gff3(
 
         # Select the longest valid transcript; the first one wins a tie.
         best_tid, (by_start, phase) = max(valid.items(), key=lambda item: _cds_length(item[1][0]))
-        if _cds_length(by_start) <= 0:
-            skipped_no_cds += 1
-            logger.debug("GFF3: skipping %s (no transcript with CDS features)", gene_id)
-            continue
 
         region = CdsRegion(
             gene_id=gene_id,
@@ -313,17 +308,7 @@ def parse_gff3(
             "; ".join(f"{n} {reason}" for reason, n in skipped_transcripts.items()),
         )
 
-    n_skipped = skipped_no_cds + skipped_no_valid
-    if n_skipped > 0:
-        parts = []
-        if skipped_no_cds > 0:
-            parts.append(f"{skipped_no_cds} with no CDS features")
-        if skipped_no_valid > 0:
-            parts.append(f"{skipped_no_valid} with no valid transcript")
-        logger.warning(
-            "GFF3: %d genes skipped — %s",
-            n_skipped,
-            "; ".join(parts),
-        )
+    if skipped_no_valid > 0:
+        logger.warning("GFF3: %d genes skipped — with no valid transcript", skipped_no_valid)
 
     return results
