@@ -3,14 +3,16 @@
 ## [Unreleased]
 
 ### Added
+- `mkado info` takes `--code-table`, like the other commands, and prints
+  the number of internal stop codons in the file.
 - `mkado vcf --include-filtered` uses every record whatever its FILTER
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
 - `mkado info` counted a stop codon allele as a polymorphic codon, so its
   count did not agree with the analyses, which read a stop codon as
-  missing data. It now leaves stop codons out, prints the number of
-  internal stop codons, and takes `--code-table` like the other commands.
+  missing data. It now leaves stop codons out, with the stop codons of
+  the genetic code that `--code-table` gives (see Added).
 - Stop codons are now missing data in FASTA and VCF input, the same as a
   codon with an `N`. Before, FASTA input counted a stop codon as data: a
   difference to or from a stop counted in Dn/Ds and Pn/Ps, and each stop
