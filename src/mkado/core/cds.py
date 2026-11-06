@@ -7,6 +7,19 @@ from dataclasses import dataclass, field
 _COMPLEMENT = str.maketrans("ACGTacgt", "TGCAtgca")
 
 
+def exon_problem(exons: list[tuple[int, int]]) -> str | None:
+    """Why sorted CDS exons cannot be joined into one coding sequence, or None.
+
+    The exons are read in one frame, so an empty or reversed exon, or a base in two
+    exons, would put every codon after it in the wrong place.
+    """
+    if any(end <= start for start, end in exons):
+        return "empty or reversed"
+    if any(nxt[0] < prev[1] for prev, nxt in zip(exons, exons[1:])):
+        return "overlapping"
+    return None
+
+
 @dataclass
 class CdsRegion:
     """A coding sequence region defined by exon coordinates.
@@ -31,6 +44,15 @@ class CdsRegion:
 
     def __post_init__(self) -> None:
         self.exons = sorted(self.exons, key=lambda e: e[0])
+        # An unknown strand or phase would read every codon in the wrong place.
+        if self.strand not in ("+", "-"):
+            raise ValueError(
+                f"{self.transcript_id}: strand must be '+' or '-', not {self.strand!r}"
+            )
+        if self.phase not in (0, 1, 2) or isinstance(self.phase, bool):
+            raise ValueError(f"{self.transcript_id}: phase must be 0, 1 or 2, not {self.phase!r}")
+        if problem := exon_problem(self.exons):
+            raise ValueError(f"{self.transcript_id}: CDS exons {problem}: {self.exons}")
 
     def _build_positions(self) -> None:
         if self._positions is not None:

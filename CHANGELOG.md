@@ -9,6 +9,23 @@
   value. By default only `PASS` and `.` records are used now (see Fixed).
 
 ### Fixed
+- The GFF3 parser accepted the CDS lines of a transcript with no check. A
+  CDS line given twice put each of its positions in the coding sequence
+  twice, so a SNP there was counted twice. A duplicate CDS line is now
+  used once (closes #139).
+- The GFF3 parser now skips a transcript, with a warning, when:
+  - a CDS line is empty or reversed
+  - its own CDS lines overlap
+  - its CDS lines are on more than one contig or strand
+  - a strand is not `+` or `-`
+  - the CDS first in coding order has a phase that is not 0, 1 or 2.
+    Before, such a phase was read as 0.
+- A gene whose longest transcript fails a check, including the
+  multiple-of-3 length check, now uses its longest valid transcript.
+  Before, a length that was not a multiple of 3 skipped the whole gene.
+- `CdsRegion` now raises `ValueError` for an empty, reversed or
+  overlapping exon, a strand that is not `+` or `-`, or a phase that is
+  not 0, 1 or 2.
 - The polarized MK test did not apply `--min-freq` or `--no-singletons` to
   the polymorphisms it could not polarize. They are now filtered as in
   the standard test, each mutation by its own derived base (closes #138).

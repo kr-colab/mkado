@@ -10,7 +10,7 @@ from collections import defaultdict
 from collections.abc import Iterator
 from pathlib import Path
 
-from mkado.core.cds import CdsRegion
+from mkado.core.cds import CdsRegion, exon_problem
 from mkado.errors import InputError
 
 logger = logging.getLogger(__name__)
@@ -55,6 +55,46 @@ def _numbered_lines(path: Path) -> Iterator[tuple[int, str]]:
     # gzip.BadGzipFile is an OSError; zlib.error comes from damaged compressed data.
     except (OSError, UnicodeDecodeError, EOFError, zlib.error) as e:
         raise GffFormatError(f"{path.name} cannot be read as GFF3: {e}") from e
+
+
+def _check_transcript(cds_list: list[dict]) -> tuple[list[dict], int, int, str | None]:
+    """A transcript's CDS lines sorted by start, the phase used, the duplicates removed, a reason.
+
+    The CDS lines of one transcript are joined into one coding sequence and read in one
+    frame. So they must lie on one contig and one strand, and must not overlap. The CDS
+    first in coding order must give a valid phase, and the length after that phase must
+    be a multiple of 3. The reason is None when the transcript passes; otherwise it says
+    why it is skipped. Overlap with other transcripts or genes is not checked.
+
+    A line that repeats another exactly is removed. Two copies of one interval that
+    disagree on the phase are not one line: they overlap, so the transcript is skipped.
+    """
+    seen: set[tuple] = set()
+    unique = []
+    for cds in cds_list:
+        key = (cds["chrom"], cds["start"], cds["end"], cds["strand"], cds["phase"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(cds)
+    removed = len(cds_list) - len(unique)
+
+    strands = {cds["strand"] for cds in unique}
+    if len({cds["chrom"] for cds in unique}) > 1 or len(strands) > 1 or not strands <= {"+", "-"}:
+        return [], 0, removed, "on more than one contig or strand"
+    by_start = sorted(unique, key=lambda cds: cds["start"])
+    if problem := exon_problem([(cds["start"], cds["end"]) for cds in by_start]):
+        return [], 0, removed, f"with {problem} CDS"
+    phase_text = (by_start[-1] if strands == {"-"} else by_start[0])["phase"]
+    if phase_text not in ("0", "1", "2"):
+        return [], 0, removed, "with an invalid phase"
+    phase = int(phase_text)
+    if (_cds_length(by_start) - phase) % 3:
+        return [], 0, removed, "with CDS length not divisible by 3"
+    return by_start, phase, removed, None
+
+
+def _cds_length(cds_list: list[dict]) -> int:
+    return sum(cds["end"] - cds["start"] for cds in cds_list)
 
 
 def parse_gff3(
@@ -159,14 +199,15 @@ def parse_gff3(
             # Parent can be comma-separated in some GFF3 files
             for pid in parent.split(","):
                 pid = pid.strip()
-                phase = int(phase_str) if phase_str in ("0", "1", "2") else 0
                 cds_by_transcript[pid].append(
                     {
                         "chrom": chrom,
                         "start": start,
                         "end": end,
                         "strand": strand,
-                        "phase": phase,
+                        # The raw text: only the phase of the CDS first in coding order is
+                        # used, and _check_transcript reads it there.
+                        "phase": phase_str,
                     }
                 )
 
@@ -218,8 +259,9 @@ def parse_gff3(
             )
 
     results: list[CdsRegion] = []
-    skipped_no_cds = 0
-    skipped_invalid_frame = 0
+    skipped_no_valid = 0
+    duplicates_removed = 0
+    skipped_transcripts: dict[str, int] = defaultdict(int)
 
     for gene_id, tids in gene_transcripts.items():
         # Filter by gene IDs if specified
@@ -228,72 +270,45 @@ def parse_gff3(
             if gene_id not in gene_ids and display_name not in gene_ids:
                 continue
 
-        # Select longest transcript
-        best_tid = None
-        best_length = 0
+        # Check each transcript first, so a gene with one bad transcript falls back to
+        # its longest valid one.
+        valid: dict[str, tuple[list[dict], int]] = {}
         for tid in tids:
-            cds_list = cds_by_transcript[tid]
-            length = sum(c["end"] - c["start"] for c in cds_list)
-            if length > best_length:
-                best_length = length
-                best_tid = tid
-
-        if best_tid is None:
-            skipped_no_cds += 1
-            logger.debug("GFF3: skipping %s (no transcript with CDS features)", gene_id)
+            by_start, phase, removed, reason = _check_transcript(cds_by_transcript[tid])
+            duplicates_removed += removed
+            if reason is None:
+                valid[tid] = (by_start, phase)
+            else:
+                skipped_transcripts[reason] += 1
+                logger.debug("GFF3: skipping transcript %s of %s (CDS %s)", tid, gene_id, reason)
+        if not valid:
+            skipped_no_valid += 1
+            logger.debug("GFF3: skipping %s (no valid transcript)", gene_id)
             continue
 
-        cds_list = cds_by_transcript[best_tid]
-        if not cds_list:
-            skipped_no_cds += 1
-            logger.debug("GFF3: skipping %s (empty CDS list)", gene_id)
-            continue
-
-        exons = [(c["start"], c["end"]) for c in cds_list]
-        exons.sort(key=lambda e: e[0])
-
-        chrom = cds_list[0]["chrom"]
-        strand = cds_list[0]["strand"]
-
-        # Phase of the first CDS in coding order
-        sorted_cds = sorted(cds_list, key=lambda c: c["start"])
-        if strand == "-":
-            first_cds_phase = sorted_cds[-1]["phase"]
-        else:
-            first_cds_phase = sorted_cds[0]["phase"]
+        # Select the longest valid transcript; the first one wins a tie.
+        best_tid, (by_start, phase) = max(valid.items(), key=lambda item: _cds_length(item[1][0]))
 
         region = CdsRegion(
             gene_id=gene_id,
             transcript_id=best_tid,
-            chrom=chrom,
-            exons=exons,
-            strand=strand,
-            phase=first_cds_phase,
+            chrom=by_start[0]["chrom"],
+            exons=[(c["start"], c["end"]) for c in by_start],
+            strand=by_start[0]["strand"],
+            phase=phase,
         )
-
-        # Skip genes where CDS length is not divisible by 3
-        if not region.is_valid():
-            skipped_invalid_frame += 1
-            logger.debug(
-                "GFF3: skipping %s (CDS length %d not divisible by 3)",
-                gene_id,
-                region.cds_length,
-            )
-            continue
-
         results.append(region)
 
-    n_skipped = skipped_no_cds + skipped_invalid_frame
-    if n_skipped > 0:
-        parts = []
-        if skipped_no_cds > 0:
-            parts.append(f"{skipped_no_cds} with no CDS features")
-        if skipped_invalid_frame > 0:
-            parts.append(f"{skipped_invalid_frame} with CDS length not divisible by 3")
+    if duplicates_removed > 0:
+        logger.warning("GFF3: %d duplicate CDS line(s) removed", duplicates_removed)
+    if skipped_transcripts:
         logger.warning(
-            "GFF3: %d genes skipped — %s",
-            n_skipped,
-            "; ".join(parts),
+            "GFF3: %d transcript(s) skipped — %s",
+            sum(skipped_transcripts.values()),
+            "; ".join(f"{n} {reason}" for reason, n in skipped_transcripts.items()),
         )
+
+    if skipped_no_valid > 0:
+        logger.warning("GFF3: %d genes skipped — with no valid transcript", skipped_no_valid)
 
     return results
