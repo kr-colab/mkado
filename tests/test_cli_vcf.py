@@ -674,29 +674,40 @@ class TestGenotypeChecks:
         assert result.exit_code == 0, result.output
 
 
-def _third_allele_dataset(tmp_path: Path, write_vcf) -> list[str]:
-    """vcf arguments for one 3-codon gene whose one SNP has an outgroup third allele."""
+def _one_gene_dataset(
+    tmp_path: Path, write_vcf, codon: str, ingroup: list[str], outgroup: list[str]
+) -> list[str]:
+    """vcf arguments for one 3-codon gene, ATG ``codon`` AAA, with the given VCF records."""
     import pysam
 
     ref = tmp_path / "ref.fa"
-    ref.write_text(">chr1\nATGGCCAAATTTTTTTTTTTTTTTTTTTTTT\n")
+    ref.write_text(f">chr1\nATG{codon}AAA{'T' * 21}\n")
     pysam.faidx(str(ref))
     gff = _write_gff3(tmp_path / "a.gff3", (GeneSpec("g1", "chr1", ((0, 9),)),))
-    ingroup = write_vcf(tmp_path / "in", ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"])
-    outgroup = write_vcf(
-        tmp_path / "out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"], samples=["outgroup"]
-    )
+    ingroup_vcf = write_vcf(tmp_path / "in", ingroup)
+    outgroup_vcf = write_vcf(tmp_path / "out", outgroup, samples=["outgroup"])
     return [
         "vcf",
         "--vcf",
-        str(ingroup),
+        str(ingroup_vcf),
         "--outgroup-vcf",
-        str(outgroup),
+        str(outgroup_vcf),
         "--ref",
         str(ref),
         "--gff",
         str(gff),
     ]
+
+
+def _third_allele_dataset(tmp_path: Path, write_vcf) -> list[str]:
+    """vcf arguments for one 3-codon gene whose one SNP has an outgroup third allele."""
+    return _one_gene_dataset(
+        tmp_path,
+        write_vcf,
+        "GCC",
+        ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"],
+        ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"],
+    )
 
 
 class TestThirdAlleleSummary:
@@ -714,3 +725,24 @@ class TestThirdAlleleSummary:
             "Warning: 1 polymorphism in 1 gene could not be polarized against the "
             "outgroup and was dropped"
         ) in result.output
+
+
+class TestOutgroupStopSummary:
+    """A SNP whose outgroup codon is a stop codon has no clean outgroup codon, so it is
+    reported as not polarized, as in FASTA input, and not as a stop codon skip."""
+
+    def test_prints_the_unpolarized_summary(self, tmp_path: Path, write_vcf):
+        args = _one_gene_dataset(
+            tmp_path,
+            write_vcf,
+            "CAA",
+            ["chr1\t5\t.\tA\tG\t30\tPASS\t.\tGT\t0/1\t0/1\t0/0\t0/0"],
+            ["chr1\t4\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"],
+        )
+        result = runner.invoke(app, args)
+        assert result.exit_code == 0, result.output
+        assert (
+            "Warning: 1 polymorphism in 1 gene could not be polarized against the "
+            "outgroup and was dropped"
+        ) in result.output
+        assert "with stop codons" not in result.output

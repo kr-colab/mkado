@@ -255,10 +255,9 @@ class _CodonSkip(Enum):
 class _SnpDrop(Enum):
     """Why one outgroup phase drops a polymorphism."""
 
-    MISSING = auto()
-    """No outgroup codon is clean."""
     UNPOLARIZED = auto()
-    """No base is shared with the outgroup, and a derived frequency is needed."""
+    """The outgroup cannot polarize it: no outgroup codon is clean, or no base is shared
+    with the outgroup and a derived frequency is needed."""
     FILTERED = auto()
     """The frequency filters remove it."""
 
@@ -690,8 +689,9 @@ def extract_gene_data(
                 phases.append((set(copies), clean(set(copies))))
         return phases
 
-    # Positions of SNPs dropped for a stop codon, in the ingroup or in the outgroup. Missing
-    # data is not a polymorphism, so such a position does not void its codon for divergence.
+    # Positions of SNPs dropped because their ingroup codon is a stop codon with or without
+    # the SNP. Missing data is not a polymorphism, so such a position does not void its codon
+    # for divergence.
     stop_allele_positions: set[int] = set()
     # SNPs whose background codon is a stop and whose ALT codon is not, alone among the
     # SNPs in their codon. The stop carriers are missing data, so the ALT base is the
@@ -737,21 +737,9 @@ def extract_gene_data(
                 alt_of_ref_stop[snp.pos] = snp.alt
             continue
 
-        # An outgroup codon that is a stop or has an ambiguous base is missing data, as an
-        # outgroup sequence with one is in FASTA input. With no clean outgroup codon in any
-        # phase, the outgroup cannot polarize the polymorphism, and the FASTA path drops it.
         phases = [({ref_codon}, {ref_codon})]
         if codon_idx in outgroup_differs:
             phases = outgroup_phases(codon_idx)
-            if not any(clean_codons for _, clean_codons in phases):
-                all_out = set().union(*(codons for codons, _ in phases))
-                if all_out & code.stop_codons:
-                    # Divergence in this codon then meets the same stop codon and is skipped.
-                    stats.skipped_stop += 1
-                    stop_allele_positions.add(snp.pos)
-                else:
-                    stats.skipped_ambiguous += 1
-                continue
 
         # Classify the change
         is_syn = code.is_synonymous_change(ref_codon, alt_codon)
@@ -764,8 +752,11 @@ def extract_gene_data(
         def outcome(clean_codons: set[str]) -> float | None | _SnpDrop:
             """For one outgroup phase: the derived frequency of a kept SNP, None for a kept
             SNP with no derived state, or why the SNP is dropped."""
+            # An outgroup codon that is a stop or has an ambiguous base is missing data, as
+            # an outgroup sequence with one is in FASTA input. With no clean outgroup codon
+            # the SNP is dropped in every mode, as FASTA input drops it.
             if not clean_codons:
-                return _SnpDrop.MISSING
+                return _SnpDrop.UNPOLARIZED
             # The ancestral base is the one the clean outgroup codons share, by the FASTA
             # rule. With none shared (a third allele) the SNP has no derived state: it
             # still counts in Pn/Ps, but not where a frequency is read.
