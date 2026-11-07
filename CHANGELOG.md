@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+- `mkado test -a` TSV output for one gene has a `model` column after
+  `CI_high`, the same as the per-gene `mkado batch -a` TSV. The single and
+  batch formatters now share one column layout for the standard MK,
+  asymptotic and imputed tests, and one table names each result type's
+  batch layout and p-value (closes #66).
+
 ## [0.7.0] - 2026-11-07
 
 Bug-fix release. VCF input now follows the FASTA rules for missing data,

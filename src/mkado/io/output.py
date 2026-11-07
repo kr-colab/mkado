@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, NoReturn
+from functools import cache
+from typing import TYPE_CHECKING, Any, Callable, NoReturn
 
 if TYPE_CHECKING:
     from mkado.analysis.alpha_tg import AlphaTGResult
@@ -54,16 +56,102 @@ def _omega_a_na_ci_tsv_columns(
     )
 
 
-def _omega_tsv_columns(result: MKResult | PolarizedMKResult) -> str:
-    """Tab-separated ``Ln\\tLs\\tomega`` for omega-only result types (MK, polarized)."""
-    return f"{_fmt_optional(result.ln)}\t{_fmt_optional(result.ls)}\t{_fmt_optional(result.omega)}"
+_INGROUP_STATS_HEADER = "NI\talpha\tDoS\tLn\tLs\tomega"
+"""The statistics columns of a standard or polarized row, after the p-value columns."""
+
+
+def _ingroup_stats_tsv_columns(
+    ni: float | None, alpha: float | None, dos: float | None, result: MKResult | PolarizedMKResult
+) -> str:
+    """The values of _INGROUP_STATS_HEADER for the standard and polarized tests."""
+    return (
+        f"{_fmt_optional(ni)}\t{_fmt_optional(alpha)}\t{_fmt_optional(dos)}\t"
+        f"{_fmt_optional(result.ln)}\t{_fmt_optional(result.ls)}\t{_fmt_optional(result.omega)}"
+    )
+
+
+def _with_adjusted_header(header: str, include_adjusted: bool) -> str:
+    """``header`` followed by the adjusted p-value column, where one is asked for."""
+    return f"{header}\tp_value_adjusted" if include_adjusted else header
+
+
+def _with_adjusted(columns: str, adjusted_p_value: float | None) -> str:
+    """``columns`` followed by the adjusted p-value column, where one is given."""
+    if adjusted_p_value is None:
+        return columns
+    return f"{columns}\t{adjusted_p_value:.6g}"
+
+
+def _mk_tsv_header(include_adjusted: bool = False) -> str:
+    """Column header for a standard MK row, matching _mk_tsv_row's order."""
+    header = _with_adjusted_header("Dn\tDs\tPn\tPs\tp_value", include_adjusted)
+    return f"{header}\t{_INGROUP_STATS_HEADER}"
+
+
+def _mk_tsv_row(result: MKResult, adjusted_p_value: float | None = None) -> str:
+    """One TSV row for a standard MK result, in the column order of _mk_tsv_header()."""
+    counts = f"{result.dn}\t{result.ds}\t{result.pn}\t{result.ps}\t{result.p_value:.6g}"
+    stats = _ingroup_stats_tsv_columns(result.ni, result.alpha, result.dos, result)
+    return f"{_with_adjusted(counts, adjusted_p_value)}\t{stats}"
+
+
+def _polarized_batch_tsv_header(include_adjusted: bool = False) -> str:
+    """Column header for a polarized batch row: one row per gene, both lineages' counts."""
+    header = _with_adjusted_header(
+        "Dn_ingroup\tDs_ingroup\tPn_ingroup\tPs_ingroup\tDn_outgroup\tDs_outgroup\tp_value",
+        include_adjusted,
+    )
+    return f"{header}\t{_INGROUP_STATS_HEADER}"
+
+
+def _polarized_batch_tsv_row(
+    result: PolarizedMKResult, adjusted_p_value: float | None = None
+) -> str:
+    """One polarized batch row, in the column order of _polarized_batch_tsv_header()."""
+    counts = (
+        f"{result.dn_ingroup}\t{result.ds_ingroup}\t{result.pn_ingroup}\t{result.ps_ingroup}\t"
+        f"{result.dn_outgroup}\t{result.ds_outgroup}\t{result.p_value_ingroup:.6g}"
+    )
+    stats = _ingroup_stats_tsv_columns(
+        result.ni_ingroup, result.alpha_ingroup, result.dos_ingroup, result
+    )
+    return f"{_with_adjusted(counts, adjusted_p_value)}\t{stats}"
+
+
+_ASYMPTOTIC_OMEGA_HEADER = (
+    "Ln\tLs\tomega\tomega_a\tomega_na\t"
+    "omega_a_CI_low\tomega_a_CI_high\tomega_na_CI_low\tomega_na_CI_high\tci_method\tsfs_mode"
+)
+"""The omega columns, their CIs, ``ci_method`` and ``sfs_mode`` of an asymptotic row."""
+
+
+def _asymptotic_omega_tsv_columns(result: AsymptoticMKResult) -> str:
+    """The values of _ASYMPTOTIC_OMEGA_HEADER for an asymptotic result."""
+    return (
+        f"{_omega_full_tsv_columns(result)}\t{_omega_a_na_ci_tsv_columns(result)}\t"
+        f"{result.ci_method}\t{result.sfs_mode}"
+    )
+
+
+def _asymptotic_tsv_header(include_adjusted: bool = False) -> str:
+    """Column header for a per-gene asymptotic row. The test has no p-value, so
+    ``include_adjusted`` adds no column."""
+    return f"Dn\tDs\talpha_asymptotic\tCI_low\tCI_high\tmodel\t{_ASYMPTOTIC_OMEGA_HEADER}"
+
+
+def _asymptotic_tsv_row(result: AsymptoticMKResult, adjusted_p_value: float | None = None) -> str:
+    """One per-gene asymptotic row, in the column order of _asymptotic_tsv_header()."""
+    return (
+        f"{result.dn}\t{result.ds}\t{result.alpha_asymptotic:.6f}\t{result.ci_low:.6f}\t"
+        f"{result.ci_high:.6f}\t{result.model_type}\t{_asymptotic_omega_tsv_columns(result)}"
+    )
 
 
 def _imputed_tsv_header(include_adjusted: bool = False) -> str:
     """Column header for an imputed result row, matching _imputed_tsv_row's order."""
-    header = "Dn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha\tp_value"
-    if include_adjusted:
-        header += "\tp_value_adjusted"
+    header = _with_adjusted_header(
+        "Dn\tDs\tPn\tPs\tPwd\tPn_neutral\talpha\tp_value", include_adjusted
+    )
     return (
         f"{header}\tcutoff\t"
         "Ln\tLs\tomega\tomega_a\tomega_na\t"
@@ -80,10 +168,8 @@ def _imputed_tsv_row(result: ImputedMKResult, adjusted_p_value: float | None = N
         f"{result.pwd:.2f}\t{result.pn_neutral:.2f}\t{_fmt_optional(result.alpha)}\t"
         f"{result.p_value:.6g}"
     )
-    if adjusted_p_value is not None:
-        row += f"\t{adjusted_p_value:.6g}"
     return (
-        f"{row}\t{result.cutoff}\t"
+        f"{_with_adjusted(row, adjusted_p_value)}\t{result.cutoff}\t"
         f"{_omega_full_tsv_columns(result)}\t"
         f"{_fmt_optional(result.alpha_ci_low)}\t{_fmt_optional(result.alpha_ci_high)}\t"
         f"{_omega_a_na_ci_tsv_columns(result)}\t"
@@ -135,72 +221,39 @@ def _format_tsv(
         return f"{_imputed_tsv_header()}\n{_imputed_tsv_row(result)}"
 
     elif isinstance(result, MKResult):
-        header = "Dn\tDs\tPn\tPs\tp_value\tNI\talpha\tDoS\tLn\tLs\tomega"
-        ni_str = f"{result.ni:.6f}" if result.ni is not None else "NA"
-        alpha_str = f"{result.alpha:.6f}" if result.alpha is not None else "NA"
-        dos_str = f"{result.dos:.6f}" if result.dos is not None else "NA"
-        values = (
-            f"{result.dn}\t{result.ds}\t{result.pn}\t{result.ps}\t{result.p_value:.6g}\t"
-            f"{ni_str}\t{alpha_str}\t{dos_str}\t"
-            f"{_omega_tsv_columns(result)}"
-        )
-        return f"{header}\n{values}"
+        return f"{_mk_tsv_header()}\n{_mk_tsv_row(result)}"
 
     elif isinstance(result, PolarizedMKResult):
-        header = "lineage\tDn\tDs\tPn\tPs\tp_value\tNI\talpha\tDoS\tLn\tLs\tomega"
-        lines = [header]
-
-        ni_str = f"{result.ni_ingroup:.6f}" if result.ni_ingroup is not None else "NA"
-        alpha_str = f"{result.alpha_ingroup:.6f}" if result.alpha_ingroup is not None else "NA"
-        dos_str = f"{result.dos_ingroup:.6f}" if result.dos_ingroup is not None else "NA"
-        ln_s = _fmt_optional(result.ln)
-        ls_s = _fmt_optional(result.ls)
-        lines.append(
-            f"ingroup\t{result.dn_ingroup}\t{result.ds_ingroup}\t"
-            f"{result.pn_ingroup}\t{result.ps_ingroup}\t"
-            f"{result.p_value_ingroup:.6g}\t{ni_str}\t{alpha_str}\t{dos_str}\t"
-            f"{_omega_tsv_columns(result)}"
+        # One row per lineage; only the ingroup lineage has polymorphism and statistics.
+        ln_ls = f"{_fmt_optional(result.ln)}\t{_fmt_optional(result.ls)}"
+        no_stats = "NA\tNA\tNA\tNA\tNA\tNA"
+        stats = _ingroup_stats_tsv_columns(
+            result.ni_ingroup, result.alpha_ingroup, result.dos_ingroup, result
         )
-        lines.append(
-            f"outgroup\t{result.dn_outgroup}\t{result.ds_outgroup}\tNA\tNA\tNA\tNA\tNA\tNA\t"
-            f"{ln_s}\t{ls_s}\tNA"
+        return "\n".join(
+            [
+                f"lineage\t{_mk_tsv_header()}",
+                f"ingroup\t{result.dn_ingroup}\t{result.ds_ingroup}\t{result.pn_ingroup}\t"
+                f"{result.ps_ingroup}\t{result.p_value_ingroup:.6g}\t{stats}",
+                f"outgroup\t{result.dn_outgroup}\t{result.ds_outgroup}\t{no_stats}\t{ln_ls}\tNA",
+                f"unpolarized\t{result.dn_unpolarized}\t{result.ds_unpolarized}\t{no_stats}\t"
+                f"{ln_ls}\tNA",
+            ]
         )
-        lines.append(
-            f"unpolarized\t{result.dn_unpolarized}\t{result.ds_unpolarized}\t"
-            f"NA\tNA\tNA\tNA\tNA\tNA\t{ln_s}\t{ls_s}\tNA"
-        )
-        return "\n".join(lines)
 
     elif isinstance(result, AsymptoticMKResult):
-        ci_cols = (
-            "\tomega_a_CI_low\tomega_a_CI_high\tomega_na_CI_low\tomega_na_CI_high"
-            "\tci_method\tsfs_mode"
+        if result.num_genes == 0:
+            return f"{_asymptotic_tsv_header()}\n{_asymptotic_tsv_row(result)}"
+        # An aggregated result also reports the pooled polymorphism counts and gene count.
+        header = (
+            "Dn\tDs\tPn\tPs\talpha_asymptotic\tCI_low\tCI_high\tmodel\tnum_genes\t"
+            + _ASYMPTOTIC_OMEGA_HEADER
         )
-        ci_values = f"{result.ci_method}\t{result.sfs_mode}"
-        if result.num_genes > 0:
-            # Aggregated result
-            header = (
-                "Dn\tDs\tPn\tPs\talpha_asymptotic\tCI_low\tCI_high\tmodel\tnum_genes\t"
-                "Ln\tLs\tomega\tomega_a\tomega_na" + ci_cols
-            )
-            values = (
-                f"{result.dn}\t{result.ds}\t{result.pn_total}\t{result.ps_total}\t"
-                f"{result.alpha_asymptotic:.6f}\t{result.ci_low:.6f}\t{result.ci_high:.6f}\t"
-                f"{result.model_type}\t{result.num_genes}\t"
-                f"{_omega_full_tsv_columns(result)}\t"
-                f"{_omega_a_na_ci_tsv_columns(result)}\t{ci_values}"
-            )
-        else:
-            header = (
-                "Dn\tDs\talpha_asymptotic\tCI_low\tCI_high\t"
-                "Ln\tLs\tomega\tomega_a\tomega_na" + ci_cols
-            )
-            values = (
-                f"{result.dn}\t{result.ds}\t{result.alpha_asymptotic:.6f}\t"
-                f"{result.ci_low:.6f}\t{result.ci_high:.6f}\t"
-                f"{_omega_full_tsv_columns(result)}\t"
-                f"{_omega_a_na_ci_tsv_columns(result)}\t{ci_values}"
-            )
+        values = (
+            f"{result.dn}\t{result.ds}\t{result.pn_total}\t{result.ps_total}\t"
+            f"{result.alpha_asymptotic:.6f}\t{result.ci_low:.6f}\t{result.ci_high:.6f}\t"
+            f"{result.model_type}\t{result.num_genes}\t{_asymptotic_omega_tsv_columns(result)}"
+        )
         return f"{header}\n{values}"
 
     elif isinstance(result, AlphaTGResult):
@@ -223,6 +276,54 @@ def _format_tsv(
 
     else:
         raise TypeError(f"Unknown result type: {type(result)}")
+
+
+@dataclass(frozen=True)
+class _BatchLayout:
+    """How one result type is written as a batch TSV row, and the p-value that the
+    Benjamini-Hochberg adjustment uses (None for a type with no p-value)."""
+
+    header: Callable[[bool], str]
+    row: Callable[[Any, float | None], str]
+    p_value: Callable[[Any], float | None]
+
+
+@cache
+def _batch_layouts() -> dict[type, _BatchLayout]:
+    """The batch layout of each result type that has one. AlphaTGResult has none."""
+    from mkado.analysis.asymptotic import AsymptoticMKResult
+    from mkado.analysis.imputed import ImputedMKResult
+    from mkado.analysis.mk_test import MKResult
+    from mkado.analysis.polarized import PolarizedMKResult
+
+    return {
+        MKResult: _BatchLayout(_mk_tsv_header, _mk_tsv_row, lambda r: r.p_value),
+        PolarizedMKResult: _BatchLayout(
+            _polarized_batch_tsv_header, _polarized_batch_tsv_row, lambda r: r.p_value_ingroup
+        ),
+        AsymptoticMKResult: _BatchLayout(
+            _asymptotic_tsv_header, _asymptotic_tsv_row, lambda r: None
+        ),
+        ImputedMKResult: _BatchLayout(_imputed_tsv_header, _imputed_tsv_row, lambda r: r.p_value),
+    }
+
+
+def _batch_layout(result: object) -> _BatchLayout:
+    """The batch layout of ``result``'s type; TypeError for a type with none."""
+    layout = _batch_layouts().get(type(result))
+    if layout is None:
+        raise TypeError(f"Unknown result type: {type(result)}")
+    return layout
+
+
+def batch_p_value(result: BatchResult) -> float | None:
+    """The p-value that the batch Benjamini-Hochberg adjustment uses, or None where the
+    result type has no p-value.
+
+    Raises:
+        TypeError: If the result type has no batch layout.
+    """
+    return _batch_layout(result).p_value(result)
 
 
 def _raise_mixed_batch_type(
@@ -299,104 +400,24 @@ def format_batch_results(
         return json.dumps(data, indent=2)
 
     elif format == OutputFormat.TSV:
-        from mkado.analysis.asymptotic import AsymptoticMKResult
-        from mkado.analysis.imputed import ImputedMKResult
-        from mkado.analysis.mk_test import MKResult
-        from mkado.analysis.polarized import PolarizedMKResult
-
         if not results:
             return ""
 
         # Every row must share the first row's type: a TSV table has one column
         # layout for all its rows, so a mismatch is a caller error, not a row to skip.
         first_name, first_result = results[0]
+        layout = _batch_layout(first_result)
         for name, result in results[1:]:
-            if not isinstance(result, type(first_result)):
+            if type(result) is not type(first_result):
                 _raise_mixed_batch_type(
                     first_name, type(first_result).__name__, name, type(result).__name__
                 )
 
-        if isinstance(first_result, MKResult):
-            base_header = "gene\tDn\tDs\tPn\tPs\tp_value"
-            if adjusted_pvalues is not None:
-                base_header += "\tp_value_adjusted"
-            header = base_header + "\tNI\talpha\tDoS\tLn\tLs\tomega"
-            lines = [header]
-            for i, (name, result) in enumerate(results):
-                assert isinstance(result, MKResult)  # guaranteed uniform above
-                ni_str = f"{result.ni:.6f}" if result.ni is not None else "NA"
-                alpha_str = f"{result.alpha:.6f}" if result.alpha is not None else "NA"
-                dos_str = f"{result.dos:.6f}" if result.dos is not None else "NA"
-                base_row = (
-                    f"{name}\t{result.dn}\t{result.ds}\t{result.pn}\t{result.ps}\t"
-                    f"{result.p_value:.6g}"
-                )
-                if adjusted_pvalues is not None:
-                    base_row += f"\t{adjusted_pvalues[i]:.6g}"
-                lines.append(
-                    f"{base_row}\t{ni_str}\t{alpha_str}\t{dos_str}\t{_omega_tsv_columns(result)}"
-                )
-            return "\n".join(lines)
-
-        elif isinstance(first_result, AsymptoticMKResult):
-            header = (
-                "gene\tDn\tDs\talpha_asymptotic\tCI_low\tCI_high\tmodel\t"
-                "Ln\tLs\tomega\tomega_a\tomega_na\t"
-                "omega_a_CI_low\tomega_a_CI_high\tomega_na_CI_low\tomega_na_CI_high\t"
-                "ci_method\tsfs_mode"
-            )
-            lines = [header]
-            for name, result in results:
-                assert isinstance(result, AsymptoticMKResult)  # guaranteed uniform above
-                lines.append(
-                    f"{name}\t{result.dn}\t{result.ds}\t"
-                    f"{result.alpha_asymptotic:.6f}\t{result.ci_low:.6f}\t"
-                    f"{result.ci_high:.6f}\t{result.model_type}\t"
-                    f"{_omega_full_tsv_columns(result)}\t"
-                    f"{_omega_a_na_ci_tsv_columns(result)}\t"
-                    f"{result.ci_method}\t{result.sfs_mode}"
-                )
-            return "\n".join(lines)
-
-        elif isinstance(first_result, PolarizedMKResult):
-            base_header = (
-                "gene\tDn_ingroup\tDs_ingroup\tPn_ingroup\tPs_ingroup\t"
-                "Dn_outgroup\tDs_outgroup\tp_value"
-            )
-            if adjusted_pvalues is not None:
-                base_header += "\tp_value_adjusted"
-            header = base_header + "\tNI\talpha\tDoS\tLn\tLs\tomega"
-            lines = [header]
-            for i, (name, result) in enumerate(results):
-                assert isinstance(result, PolarizedMKResult)  # guaranteed uniform above
-                ni_str = f"{result.ni_ingroup:.6f}" if result.ni_ingroup is not None else "NA"
-                alpha_str = (
-                    f"{result.alpha_ingroup:.6f}" if result.alpha_ingroup is not None else "NA"
-                )
-                dos_str = f"{result.dos_ingroup:.6f}" if result.dos_ingroup is not None else "NA"
-                base_row = (
-                    f"{name}\t{result.dn_ingroup}\t{result.ds_ingroup}\t"
-                    f"{result.pn_ingroup}\t{result.ps_ingroup}\t"
-                    f"{result.dn_outgroup}\t{result.ds_outgroup}\t"
-                    f"{result.p_value_ingroup:.6g}"
-                )
-                if adjusted_pvalues is not None:
-                    base_row += f"\t{adjusted_pvalues[i]:.6g}"
-                lines.append(
-                    f"{base_row}\t{ni_str}\t{alpha_str}\t{dos_str}\t{_omega_tsv_columns(result)}"
-                )
-            return "\n".join(lines)
-
-        elif isinstance(first_result, ImputedMKResult):
-            lines = ["gene\t" + _imputed_tsv_header(adjusted_pvalues is not None)]
-            for i, (name, result) in enumerate(results):
-                assert isinstance(result, ImputedMKResult)  # guaranteed uniform above
-                adjusted = adjusted_pvalues[i] if adjusted_pvalues is not None else None
-                lines.append(f"{name}\t{_imputed_tsv_row(result, adjusted)}")
-            return "\n".join(lines)
-
-        else:
-            raise TypeError(f"Unknown result type: {type(first_result)}")
+        lines = [f"gene\t{layout.header(adjusted_pvalues is not None)}"]
+        for i, (name, result) in enumerate(results):
+            adjusted = adjusted_pvalues[i] if adjusted_pvalues is not None else None
+            lines.append(f"{name}\t{layout.row(result, adjusted)}")
+        return "\n".join(lines)
 
     else:
         raise ValueError(f"Unknown format: {format}")
