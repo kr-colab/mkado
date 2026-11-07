@@ -37,11 +37,9 @@ from mkado.batch_workers import (
     unpolarized_summary,
 )
 from mkado.errors import InputError
-from mkado.io.output import OutputFormat, format_batch_results, format_result
+from mkado.io.output import OutputFormat, batch_p_value, format_batch_results, format_result
 from scipy.stats import false_discovery_control
 
-from mkado.analysis.mk_test import MKResult
-from mkado.analysis.polarized import PolarizedMKResult
 
 if TYPE_CHECKING:
     from mkado.analysis.alpha_tg import AlphaTGResult
@@ -404,27 +402,9 @@ def compute_adjusted_pvalues(
         the result type carries no p-value (currently only
         ``AsymptoticMKResult``) or ``results`` is empty.
     """
-    from mkado.analysis.asymptotic import AsymptoticMKResult
-    from mkado.analysis.imputed import ImputedMKResult
-
-    p_values = []
-    for _, result in results:
-        if isinstance(result, MKResult):
-            p_values.append(result.p_value)
-        elif isinstance(result, PolarizedMKResult):
-            p_values.append(result.p_value_ingroup)
-        elif isinstance(result, ImputedMKResult):
-            p_values.append(result.p_value)
-        elif isinstance(result, AsymptoticMKResult):
-            # Every call site batches one result type per invocation, so
-            # dropping these entries still leaves p_values index-aligned
-            # with `results` (all-or-nothing: either every entry is skipped
-            # here and the empty-p_values check below returns None, or none
-            # is).
-            continue
-        else:
-            raise TypeError(f"Unknown result type: {type(result)}")
-
+    # Every call site batches one result type per invocation, so skipping the results
+    # with no p-value (all or none of them) leaves p_values index-aligned with results.
+    p_values = [p for _, result in results if (p := batch_p_value(result)) is not None]
     if not p_values:
         return None
 

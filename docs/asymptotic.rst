@@ -206,7 +206,7 @@ The asymptotic test reports:
 - **alpha_asymptotic**: Extrapolated alpha at derived frequency = 1.0
 - **CI_low, CI_high**: 95% confidence interval (method recorded in ``ci_method``)
 - **ci_method**: ``"monte-carlo"`` (default) or ``"bootstrap"`` (case-resampling)
-- **model_type**: Selected model (exponential or linear)
+- **model_type**: Selected model (exponential or linear); the TSV column is ``model``
 - **a, b, c**: Fitted model parameters (c only for exponential)
 - **Ln, Ls**: Nei-Gojobori non-synonymous and synonymous site totals
 - **omega**: dN/dS ratio ``(Dn/Ds) * (Ls/Ln)``
