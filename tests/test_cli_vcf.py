@@ -12,7 +12,13 @@ from typer.testing import CliRunner
 
 from mkado.cli import app
 from tests.builders import GTF_LINE, NON_UTF8_GFF, assert_clean_error
-from tests.conftest import INGROUP_RECORDS, OUTGROUP_RECORDS, _write_vcf
+from tests.conftest import (
+    INGROUP_RECORDS,
+    OUTGROUP_RECORDS,
+    GeneSpec,
+    _write_gff3,
+    _write_vcf,
+)
 
 runner = CliRunner()
 
@@ -668,45 +674,41 @@ class TestGenotypeChecks:
         assert result.exit_code == 0, result.output
 
 
+def _third_allele_dataset(tmp_path: Path, write_vcf) -> list[str]:
+    """vcf arguments for one 3-codon gene whose one SNP has an outgroup third allele."""
+    import pysam
+
+    ref = tmp_path / "ref.fa"
+    ref.write_text(">chr1\nATGGCCAAATTTTTTTTTTTTTTTTTTTTTT\n")
+    pysam.faidx(str(ref))
+    gff = _write_gff3(tmp_path / "a.gff3", (GeneSpec("g1", "chr1", ((0, 9),)),))
+    ingroup = write_vcf(tmp_path / "in", ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"])
+    outgroup = write_vcf(
+        tmp_path / "out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"], samples=["outgroup"]
+    )
+    return [
+        "vcf",
+        "--vcf",
+        str(ingroup),
+        "--outgroup-vcf",
+        str(outgroup),
+        "--ref",
+        str(ref),
+        "--gff",
+        str(gff),
+    ]
+
+
 class TestThirdAlleleSummary:
-    """A SNP the outgroup cannot polarize is dropped under a frequency filter, and the
-    vcf command reports it in one summary line, as test and batch do."""
+    """A SNP the outgroup cannot polarize is dropped where its derived frequency is needed,
+    by a frequency filter or by a test that reads it, and the vcf command reports it in one
+    summary line, as test and batch do."""
 
-    def test_min_freq_prints_the_summary(self, tmp_path: Path, write_vcf):
-        import pysam
-
-        ref = tmp_path / "ref.fa"
-        ref.write_text(">chr1\nATGGCCAAATTTTTTTTTTTTTTTTTTTTTT\n")
-        pysam.faidx(str(ref))
-        gff = tmp_path / "a.gff3"
-        gff.write_text(
-            "##gff-version 3\n"
-            "chr1\t.\tgene\t1\t9\t.\t+\t.\tID=g1\n"
-            "chr1\t.\tmRNA\t1\t9\t.\t+\t.\tID=t1;Parent=g1\n"
-            "chr1\t.\tCDS\t1\t9\t.\t+\t0\tID=c1;Parent=t1\n"
-        )
-        ingroup = write_vcf(
-            tmp_path / "in", ["chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1"]
-        )
-        outgroup = write_vcf(
-            tmp_path / "out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"], samples=["outgroup"]
-        )
-        result = runner.invoke(
-            app,
-            [
-                "vcf",
-                "--vcf",
-                str(ingroup),
-                "--outgroup-vcf",
-                str(outgroup),
-                "--ref",
-                str(ref),
-                "--gff",
-                str(gff),
-                "--min-freq",
-                "0.1",
-            ],
-        )
+    @pytest.mark.parametrize(
+        "extra", [["--min-freq", "0.1"], ["-a"]], ids=["min_freq", "asymptotic"]
+    )
+    def test_prints_the_summary(self, tmp_path: Path, write_vcf, extra):
+        result = runner.invoke(app, [*_third_allele_dataset(tmp_path, write_vcf), *extra])
         assert result.exit_code == 0, result.output
         assert (
             "Warning: 1 polymorphism in 1 gene could not be polarized against the "

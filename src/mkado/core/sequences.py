@@ -218,7 +218,7 @@ class SequenceSet:
         """Bases after the last full codon in the reading frame, which no codon reads."""
         if not self.sequences:
             return 0
-        return (self.alignment_length - (self.reading_frame - 1)) % 3
+        return max(self.alignment_length - (self.reading_frame - 1), 0) % 3
 
     @property
     def alignment_length(self) -> int:

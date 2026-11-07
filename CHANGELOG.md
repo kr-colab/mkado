@@ -24,7 +24,10 @@
   outgroup codon that is a stop codon is missing data; of the clean
   outgroup codons, the shared base with more ingroup copies is ancestral,
   and a codon with two is not a fixed difference. Such a call is no longer
-  counted in `outgroup records`.
+  counted in `outgroup records`. With two heterozygous calls in one codon,
+  a result that depends on their unknown phase is not used: such a fixed
+  difference is counted in the per-gene warning, and such a SNP as not
+  polarized.
 - A FASTA alignment whose length is not whole codons lost its last bases
   with no message. `test` and `batch` now print a warning for such a gene.
 - The docs said wrong or unclear things about missing data, polarization

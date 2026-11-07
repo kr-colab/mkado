@@ -387,3 +387,8 @@ class TestTrailingBases:
     def test_mk_test_result_carries_the_count(self):
         result = mk_test(sequence_set(["ATGAAAC", "ATGAAGC"]), sequence_set(["ATGAAAC"]))
         assert result.trailing_bases == 1
+
+
+def test_trailing_bases_of_an_alignment_shorter_than_the_frame_offset():
+    """One base in frame 3: no codon starts, and no base comes after a codon."""
+    assert sequence_set(["A"], reading_frame=3).trailing_bases == 0
