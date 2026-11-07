@@ -1377,8 +1377,8 @@ class TestStopCodons:
         )
         assert (fasta.pn, fasta.ps) == (0, 0)
         assert poly.polymorphisms == []
-        # Two stop skips: the polymorphism, and the outgroup's AAA to TAA difference.
-        assert stats.skipped_stop == 2
+        assert poly.unpolarized_sites == 1
+        assert stats.skipped_stop == 0
 
     def test_snp_on_a_fixed_alt_background_reaches_a_ref_stop(self, tmp_path, write_vcf):
         """REF TAA, every sample fixed for TAC, one copy CAC: a TAC/CAC polymorphism (Pn)."""
@@ -1429,7 +1429,7 @@ class TestStopCodons:
         expected = fasta_counts(["ATGCGAGCC"] * 7 + ["ATGCGTGCC"], ["ATGCGAGCC"])
         assert vcf_counts(poly) == expected == (0, 0, 0, 1)
 
-    def test_fixed_alt_over_an_ambiguous_base_still_skips(self, tmp_path, write_vcf):
+    def test_fixed_alt_over_an_ambiguous_base_is_unpolarized(self, tmp_path, write_vcf):
         """REF TAN with a fixed ALT C: the ingroup codon is clean, the outgroup codon is not.
 
         The outgroup keeps the N, so it cannot polarize the SNP, and FASTA input drops it.
@@ -1445,7 +1445,8 @@ class TestStopCodons:
         outgroup = write_vcf(tmp_path / "out", [], samples=OUTGROUP)
         poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
         assert poly.polymorphisms == []
-        assert stats.skipped_ambiguous == 1
+        assert poly.unpolarized_sites == 1
+        assert stats.skipped_ambiguous == 0
         assert stats.skipped_stop == 0
 
     def test_no_outgroup_vcf_reads_no_outgroup_stop(self, tmp_path, write_vcf):
@@ -1869,3 +1870,62 @@ class TestIngroupSnpInPartialLastCodon:
         )
         poly, _ = extract_gene_data(ingroup, None, cds, synthetic_ref)
         assert poly.polymorphisms == []
+
+
+class TestNoCleanOutgroupCodon:
+    """With no clean outgroup codon, the outgroup cannot polarize a SNP. FASTA input drops
+    it and counts it as not polarized, in every mode, and VCF input does the same."""
+
+    @pytest.mark.parametrize(
+        ("codon", "ingroup_records", "outgroup_records", "ingroup_haplotypes", "outgroup_seq"),
+        [
+            (
+                "CAA",
+                ["chr1\t5\t.\tA\tG\t30\tPASS\t.\tGT\t0/1\t0/1\t0/0\t0/0"],
+                ["chr1\t4\t.\tC\tT\t30\tPASS\t.\tGT\t1/1"],
+                ["ATGCAAGCC"] * 6 + ["ATGCGAGCC"] * 2,
+                "ATGTAAGCC",
+            ),
+            (
+                "TAN",
+                [
+                    "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/1\t0/0\t0/0",
+                    "chr1\t6\t.\tN\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+                ],
+                [],
+                ["ATGTACGCC"] * 6 + ["ATGCACGCC"] * 2,
+                "ATGTANGCC",
+            ),
+        ],
+        ids=["outgroup_stop", "outgroup_ambiguous"],
+    )
+    @pytest.mark.parametrize("needs_derived_frequency", [False, True])
+    def test_counted_as_unpolarized_as_in_fasta(
+        self,
+        tmp_path,
+        write_vcf,
+        codon,
+        ingroup_records,
+        outgroup_records,
+        ingroup_haplotypes,
+        outgroup_seq,
+        needs_derived_frequency,
+    ):
+        ref, cds = ref_with_codon(tmp_path, codon)
+        ingroup = write_vcf(tmp_path / "in", ingroup_records)
+        outgroup = write_vcf(tmp_path / "out", outgroup_records, samples=OUTGROUP)
+        poly, stats = extract_gene_data(
+            ingroup, outgroup, cds, ref, needs_derived_frequency=needs_derived_frequency
+        )
+        fasta = mk_test(sequence_set(ingroup_haplotypes), sequence_set([outgroup_seq]))
+        assert poly.polymorphisms == []
+        assert (
+            (poly.unpolarized_sites, poly.dn, poly.ds)
+            == (
+                fasta.unpolarized_sites,
+                fasta.dn,
+                fasta.ds,
+            )
+            == (1, 0, 0)
+        )
+        assert (stats.skipped_stop, stats.skipped_ambiguous) == (0, 0)

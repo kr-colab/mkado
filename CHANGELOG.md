@@ -14,6 +14,11 @@
   one for each mutation, the same unit as Pn and Ps.
 
 ### Fixed
+- VCF input counted a polymorphism at a codon with no clean outgroup codon
+  (a stop codon or an ambiguous base) in the per-gene `with stop codons` or
+  `with ambiguous bases` warning, and an outgroup stop codon there twice.
+  As in FASTA input, it is now counted in the end-of-run "could not be
+  polarized" line, and the codon is not a fixed difference (closes #162).
 - VCF input took REF as ancestral when the outgroup base was a third
   allele, neither REF nor ALT, and did not report it. As in FASTA input,
   `--min-freq`, `--no-singletons` and the asymptotic, imputed and α_TG
