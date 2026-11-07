@@ -42,6 +42,8 @@ class PolymorphismData:
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
     internal_stop_codons: int = 0
     """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
+    trailing_bases: int = 0
+    """Bases after the last full codon, which no codon reads."""
     unpolarized_sites: int = 0
     """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
@@ -152,6 +154,8 @@ class AsymptoticMKResult:
     """Codon pairs with no stop-free mutational ordering, dropped from Dn/Ds/Pn/Ps."""
     internal_stop_codons: int = 0
     """Codons with a stop codon that has a later base in its own sequence; read as missing data."""
+    trailing_bases: int = 0
+    """Bases after the last full codon, which no codon reads."""
     unpolarized_sites: int = 0
     """Polymorphisms (one per mutation) dropped because the outgroup could not polarize them."""
 
@@ -775,6 +779,7 @@ def extract_polymorphism_data(
         ls=ls,
         stop_blocked_pairs=pair.stop_blocked_pairs,
         internal_stop_codons=pair.internal_stop_codons,
+        trailing_bases=pair.trailing_bases,
         unpolarized_sites=unpolarized,
     )
 
@@ -1272,6 +1277,7 @@ def asymptotic_mk_test(
             sfs_mode=sfs_mode,
             stop_blocked_pairs=pair.stop_blocked_pairs,
             internal_stop_codons=pair.internal_stop_codons,
+            trailing_bases=pair.trailing_bases,
             unpolarized_sites=unpolarized,
         )
         return _attach_omega(result, ln_total, ls_total)
@@ -1347,6 +1353,7 @@ def asymptotic_mk_test(
         sfs_mode=sfs_mode,
         stop_blocked_pairs=pair.stop_blocked_pairs,
         internal_stop_codons=pair.internal_stop_codons,
+        trailing_bases=pair.trailing_bases,
         unpolarized_sites=unpolarized,
     )
     return _attach_omega(result, ln_total, ls_total)

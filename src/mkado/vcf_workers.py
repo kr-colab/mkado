@@ -9,7 +9,21 @@ from typing import TYPE_CHECKING
 from mkado.batch_workers import WorkerResult, _plural
 
 if TYPE_CHECKING:
+    from mkado.analysis.asymptotic import PolymorphismData
+    from mkado.analysis.mk_test import MKResult
     from mkado.io.vcf import GeneStats
+
+
+def mk_result_from_gene_data(poly_data: PolymorphismData) -> MKResult:
+    """The standard MK result for one gene's VCF data, with its unpolarized count."""
+    from mkado.analysis.mk_test import mk_test_from_counts
+
+    pn = sum(1 for _, t in poly_data.polymorphisms if t == "N")
+    result = mk_test_from_counts(
+        dn=poly_data.dn, ds=poly_data.ds, pn=pn, ps=len(poly_data.polymorphisms) - pn
+    )
+    result.unpolarized_sites = poly_data.unpolarized_sites
+    return result
 
 
 def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
@@ -31,6 +45,8 @@ def _skip_warning(gene_id: str, stats: GeneStats) -> str | None:
         parts.append(f"{stats.skipped_ambiguous} with ambiguous bases")
     if stats.skipped_stop > 0:
         parts.append(f"{stats.skipped_stop} with stop codons")
+    if stats.skipped_unphased > 0:
+        parts.append(f"{_plural(stats.skipped_unphased, 'codon')} with unphased outgroup calls")
     if stats.outgroup_skipped > 0:
         parts.append(_plural(stats.outgroup_skipped, "outgroup record"))
     clauses = [f"skipped {', '.join(parts)}"] if parts else []
@@ -71,6 +87,8 @@ class VcfBatchTask:
     use_imputed: bool = False
     imputed_cutoff: float = 0.15
     extract_only: bool = False
+    needs_derived_frequency: bool = False
+    """The analysis reads each SNP's derived frequency (asymptotic, imputed, alpha-TG)."""
     ci_method: str = "monte-carlo"
     sfs_mode: str = "at"
     frequency_cutoffs: tuple[float, float] = (0.1, 0.9)
@@ -124,6 +142,7 @@ def _process_single_gene(
                 ingroup_vcf=ingroup_vcf,
                 outgroup_vcf=outgroup_vcf,
                 ref_fasta=ref_fasta,
+                needs_derived_frequency=task.needs_derived_frequency,
             )
 
         # Build warning if many sites skipped
@@ -165,19 +184,9 @@ def _process_single_gene(
             )
             return WorkerResult(gene_id=task.gene_id, result=result, warning=warning)
 
-        # Standard MK from counts
-        from mkado.analysis.mk_test import mk_test_from_counts
-
-        pn = sum(1 for _, t in poly_data.polymorphisms if t == "N")
-        ps = sum(1 for _, t in poly_data.polymorphisms if t == "S")
-
-        result = mk_test_from_counts(
-            dn=poly_data.dn,
-            ds=poly_data.ds,
-            pn=pn,
-            ps=ps,
+        return WorkerResult(
+            gene_id=task.gene_id, result=mk_result_from_gene_data(poly_data), warning=warning
         )
-        return WorkerResult(gene_id=task.gene_id, result=result, warning=warning)
 
     except Exception as e:
         return WorkerResult(
@@ -253,6 +262,7 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
                 min_frequency=task.min_freq,
                 no_singletons=task.no_singletons,
                 include_filtered=task.include_filtered,
+                needs_derived_frequency=task.needs_derived_frequency,
             )
 
         # Build warning if many sites skipped
@@ -294,19 +304,9 @@ def process_vcf_gene(task: VcfBatchTask) -> WorkerResult:
             )
             return WorkerResult(gene_id=task.gene_id, result=result, warning=warning)
 
-        # Standard MK from counts
-        from mkado.analysis.mk_test import mk_test_from_counts
-
-        pn = sum(1 for _, t in poly_data.polymorphisms if t == "N")
-        ps = sum(1 for _, t in poly_data.polymorphisms if t == "S")
-
-        result = mk_test_from_counts(
-            dn=poly_data.dn,
-            ds=poly_data.ds,
-            pn=pn,
-            ps=ps,
+        return WorkerResult(
+            gene_id=task.gene_id, result=mk_result_from_gene_data(poly_data), warning=warning
         )
-        return WorkerResult(gene_id=task.gene_id, result=result, warning=warning)
 
     except Exception as e:
         return WorkerResult(

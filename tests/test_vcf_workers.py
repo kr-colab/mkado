@@ -16,6 +16,7 @@ from mkado.vcf_workers import (
     VcfBatchChunk,
     VcfBatchTask,
     _process_single_gene,
+    _skip_warning,
     process_vcf_chunk,
     process_vcf_gene,
 )
@@ -265,6 +266,11 @@ class TestWarningString:
         assert wr.warning == (
             "g: skipped 1 filtered, 2 with REF not matching the reference, "
             "3 with no called genotype, 4 outgroup records"
+        )
+
+    def test_warning_names_unphased_outgroup_codons(self):
+        assert _skip_warning("g", GeneStats(skipped_unphased=1)) == (
+            "g: skipped 1 codon with unphased outgroup calls"
         )
 
     @pytest.mark.parametrize("run", [process_vcf_gene, _via_chunk], ids=["gene", "chunk"])

@@ -1853,6 +1853,7 @@ def vcf(
             use_imputed=use_imputed and not aggregate,
             imputed_cutoff=imputed_cutoff,
             extract_only=is_aggregate or (gene is None and not use_asymptotic and not use_imputed),
+            needs_derived_frequency=use_asymptotic or use_imputed or alpha_tg,
             ci_method=ci_method,
             sfs_mode=sfs_mode,
             frequency_cutoffs=frequency_cutoffs,
@@ -1914,6 +1915,9 @@ def vcf(
                             batch_warnings.append(f"Error processing {t.gene_id}: {e}")
                     progress.advance(task_id, advance=len(chunk.tasks))
 
+    summary = unpolarized_summary([wr.result for wr in worker_results])
+    if summary:
+        batch_warnings.append(summary)
     for w in batch_warnings:
         typer.echo(w, err=True)
 
@@ -1991,22 +1995,14 @@ def vcf(
 
     # Per-gene mode: produce standard MK results from PolymorphismData
     from mkado.analysis.asymptotic import PolymorphismData
-    from mkado.analysis.mk_test import mk_test_from_counts
+    from mkado.vcf_workers import mk_result_from_gene_data
 
     results_list = []
     for wr in worker_results:
-        if isinstance(wr.result, PolymorphismData):
-            pn = sum(1 for _, t in wr.result.polymorphisms if t == "N")
-            ps = sum(1 for _, t in wr.result.polymorphisms if t == "S")
-            mk_result = mk_test_from_counts(
-                dn=wr.result.dn,
-                ds=wr.result.ds,
-                pn=pn,
-                ps=ps,
-            )
-            results_list.append((wr.gene_id, mk_result))
-        else:
-            results_list.append((wr.gene_id, wr.result))
+        result = wr.result
+        if isinstance(result, PolymorphismData):
+            result = mk_result_from_gene_data(result)
+        results_list.append((wr.gene_id, result))
 
     adjusted_pvalues = compute_adjusted_pvalues(results_list)
     write_batch_output(results_list, fmt, adjusted_pvalues, output)

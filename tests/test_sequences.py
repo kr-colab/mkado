@@ -374,3 +374,21 @@ class TestReadingFrameCheck:
         fasta = write_alignment_file(tmp_path / "g.fa", {"a": "ATGAAA"})
         with pytest.raises(ValueError, match="reading_frame must be 1, 2 or 3"):
             mk_test(fasta, fasta, reading_frame=0)
+
+
+class TestTrailingBases:
+    @pytest.mark.parametrize(
+        ("seq", "frame", "expected"),
+        [("ATGAAA", 1, 0), ("ATGAAAC", 1, 1), ("ATGAAACG", 1, 2), ("CATGAAA", 2, 0)],
+    )
+    def test_sequence_set(self, seq: str, frame: int, expected: int):
+        assert sequence_set([seq, seq], reading_frame=frame).trailing_bases == expected
+
+    def test_mk_test_result_carries_the_count(self):
+        result = mk_test(sequence_set(["ATGAAAC", "ATGAAGC"]), sequence_set(["ATGAAAC"]))
+        assert result.trailing_bases == 1
+
+
+def test_trailing_bases_of_an_alignment_shorter_than_the_frame_offset():
+    """One base in frame 3: no codon starts, and no base comes after a codon."""
+    assert sequence_set(["A"], reading_frame=3).trailing_bases == 0

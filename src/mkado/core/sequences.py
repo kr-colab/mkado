@@ -214,6 +214,13 @@ class SequenceSet:
         return self.sequences[0].num_codons(self.reading_frame)
 
     @property
+    def trailing_bases(self) -> int:
+        """Bases after the last full codon in the reading frame, which no codon reads."""
+        if not self.sequences:
+            return 0
+        return max(self.alignment_length - (self.reading_frame - 1), 0) % 3
+
+    @property
     def alignment_length(self) -> int:
         """Length of the alignment in bases."""
         if not self.sequences:

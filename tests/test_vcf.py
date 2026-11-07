@@ -1192,7 +1192,7 @@ class TestSwappedRefAlt:
 class TestUnresolvedOutgroupCall:
     """An outgroup call that cannot resolve one base reads as REF, and is counted."""
 
-    @pytest.mark.parametrize("genotype", ["./.", "1/.", "./1", "0/1"])
+    @pytest.mark.parametrize("genotype", ["./.", "1/.", "./1"])
     def test_unresolved_call_is_counted(
         self, synthetic_ref, simple_cds, write_vcf, tmp_path, genotype
     ):
@@ -1469,3 +1469,403 @@ class TestStopCodons:
         from mkado.vcf_workers import _skip_warning
 
         assert "2 with stop codons" in _skip_warning("g", GeneStats(skipped_stop=2))
+
+
+# ---- An outgroup with a third allele or a heterozygous call, polarized as in FASTA ----
+
+# The reference gene is ATG GCC AAA. Position 4 (1-based) is the G of GCC.
+THIRD_ALLELE_OUTGROUP = "chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t1/1"
+
+
+class TestOutgroupThirdAllele:
+    """The outgroup base is neither REF nor ALT, so the SNP has no derived state."""
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"min_frequency": 0.1},
+            {"no_singletons": True},
+            {"needs_derived_frequency": True},
+        ],
+        ids=["min_frequency", "no_singletons", "frequency_analysis"],
+    )
+    def test_dropped_and_counted_when_a_frequency_is_needed(
+        self, synthetic_ref, simple_cds, ingroup_vcf_nonsyn, write_vcf, tmp_path, kwargs
+    ):
+        outgroup = write_vcf(tmp_path / "third_out", [THIRD_ALLELE_OUTGROUP], samples=OUTGROUP)
+        poly, _ = extract_gene_data(
+            ingroup_vcf_nonsyn, outgroup, simple_cds, synthetic_ref, **kwargs
+        )
+        assert poly.polymorphisms == []
+        assert poly.unpolarized_sites == 1
+
+    def test_kept_when_no_frequency_is_needed(
+        self, synthetic_ref, simple_cds, ingroup_vcf_nonsyn, write_vcf, tmp_path
+    ):
+        outgroup = write_vcf(tmp_path / "third_out", [THIRD_ALLELE_OUTGROUP], samples=OUTGROUP)
+        poly, _ = extract_gene_data(ingroup_vcf_nonsyn, outgroup, simple_cds, synthetic_ref)
+        assert [kind for _, kind in poly.polymorphisms] == ["N"]
+        assert poly.unpolarized_sites == 0
+
+
+class TestHeterozygousOutgroup:
+    """A heterozygous outgroup call gives both its bases, as two outgroup sequences do."""
+
+    def test_ingroup_major_shared_base_is_ancestral(
+        self, synthetic_ref, simple_cds, write_vcf, tmp_path
+    ):
+        """The ingroup carries T in 6 of 8 copies, and the outgroup has C and T: T is
+        ancestral, so C is derived at 0.25."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t0/1\t0/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        _assert_polys(poly.polymorphisms, [(0.25, "N")])
+
+    def test_the_one_shared_base_is_ancestral(
+        self, synthetic_ref, simple_cds, ingroup_vcf_nonsyn, write_vcf, tmp_path
+    ):
+        """The outgroup has G and T, the ingroup G and A: only G is shared."""
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t4\t.\tG\tT\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(
+            ingroup_vcf_nonsyn, outgroup, simple_cds, synthetic_ref, min_frequency=0.1
+        )
+        _assert_polys(poly.polymorphisms, [(0.25, "N")])
+        assert poly.unpolarized_sites == 0
+
+    def test_not_counted_as_a_skipped_record(
+        self, synthetic_ref, simple_cds, ingroup_vcf_codon2_het, write_vcf, tmp_path
+    ):
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
+        )
+        _, stats = extract_gene_data(ingroup_vcf_codon2_het, outgroup, simple_cds, synthetic_ref)
+        assert stats.outgroup_skipped == 0
+
+    def test_partly_missing_call_is_still_skipped(
+        self, synthetic_ref, simple_cds, ingroup_vcf_codon2_het, write_vcf, tmp_path
+    ):
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/."], samples=OUTGROUP
+        )
+        _, stats = extract_gene_data(ingroup_vcf_codon2_het, outgroup, simple_cds, synthetic_ref)
+        assert stats.outgroup_skipped == 1
+
+    def test_codon_gives_no_divergence(self, synthetic_ref, simple_cds, write_vcf, tmp_path):
+        """The ingroup is fixed for GAA in codon 3, and the outgroup has AAA and ACA there.
+        The outgroup varies in that codon, so it is not a fixed difference."""
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t7\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out", ["chr1\t8\t.\tA\tC\t30\tPASS\t.\tGT\t0/1"], samples=OUTGROUP
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, simple_cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+
+class TestOutgroupParityWithFasta:
+    """The same genotypes give the same polymorphisms from FASTA and from VCF."""
+
+    @pytest.mark.parametrize(
+        ("ingroup_record", "outgroup_record", "ingroup_haplotypes", "outgroup_sequences"),
+        [
+            (
+                "chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t0/1\t0/1",
+                "chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t0/1",
+                ["ATGGTCAAA"] * 6 + ["ATGGCCAAA"] * 2,
+                ["ATGGCCAAA", "ATGGTCAAA"],
+            ),
+            (
+                "chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/0\t0/0\t0/1\t0/1",
+                THIRD_ALLELE_OUTGROUP,
+                ["ATGGCCAAA"] * 6 + ["ATGACCAAA"] * 2,
+                ["ATGTCCAAA"],
+            ),
+        ],
+        ids=["heterozygous", "third_allele"],
+    )
+    def test_same_result(
+        self,
+        synthetic_ref,
+        simple_cds,
+        write_vcf,
+        tmp_path,
+        ingroup_record,
+        outgroup_record,
+        ingroup_haplotypes,
+        outgroup_sequences,
+    ):
+        from mkado.analysis.asymptotic import extract_polymorphism_data
+
+        ingroup = write_vcf(tmp_path / "in", [ingroup_record])
+        outgroup = write_vcf(tmp_path / "out", [outgroup_record], samples=OUTGROUP)
+        vcf, _ = extract_gene_data(
+            ingroup, outgroup, simple_cds, synthetic_ref, needs_derived_frequency=True
+        )
+        fasta = extract_polymorphism_data(
+            sequence_set(ingroup_haplotypes), sequence_set(outgroup_sequences)
+        )
+        assert sorted(vcf.polymorphisms) == pytest.approx(sorted(fasta.polymorphisms))
+        assert (vcf.unpolarized_sites, vcf.dn, vcf.ds) == (
+            fasta.unpolarized_sites,
+            fasta.dn,
+            fasta.ds,
+        )
+
+
+class TestWorkerNeedsDerivedFrequency:
+    def test_task_flag_reaches_the_extraction(
+        self, synthetic_ref, simple_cds, ingroup_vcf_nonsyn, write_vcf, tmp_path
+    ):
+        from mkado.vcf_workers import VcfBatchTask, process_vcf_gene
+
+        outgroup = write_vcf(tmp_path / "third_out", [THIRD_ALLELE_OUTGROUP], samples=OUTGROUP)
+        task = VcfBatchTask(
+            gene_id=simple_cds.gene_id,
+            transcript_id=simple_cds.transcript_id,
+            chrom=simple_cds.chrom,
+            exons=simple_cds.exons,
+            strand=simple_cds.strand,
+            phase=simple_cds.phase,
+            vcf_path=ingroup_vcf_nonsyn,
+            outgroup_vcf_path=outgroup,
+            ref_fasta_path=synthetic_ref,
+            extract_only=True,
+            needs_derived_frequency=True,
+        )
+        wr = process_vcf_gene(task)
+        assert wr.error is None
+        assert wr.result.unpolarized_sites == 1
+
+
+class TestHeterozygousOutgroupStopCodon:
+    """A heterozygous outgroup call gives two outgroup codons. One that is a stop codon is
+    missing data, as an outgroup sequence with a stop is in FASTA input, so only the clean
+    outgroup codon is used."""
+
+    @pytest.mark.parametrize(
+        ("codon", "ingroup_record", "outgroup_records", "ingroup_haplotypes", "outgroup_sequences"),
+        [
+            (
+                "AAA",
+                "chr1\t6\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1",
+                ["chr1\t4\t.\tA\tT\t30\tPASS\t.\tGT\t0/1"],
+                ["ATGAAGGCC"] * 8,
+                ["ATGAAAGCC", "ATGTAAGCC"],
+            ),
+            (
+                "ACA",
+                "chr1\t4\t.\tA\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t0/1\t0/1",
+                [
+                    "chr1\t4\t.\tA\tT\t30\tPASS\t.\tGT\t0/1",
+                    "chr1\t5\t.\tC\tA\t30\tPASS\t.\tGT\t1/1",
+                ],
+                ["ATGTCAGCC"] * 6 + ["ATGACAGCC"] * 2,
+                ["ATGAAAGCC", "ATGTAAGCC"],
+            ),
+            (
+                "TAC",
+                "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0",
+                [
+                    "chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1",
+                    "chr1\t6\t.\tC\tA\t30\tPASS\t.\tGT\t1/1",
+                ],
+                ["ATGTACGCC"] * 7 + ["ATGCACGCC"],
+                ["ATGTAAGCC", "ATGCAAGCC"],
+            ),
+        ],
+        ids=["fixed_difference_kept", "stop_base_not_ancestral", "ref_codon_is_the_stop"],
+    )
+    def test_same_result_as_fasta(
+        self,
+        tmp_path,
+        write_vcf,
+        codon,
+        ingroup_record,
+        outgroup_records,
+        ingroup_haplotypes,
+        outgroup_sequences,
+    ):
+        from mkado.analysis.asymptotic import extract_polymorphism_data
+
+        ref, cds = ref_with_codon(tmp_path, codon)
+        ingroup = write_vcf(tmp_path / "in", [ingroup_record])
+        outgroup = write_vcf(tmp_path / "out", outgroup_records, samples=OUTGROUP)
+        vcf, _ = extract_gene_data(ingroup, outgroup, cds, ref, needs_derived_frequency=True)
+        fasta = extract_polymorphism_data(
+            sequence_set(ingroup_haplotypes), sequence_set(outgroup_sequences)
+        )
+        assert sorted(vcf.polymorphisms) == pytest.approx(sorted(fasta.polymorphisms))
+        assert (vcf.unpolarized_sites, vcf.dn, vcf.ds) == (
+            fasta.unpolarized_sites,
+            fasta.dn,
+            fasta.ds,
+        )
+
+
+class TestUnphasedOutgroupCalls:
+    """With two heterozygous outgroup calls in one codon, which bases share a copy is not
+    known. A result that depends on that phase is not used."""
+
+    TWO_HET = [
+        "chr1\t4\t.\tC\tT\t30\tPASS\t.\tGT\t0/1",
+        "chr1\t6\t.\tA\tG\t30\tPASS\t.\tGT\t0/1",
+    ]
+
+    def test_phase_dependent_fixed_difference_is_skipped_and_counted(self, tmp_path, write_vcf):
+        """The outgroup copies are CAA and TAG, or CAG and TAA: one clean codon either way,
+        but a different one. The ingroup is fixed for CGA."""
+        ref, cds = ref_with_codon(tmp_path, "CAA")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t5\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(tmp_path / "out", self.TWO_HET, samples=OUTGROUP)
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.skipped_unphased == 1
+
+    def test_outgroup_that_varies_in_every_phase_is_not_counted(self, tmp_path, write_vcf):
+        """GCC and ACT, or GCT and ACC: the outgroup varies in each phase, so no phase gives
+        a fixed difference."""
+        ref, cds = ref_with_codon(tmp_path, "GCC")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t5\t.\tC\tT\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out",
+            [
+                "chr1\t4\t.\tG\tA\t30\tPASS\t.\tGT\t0/1",
+                "chr1\t6\t.\tC\tT\t30\tPASS\t.\tGT\t0/1",
+            ],
+            samples=OUTGROUP,
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.skipped_unphased == 0
+
+    def test_phase_dependent_ancestral_base_is_unpolarized(self, tmp_path, write_vcf):
+        """The clean outgroup codon is CAA in one phase and CAG in the other, so the
+        ancestral base at the SNP is A or G depending on the phase."""
+        ref, cds = ref_with_codon(tmp_path, "CAA")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tA\tG\t30\tPASS\t.\tGT\t0/1\t0/1\t0/0\t0/0"]
+        )
+        outgroup = write_vcf(tmp_path / "out", self.TWO_HET, samples=OUTGROUP)
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref, needs_derived_frequency=True)
+        assert poly.polymorphisms == []
+        assert poly.unpolarized_sites == 1
+
+    def test_phase_dependent_snp_still_counts_without_a_frequency_need(self, tmp_path, write_vcf):
+        ref, cds = ref_with_codon(tmp_path, "CAA")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tA\tG\t30\tPASS\t.\tGT\t0/1\t0/1\t0/0\t0/0"]
+        )
+        outgroup = write_vcf(tmp_path / "out", self.TWO_HET, samples=OUTGROUP)
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert [kind for _, kind in poly.polymorphisms] == ["S"]
+        assert poly.unpolarized_sites == 0
+
+
+class TestPartialLastCodon:
+    """A record after the last full codon is in no codon, so it is not used."""
+
+    @pytest.mark.parametrize("genotype", ["0/1", "1/1"])
+    def test_outgroup_record_there_is_ignored(self, synthetic_ref, write_vcf, tmp_path, genotype):
+        cds = CdsRegion(gene_id="g", transcript_id="t", chrom="chr1", exons=[(0, 10)], strand="+")
+        ingroup = write_vcf(tmp_path / "in", [])
+        outgroup = write_vcf(
+            tmp_path / "out",
+            [f"chr1\t10\t.\tT\tG\t30\tPASS\t.\tGT\t{genotype}"],
+            samples=OUTGROUP,
+        )
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, synthetic_ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+
+
+class TestOutgroupPhasesCompareResults:
+    """Phases are compared by what they give, not by their codons."""
+
+    def test_varies_in_one_phase_and_same_in_the_other_is_not_counted(self, tmp_path, write_vcf):
+        """The outgroup copies are TCA and TGG (it varies), or TCG and TGA (its one clean
+        codon is the ingroup's TCG). Neither phase gives a fixed difference."""
+        ref, cds = ref_with_codon(tmp_path, "TCA")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tA\tG\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out",
+            [
+                "chr1\t5\t.\tC\tG\t30\tPASS\t.\tGT\t0/1",
+                "chr1\t6\t.\tA\tG\t30\tPASS\t.\tGT\t0/1",
+            ],
+            samples=OUTGROUP,
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.skipped_unphased == 0
+
+
+class TestPolyploidOutgroupPhases:
+    """A triploid outgroup has three copies. With two calls of 0/0/1 in codon TGG, its
+    copies are TGG, TGG and TAA, or TGA, TAG and TGG: TGG is the one clean codon in
+    each phase."""
+
+    TRIPLOID = [
+        "chr1\t5\t.\tG\tA\t30\tPASS\t.\tGT\t0/0/1",
+        "chr1\t6\t.\tG\tA\t30\tPASS\t.\tGT\t0/0/1",
+    ]
+
+    def test_fixed_difference_every_phase_gives_is_counted(self, tmp_path, write_vcf):
+        ref, cds = ref_with_codon(tmp_path, "TGG")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(tmp_path / "out", self.TRIPLOID, samples=OUTGROUP)
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (1, 0)
+        assert stats.skipped_unphased == 0
+
+    def test_polymorphism_every_phase_polarizes_is_kept(self, tmp_path, write_vcf):
+        ref, cds = ref_with_codon(tmp_path, "TGG")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t4\t.\tT\tC\t30\tPASS\t.\tGT\t0/1\t0/1\t0/1\t0/0"]
+        )
+        outgroup = write_vcf(tmp_path / "out", self.TRIPLOID, samples=OUTGROUP)
+        poly, _ = extract_gene_data(ingroup, outgroup, cds, ref, needs_derived_frequency=True)
+        _assert_polys(poly.polymorphisms, [(0.375, "N")])
+        assert poly.unpolarized_sites == 0
+
+    def test_fixed_difference_that_depends_on_the_phase_is_skipped(self, tmp_path, write_vcf):
+        """In codon TCG the copies are TCG, TCG and TAA (one clean codon, TCG), or TAG, TCA
+        and TCG (the outgroup varies). The ingroup is fixed for TCC."""
+        ref, cds = ref_with_codon(tmp_path, "TCG")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t6\t.\tG\tC\t30\tPASS\t.\tGT\t1/1\t1/1\t1/1\t1/1"]
+        )
+        outgroup = write_vcf(
+            tmp_path / "out",
+            [
+                "chr1\t5\t.\tC\tA\t30\tPASS\t.\tGT\t0/0/1",
+                "chr1\t6\t.\tG\tA\t30\tPASS\t.\tGT\t0/0/1",
+            ],
+            samples=OUTGROUP,
+        )
+        poly, stats = extract_gene_data(ingroup, outgroup, cds, ref)
+        assert (poly.dn, poly.ds) == (0, 0)
+        assert stats.skipped_unphased == 1
+
+
+class TestIngroupSnpInPartialLastCodon:
+    def test_is_ignored(self, synthetic_ref, write_vcf, tmp_path):
+        cds = CdsRegion(gene_id="g", transcript_id="t", chrom="chr1", exons=[(0, 10)], strand="+")
+        ingroup = write_vcf(
+            tmp_path / "in", ["chr1\t10\t.\tT\tG\t30\tPASS\t.\tGT\t0/1\t0/0\t0/0\t0/0"]
+        )
+        poly, _ = extract_gene_data(ingroup, None, cds, synthetic_ref)
+        assert poly.polymorphisms == []

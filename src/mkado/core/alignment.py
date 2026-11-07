@@ -72,6 +72,11 @@ class AlignedPair:
         return masked
 
     @property
+    def trailing_bases(self) -> int:
+        """Bases after the last full codon; every group has the ingroup's length and frame."""
+        return self.ingroup.trailing_bases
+
+    @property
     def internal_stop_codons(self) -> int:
         """Codons with an internal stop codon, one that is not its sequence's terminal stop."""
         return len(self._internal_stops)

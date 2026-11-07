@@ -7,7 +7,8 @@ import os
 import re
 import tempfile
 import warnings
-from collections import Counter
+from collections import Counter, defaultdict
+from itertools import permutations, product
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -18,7 +19,9 @@ import numpy as np
 
 from mkado.analysis.asymptotic import PolymorphismData
 from mkado.core.cds import CdsRegion, _COMPLEMENT
+from mkado.core.alignment import passes_frequency_filter
 from mkado.core.codons import DEFAULT_CODE, GeneticCode
+from mkado.core.sequences import ancestral_base
 from mkado.data.genetic_codes import CLEAN_CODONS
 from mkado.errors import InputError
 
@@ -221,6 +224,9 @@ class GeneStats:
     swapped_ref_alt: int = 0
     """Records in either VCF used with REF and ALT swapped: the VCF REF was not the FASTA
     base, but the VCF ALT was."""
+    skipped_unphased: int = 0
+    """Codons whose fixed difference depends on the unknown phase of two heterozygous
+    outgroup calls."""
 
     def count(self, reason: _Skip) -> None:
         """Add one ingroup record skipped for ``reason``."""
@@ -236,6 +242,31 @@ class GeneStats:
             case _Skip.INVARIANT:
                 # No ALT allele: an invariant site, so no data is lost.
                 pass
+
+
+class _CodonSkip(Enum):
+    """Why a codon pair adds no fixed difference, where that is counted."""
+
+    AMBIGUOUS = auto()
+    STOP = auto()
+    STOP_BLOCKED = auto()
+
+
+class _SnpDrop(Enum):
+    """Why one outgroup phase drops a polymorphism."""
+
+    MISSING = auto()
+    """No outgroup codon is clean."""
+    UNPOLARIZED = auto()
+    """No base is shared with the outgroup, and a derived frequency is needed."""
+    FILTERED = auto()
+    """The frequency filters remove it."""
+
+
+def _in_full_codon(cds: CdsRegion, pos: int) -> bool:
+    """Whether ``pos`` is in a full codon of ``cds``; bases after the last one are in none."""
+    codon_idx = cds.genomic_pos_to_codon_index(pos)
+    return codon_idx is not None and codon_idx < cds.num_codons()
 
 
 class _Skip(Enum):
@@ -391,7 +422,7 @@ def _query_ingroup_snps(
             pos_0 = variant.POS - 1  # convert to 0-based
 
             # Must be in our CDS
-            if not cds.contains_position(pos_0):
+            if not _in_full_codon(cds, pos_0):
                 continue
 
             fasta_base = ref_fetch(cds.chrom, pos_0)
@@ -431,18 +462,17 @@ def _query_outgroup_genotype(
     stats: GeneStats,
     ref_fetch: callable,
     include_filtered: bool,
-) -> tuple[dict[int, str], set[int], set[int]]:
+) -> tuple[dict[int, tuple[str, ...]], set[int], set[int]]:
     """Query outgroup VCF for genotypes at CDS positions.
 
-    Returns a dict mapping 0-based genomic position -> outgroup allele, the
-    positions whose REF is not the FASTA base, and the positions of homozygous
-    calls read with REF and ALT swapped. The dict only includes positions
-    where every allele of the outgroup's call is called and is ALT. A missing,
-    partly missing or heterozygous call cannot resolve a single outgroup allele,
-    so it is left out, treated like a missing record, and counted in
-    ``stats.outgroup_skipped``.
+    Returns a dict mapping 0-based genomic position -> the base of each copy of the
+    outgroup sample there, the positions whose REF is not the FASTA base, and the
+    positions of calls read with REF and ALT swapped. The dict holds each call with every
+    allele called and some ALT; each copy is an outgroup sequence, as in FASTA input. A
+    position not in the dict is the reference. A missing or partly missing call is left
+    out, treated like a missing record, and counted in ``stats.outgroup_skipped``.
     """
-    outgroup_alleles: dict[int, str] = {}
+    outgroup_copies: dict[int, tuple[str, ...]] = {}
     mismatched: set[int] = set()
     swapped_at: set[int] = set()
 
@@ -451,7 +481,7 @@ def _query_outgroup_genotype(
         for variant in _query_region(vcf, region):
             pos_0 = variant.POS - 1
 
-            if not cds.contains_position(pos_0):
+            if not _in_full_codon(cds, pos_0):
                 continue
 
             fasta_base = ref_fetch(cds.chrom, pos_0)
@@ -462,23 +492,56 @@ def _query_outgroup_genotype(
                 if reason is not _Skip.INVARIANT:
                     stats.outgroup_skipped += 1
                 continue
-            alleles, _, alt, swapped = _snv_alleles(variant, fasta_base)
+            alleles, ref, alt, swapped = _snv_alleles(variant, fasta_base)
             if alleles is None:
                 stats.outgroup_skipped += 1
                 continue
 
             # The outgroup is the first sample. Drop the padding past its ploidy.
             call = alleles[0][alleles[0] != -2]
-            # An unresolved call reads as REF, the same as no record; counted, as data is lost.
-            if not (call.size and call[0] >= 0 and (call == call[0]).all()):
+            # A missing allele reads as REF, the same as no record; counted, as data is lost.
+            if not (call.size and (call >= 0).all()):
                 stats.outgroup_skipped += 1
                 continue
-            if call[0] == 1:
-                outgroup_alleles[pos_0] = alt
+            if (call == 1).any():
+                outgroup_copies[pos_0] = tuple(alt if allele == 1 else ref for allele in call)
             if swapped:
                 swapped_at.add(pos_0)
 
-    return outgroup_alleles, mismatched, swapped_at
+    return outgroup_copies, mismatched, swapped_at
+
+
+def _divergence_outcome(
+    in_codon: str, out_codons: set[str], clean_out: set[str], code: GeneticCode
+) -> tuple[int, int] | _CodonSkip | None:
+    """What one outgroup phase gives a codon: its (dn, ds), the counted reason it gives
+    none, or None where the outgroup varies or matches the ingroup."""
+    # An outgroup with more than one clean codon varies, so it has no fixed difference.
+    if len(clean_out) > 1:
+        return None
+    # With no clean outgroup codon, any of them gives the skip reason below.
+    out_codon = min(clean_out or out_codons)
+    if in_codon == out_codon:
+        return None
+    # Checked before get_path, which has no path for such a codon and would otherwise
+    # report the pair as stop-blocked.
+    if not {in_codon, out_codon} <= CLEAN_CODONS:
+        return _CodonSkip.AMBIGUOUS
+    if {in_codon, out_codon} & code.stop_codons:
+        return _CodonSkip.STOP
+    # get_path handles codons that differ at more than one position.
+    path = code.get_path(in_codon, out_codon)
+    if not path:
+        return _CodonSkip.STOP_BLOCKED
+    kinds = [change_type for change_type, _position in path]
+    return (kinds.count("R"), kinds.count("S"))
+
+
+def _codon_with_bases(
+    cds: CdsRegion, codon_idx: int, ref_fetch: callable, bases: dict[int, str]
+) -> str:
+    """The codon at ``codon_idx`` with ``bases`` in place of the reference at their positions."""
+    return cds.extract_codon(codon_idx, lambda chrom, pos: bases.get(pos) or ref_fetch(chrom, pos))
 
 
 def extract_gene_data(
@@ -494,6 +557,7 @@ def extract_gene_data(
     ingroup_vcf: object | None = None,
     outgroup_vcf: object | None = None,
     ref_fasta: object | None = None,
+    needs_derived_frequency: bool = False,
 ) -> tuple[PolymorphismData, GeneStats]:
     """Extract polymorphism and divergence data for a single gene from VCF.
 
@@ -509,6 +573,10 @@ def extract_gene_data(
         ingroup_vcf: Pre-opened cyvcf2.VCF handle for ingroup (optional).
         outgroup_vcf: Pre-opened cyvcf2.VCF handle for outgroup (optional).
         ref_fasta: Pre-opened pysam.FastaFile handle (optional).
+        needs_derived_frequency: True when the analysis reads each SNP's derived
+            frequency (the asymptotic, imputed and alpha-TG tests). A SNP the outgroup
+            cannot polarize is then dropped and counted in ``unpolarized_sites``, as it
+            is with ``min_frequency`` or ``no_singletons``; otherwise it is kept.
 
     Returns:
         Tuple of (PolymorphismData, GeneStats).
@@ -540,12 +608,12 @@ def extract_gene_data(
     if ingroup_vcf is None:
         vcf.close()
 
-    outgroup_alleles: dict[int, str] = {}
+    outgroup_copies: dict[int, tuple[str, ...]] = {}
     outgroup_swapped_at: set[int] = set()
     has_outgroup = outgroup_vcf is not None or outgroup_vcf_path is not None
     if has_outgroup:
         vcf = outgroup_vcf or _open_vcf(outgroup_vcf_path)
-        outgroup_alleles, outgroup_mismatched, outgroup_swapped_at = _query_outgroup_genotype(
+        outgroup_copies, outgroup_mismatched, outgroup_swapped_at = _query_outgroup_genotype(
             vcf, cds, stats, ref_fetch, include_filtered
         )
         mismatched |= outgroup_mismatched
@@ -563,14 +631,16 @@ def extract_gene_data(
         kept_snps = [s for s in ingroup_snps if usable(s.pos)]
         stats.skipped_ref_mismatch += len(ingroup_snps) - len(kept_snps)
         ingroup_snps = kept_snps
-        kept_alleles = {pos: alt for pos, alt in outgroup_alleles.items() if usable(pos)}
-        stats.outgroup_skipped += len(outgroup_alleles) - len(kept_alleles)
-        outgroup_alleles = kept_alleles
+        kept_copies = {pos: copies for pos, copies in outgroup_copies.items() if usable(pos)}
+        stats.outgroup_skipped += len(outgroup_copies) - len(kept_copies)
+        outgroup_copies = kept_copies
     # Counted after the codon rule, so a record is never both swapped and skipped.
     stats.swapped_ref_alt = sum(map(usable, swapped_at)) + sum(map(usable, outgroup_swapped_at))
 
     # === Polymorphism extraction ===
     polymorphisms: list[tuple[float, str]] = []
+    unpolarized = 0
+    needs_frequency = needs_derived_frequency or min_frequency > 0 or no_singletons
     # Every called sample carries a fixed ALT, so the background codon of the ingroup is the
     # reference with the fixed ALT bases, and each SNP is read against it, as in FASTA input.
     fixed_alt = {s.pos: s.alt for s in ingroup_snps if s.is_fixed_alt}
@@ -578,8 +648,47 @@ def extract_gene_data(
     def background_fetch(chrom: str, pos: int) -> str:
         return fixed_alt.get(pos) or ref_fetch(chrom, pos)
 
-    def out_fetch(chrom: str, pos: int) -> str:
-        return outgroup_alleles.get(pos) or ref_fetch(chrom, pos)
+    def clean(codons: set[str]) -> set[str]:
+        """The codons that are not missing data: no ambiguous base and not a stop."""
+        return {c for c in codons if c in CLEAN_CODONS} - code.stop_codons
+
+    # The outgroup records of each codon. Every record is in a full codon of the CDS.
+    outgroup_positions: dict[int, list[int]] = defaultdict(list)
+    for pos in sorted(outgroup_copies):
+        outgroup_positions[cds.genomic_pos_to_codon_index(pos)].append(pos)
+
+    def outgroup_phases(codon_idx: int) -> list[tuple[set[str], set[str]]]:
+        """The outgroup's codons in each phase, all of them and the clean ones.
+
+        Each copy of the outgroup sample gives one codon, as each outgroup sequence does in
+        FASTA input. A call gives the base of each copy, but which copies of two calls are
+        the same copy (the phase) is not known, so each way to pair them is a phase.
+        """
+        positions = outgroup_positions.get(codon_idx, [])
+        ploidy = max((len(outgroup_copies[pos]) for pos in positions), default=1)
+        built: dict[tuple[tuple[int, str], ...], str] = {}
+        phases = []
+        seen = set()
+        # The copies have no names, so the first call's order is fixed, and only the others
+        # are reordered against it.
+        orders_per_position = [
+            {outgroup_copies[pos]} if n == 0 else set(permutations(outgroup_copies[pos]))
+            for n, pos in enumerate(positions)
+        ]
+        for orders in product(*orders_per_position):
+            copies = []
+            for copy in range(ploidy):
+                bases = tuple(
+                    (pos, order[copy % len(order)]) for pos, order in zip(positions, orders)
+                )
+                if bases not in built:
+                    built[bases] = _codon_with_bases(cds, codon_idx, ref_fetch, dict(bases))
+                copies.append(built[bases])
+            # Phases that differ only in the order of the copies are the same phase.
+            if (key := tuple(sorted(copies))) not in seen:
+                seen.add(key)
+                phases.append((set(copies), clean(set(copies))))
+        return phases
 
     # Positions of SNPs dropped for a stop codon, in the ingroup or in the outgroup. Missing
     # data is not a polymorphism, so such a position does not void its codon for divergence.
@@ -596,7 +705,7 @@ def extract_gene_data(
     # background codon, so only these codons need their own outgroup codon check. Without an
     # outgroup VCF there is no outgroup codon to check.
     outgroup_differs = (
-        {cds.genomic_pos_to_codon_index(pos) for pos in outgroup_alleles.keys() | fixed_alt.keys()}
+        set(outgroup_positions) | {cds.genomic_pos_to_codon_index(pos) for pos in fixed_alt}
         if has_outgroup
         else set()
     )
@@ -628,17 +737,20 @@ def extract_gene_data(
                 alt_of_ref_stop[snp.pos] = snp.alt
             continue
 
-        # An outgroup codon that is a stop or has an ambiguous base is missing data, so the
-        # outgroup cannot polarize the polymorphism, and the FASTA path drops it.
+        # An outgroup codon that is a stop or has an ambiguous base is missing data, as an
+        # outgroup sequence with one is in FASTA input. With no clean outgroup codon in any
+        # phase, the outgroup cannot polarize the polymorphism, and the FASTA path drops it.
+        phases = [({ref_codon}, {ref_codon})]
         if codon_idx in outgroup_differs:
-            out_codon = cds.extract_codon(codon_idx, out_fetch)
-            if out_codon not in CLEAN_CODONS:
-                stats.skipped_ambiguous += 1
-                continue
-            if out_codon in code.stop_codons:
-                # Divergence in this codon then meets the same stop codon and is skipped too.
-                stats.skipped_stop += 1
-                stop_allele_positions.add(snp.pos)
+            phases = outgroup_phases(codon_idx)
+            if not any(clean_codons for _, clean_codons in phases):
+                all_out = set().union(*(codons for codons, _ in phases))
+                if all_out & code.stop_codons:
+                    # Divergence in this codon then meets the same stop codon and is skipped.
+                    stats.skipped_stop += 1
+                    stop_allele_positions.add(snp.pos)
+                else:
+                    stats.skipped_ambiguous += 1
                 continue
 
         # Classify the change
@@ -646,21 +758,44 @@ def extract_gene_data(
         if is_syn is None:
             continue
 
-        # If the outgroup carries ALT, REF is the derived allele.
-        derived_count = snp.n_alt
-        if snp.pos in outgroup_alleles and outgroup_alleles[snp.pos] == snp.alt:
-            derived_count = snp.n_ref
-        derived_freq = derived_count / snp.total
+        k = next(i for i in range(3) if ref_codon[i] != alt_codon[i])
+        bases = {ref_codon[k]: snp.n_ref, alt_codon[k]: snp.n_alt}
 
-        # A singleton is one copy of the derived allele, whatever the number of
-        # called samples, so it is filtered by count rather than by frequency.
-        if no_singletons and derived_count <= 1:
-            continue
-        if derived_freq < min_frequency:
-            continue
+        def outcome(clean_codons: set[str]) -> float | None | _SnpDrop:
+            """For one outgroup phase: the derived frequency of a kept SNP, None for a kept
+            SNP with no derived state, or why the SNP is dropped."""
+            if not clean_codons:
+                return _SnpDrop.MISSING
+            # The ancestral base is the one the clean outgroup codons share, by the FASTA
+            # rule. With none shared (a third allele) the SNP has no derived state: it
+            # still counts in Pn/Ps, but not where a frequency is read.
+            ancestral = ancestral_base(bases, clean_codons, k)
+            if ancestral is None:
+                return _SnpDrop.UNPOLARIZED if needs_frequency else None
+            count = snp.n_ref if ancestral == alt_codon[k] else snp.n_alt
+            state = (count / snp.total, count)
+            if not passes_frequency_filter(state, min_frequency, no_singletons):
+                return _SnpDrop.FILTERED
+            return state[0]
 
-        poly_type = "S" if is_syn else "N"
-        polymorphisms.append((derived_freq, poly_type))
+        outcomes = [outcome(clean_codons) for _, clean_codons in phases]
+        # The phase is not known, so an outcome that differs between phases is not used.
+        # A kept SNP's frequency is part of its outcome only where the analysis reads it.
+        keys = {
+            result if isinstance(result, _SnpDrop) or needs_derived_frequency else None
+            for result in outcomes
+        }
+        if len(keys) > 1:
+            unpolarized += 1
+            continue
+        result = outcomes[0]
+        if result is _SnpDrop.UNPOLARIZED:
+            unpolarized += 1
+        if isinstance(result, _SnpDrop):
+            continue
+        # Only the counts are read with no derived state, so any frequency will do.
+        freq = snp.n_alt / snp.total if result is None else result
+        polymorphisms.append((freq, "S" if is_syn else "N"))
 
     # === Divergence extraction ===
     dn = 0
@@ -677,34 +812,29 @@ def extract_gene_data(
         def in_fetch(chrom: str, pos: int) -> str:
             return alt_of_ref_stop.get(pos) or background_fetch(chrom, pos)
 
-        # Both allele maps were filtered by cds.contains_position, so every lookup hits.
-        candidates = {
-            cds.genomic_pos_to_codon_index(pos)
-            for pos in fixed_alt.keys() | outgroup_alleles.keys()
-        } - poly_codons
-        for codon_idx in sorted(candidates):
+        for codon_idx in sorted(outgroup_differs - poly_codons):
             in_codon = cds.extract_codon(codon_idx, in_fetch)
-            out_codon = cds.extract_codon(codon_idx, out_fetch)
-            if in_codon == out_codon:
+            outcomes = {
+                _divergence_outcome(in_codon, codons, clean_codons, code)
+                for codons, clean_codons in outgroup_phases(codon_idx)
+            }
+            # The phase is not known, so a fixed difference that differs between phases is
+            # not used. A skip reason is counted only where every phase gives it.
+            counts = {result if isinstance(result, tuple) else (0, 0) for result in outcomes}
+            if len(counts) > 1:
+                stats.skipped_unphased += 1
                 continue
-            # Checked before get_path, which has no path for such a codon and would
-            # otherwise report the pair as stop-blocked.
-            if not {in_codon, out_codon} <= CLEAN_CODONS:
-                stats.skipped_ambiguous += 1
-                continue
-            if {in_codon, out_codon} & code.stop_codons:
-                stats.skipped_stop += 1
-                continue
-            # get_path handles codons that differ at more than one position.
-            path = code.get_path(in_codon, out_codon)
-            if not path:
-                stats.stop_blocked_pairs += 1
-                continue
-            for change_type, _position in path:
-                if change_type == "R":
-                    dn += 1
-                elif change_type == "S":
-                    ds += 1
+            ((codon_dn, codon_ds),) = counts
+            dn += codon_dn
+            ds += codon_ds
+            if len(outcomes) == 1:
+                match next(iter(outcomes)):
+                    case _CodonSkip.AMBIGUOUS:
+                        stats.skipped_ambiguous += 1
+                    case _CodonSkip.STOP:
+                        stats.skipped_stop += 1
+                    case _CodonSkip.STOP_BLOCKED:
+                        stats.stop_blocked_pairs += 1
 
     if owns_ref_fasta:
         ref_fasta.close()
@@ -714,4 +844,5 @@ def extract_gene_data(
         dn=dn,
         ds=ds,
         gene_id=cds.gene_id,
+        unpolarized_sites=unpolarized,
     ), stats
