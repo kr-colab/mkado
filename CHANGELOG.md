@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-07
+
+Bug-fix release. VCF input now follows the FASTA rules for missing data,
+stop codons and polarization, so the same genotypes give the same counts
+from both inputs. A heterozygous outgroup call gives both of its bases, an
+outgroup base that is neither REF nor ALT gives no derived state, and a
+codon with no clean outgroup codon is counted as not polarized. Stop codons
+are missing data in both inputs. The GFF3 parser now checks each
+transcript and skips a bad one with a warning, and many inputs that gave a
+traceback now stop with a one-line error. Several fixes change reported
+numbers; the entries below name them. The docs now match the code on
+missing data and polarization. The test suite grew from 718 to 1054 tests.
+
 ### Added
 - `mkado info` takes `--code-table`, like the other commands, and prints
   the number of internal stop codons in the file.
@@ -628,7 +641,8 @@ of the Typer shell-completion options on the umbrella command.
 
 - Initial release
 
-[Unreleased]: https://github.com/kr-colab/mkado/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/kr-colab/mkado/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/kr-colab/mkado/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/kr-colab/mkado/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/kr-colab/mkado/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/kr-colab/mkado/compare/v0.3.0...v0.4.0
